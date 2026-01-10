@@ -1,0 +1,26 @@
+# Apex Hunter V14 - Minimal Dependencies
+# Essential packages only for core functionality
+
+# Environment & Configuration
+python-dotenv==1.0.0
+
+# HTTP & API
+requests==2.31.0
+
+# Cryptography (for KuCoin API signatures)
+cryptography==41.0.7
+
+# Telegram
+python-telegram-bot==20.7
+
+# Async
+aiohttp==3.9.1
+
+# Console
+colorama==0.4.6
+
+# WebSockets (for real-time data)
+websockets==12.0
+
+# Date/Time
+python-dateutil==2.8.2

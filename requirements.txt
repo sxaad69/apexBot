@@ -1,0 +1,54 @@
+# Apex Hunter V14 - Python Dependencies
+# Python 3.11+
+
+# Core Dependencies
+python-dotenv==1.0.0
+
+# API & HTTP Requests
+requests==2.31.0
+urllib3==2.1.0
+websocket-client==1.6.4
+websockets==12.0
+
+# Exchange Integration (Optional - if you want to use CCXT instead of custom client)
+ccxt==4.2.25
+
+# Cryptography for API signatures
+cryptography==41.0.7
+pycryptodome==3.19.0
+
+# Data Processing
+pandas==2.1.4
+numpy==1.26.2
+
+# Telegram Bot
+python-telegram-bot==20.7
+
+# Async Support
+aiohttp==3.9.1
+
+# Console Output
+colorama==0.4.6
+colorlog==6.8.0
+
+# Date/Time
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Configuration
+pyyaml==6.0.1
+
+# Type Hints
+typing-extensions==4.9.0
+
+# Database Support
+pymongo==4.6.0
+motor==3.3.2  # Async MongoDB driver
+
+# Testing (Optional)
+pytest==7.4.3
+pytest-asyncio==0.21.1
+
+# Code Quality (Optional)
+black==23.12.1
+flake8==7.0.0
