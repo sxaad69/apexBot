@@ -1,0 +1,442 @@
+2026-01-10 21:59:18 | INFO     | apex_hunter.system_events | Futures Telegram bot initialized
+2026-01-10 21:59:18 | INFO     | apex_hunter.system_events | Spot Telegram bot initialized
+2026-01-10 21:59:19 | INFO     | apex_hunter.system_events | Arbitrage Telegram bot initialized
+2026-01-10 21:59:22 | INFO     | apex_hunter.system_events | CCXT client initialized: kucoin (production)
+2026-01-10 21:59:22 | INFO     | apex_hunter.system_events | Risk Manager initialized with 11 layers
+2026-01-10 21:59:22 | INFO     | apex_hunter | Strategy A1 initialized: EMA 9/21
+2026-01-10 21:59:22 | INFO     | apex_hunter | Strategy A2 initialized: EMA 9/21, RSI 14
+2026-01-10 21:59:22 | INFO     | apex_hunter | Strategy A3 initialized: Fast EMA 5/13
+2026-01-10 21:59:22 | INFO     | apex_hunter | Strategy A4 initialized: EMA 9/21/50
+2026-01-10 21:59:22 | INFO     | apex_hunter | Paper trading initialized with 4 strategies
+2026-01-10 21:59:22 | INFO     | apex_hunter | Initial capital: $100.0 per strategy
+2026-01-10 21:59:22 | INFO     | apex_hunter | Risk management: 11 layers active
+2026-01-10 21:59:23 | INFO     | apex_hunter | Fetching top trading pairs by volume...
+2026-01-10 21:59:24 | INFO     | apex_hunter | Found 30 top pairs (min volume: $1,000,000)
+2026-01-10 21:59:24 | INFO     | apex_hunter | Top 10: BTC/USDT, ETH/USDT, XMR/USDT, XRP/USDT, ZEC/USDT, SOL/USDT, SUI/USDT, BREV/USDT, HYPE/USDT, LTC/USDT
+2026-01-10 21:59:24 | INFO     | apex_hunter | BTC/USDT | Price: $90588.90 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:24 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for BTC/USDT
+2026-01-10 21:59:24 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for BTC/USDT
+2026-01-10 21:59:24 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for BTC/USDT
+2026-01-10 21:59:24 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for BTC/USDT
+2026-01-10 21:59:25 | INFO     | apex_hunter | ETH/USDT | Price: $3092.93 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:25 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ETH/USDT
+2026-01-10 21:59:25 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ETH/USDT
+2026-01-10 21:59:25 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ETH/USDT
+2026-01-10 21:59:25 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ETH/USDT
+2026-01-10 21:59:25 | INFO     | apex_hunter | XMR/USDT | Price: $471.11 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:25 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for XMR/USDT
+2026-01-10 21:59:25 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for XMR/USDT
+2026-01-10 21:59:25 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for XMR/USDT
+2026-01-10 21:59:25 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for XMR/USDT
+2026-01-10 21:59:25 | INFO     | apex_hunter | XRP/USDT | Price: $2.10 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:25 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for XRP/USDT
+2026-01-10 21:59:25 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for XRP/USDT
+2026-01-10 21:59:25 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for XRP/USDT
+2026-01-10 21:59:25 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for XRP/USDT
+2026-01-10 21:59:26 | INFO     | apex_hunter | ZEC/USDT | Price: $376.32 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:26 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ZEC/USDT
+2026-01-10 21:59:26 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ZEC/USDT
+2026-01-10 21:59:26 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ZEC/USDT
+2026-01-10 21:59:26 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ZEC/USDT
+2026-01-10 21:59:26 | INFO     | apex_hunter | SOL/USDT | Price: $136.17 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:26 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for SOL/USDT
+2026-01-10 21:59:26 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for SOL/USDT
+2026-01-10 21:59:26 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for SOL/USDT
+2026-01-10 21:59:26 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for SOL/USDT
+2026-01-10 21:59:27 | INFO     | apex_hunter | SUI/USDT | Price: $1.80 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:27 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for SUI/USDT
+2026-01-10 21:59:27 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for SUI/USDT
+2026-01-10 21:59:27 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for SUI/USDT
+2026-01-10 21:59:27 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for SUI/USDT
+2026-01-10 21:59:27 | INFO     | apex_hunter | BREV/USDT | Price: $0.38 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:27 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for BREV/USDT
+2026-01-10 21:59:27 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for BREV/USDT
+2026-01-10 21:59:27 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for BREV/USDT
+2026-01-10 21:59:27 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for BREV/USDT
+2026-01-10 21:59:27 | INFO     | apex_hunter | HYPE/USDT | Price: $24.08 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:27 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for HYPE/USDT
+2026-01-10 21:59:27 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for HYPE/USDT
+2026-01-10 21:59:27 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for HYPE/USDT
+2026-01-10 21:59:27 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for HYPE/USDT
+2026-01-10 21:59:28 | INFO     | apex_hunter | LTC/USDT | Price: $81.26 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:28 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for LTC/USDT
+2026-01-10 21:59:28 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for LTC/USDT
+2026-01-10 21:59:28 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for LTC/USDT
+2026-01-10 21:59:28 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for LTC/USDT
+2026-01-10 21:59:28 | INFO     | apex_hunter | ESIM/USDT | Price: $0.05 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:28 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ESIM/USDT
+2026-01-10 21:59:28 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ESIM/USDT
+2026-01-10 21:59:28 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ESIM/USDT
+2026-01-10 21:59:28 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ESIM/USDT
+2026-01-10 21:59:28 | INFO     | apex_hunter | USDC/USDT | Price: $1.00 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:28 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for USDC/USDT
+2026-01-10 21:59:28 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for USDC/USDT
+2026-01-10 21:59:28 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for USDC/USDT
+2026-01-10 21:59:28 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for USDC/USDT
+2026-01-10 21:59:29 | INFO     | apex_hunter | TAO/USDT | Price: $279.72 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:29 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for TAO/USDT
+2026-01-10 21:59:29 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for TAO/USDT
+2026-01-10 21:59:29 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for TAO/USDT
+2026-01-10 21:59:29 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for TAO/USDT
+2026-01-10 21:59:29 | INFO     | apex_hunter | PEPE/USDT | Price: $0.00 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:29 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for PEPE/USDT
+2026-01-10 21:59:29 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for PEPE/USDT
+2026-01-10 21:59:29 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for PEPE/USDT
+2026-01-10 21:59:29 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for PEPE/USDT
+2026-01-10 21:59:30 | INFO     | apex_hunter | TRX/USDT | Price: $0.30 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:30 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for TRX/USDT
+2026-01-10 21:59:30 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for TRX/USDT
+2026-01-10 21:59:30 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for TRX/USDT
+2026-01-10 21:59:30 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for TRX/USDT
+2026-01-10 21:59:30 | INFO     | apex_hunter | RAIN/USDT | Price: $0.01 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:30 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for RAIN/USDT
+2026-01-10 21:59:30 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for RAIN/USDT
+2026-01-10 21:59:30 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for RAIN/USDT
+2026-01-10 21:59:30 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for RAIN/USDT
+2026-01-10 21:59:31 | INFO     | apex_hunter | TON/USDT | Price: $1.75 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:31 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for TON/USDT
+2026-01-10 21:59:31 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for TON/USDT
+2026-01-10 21:59:31 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for TON/USDT
+2026-01-10 21:59:31 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for TON/USDT
+2026-01-10 21:59:31 | INFO     | apex_hunter | ZTC/USDT | Price: $0.00 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:31 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ZTC/USDT
+2026-01-10 21:59:31 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ZTC/USDT
+2026-01-10 21:59:31 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ZTC/USDT
+2026-01-10 21:59:31 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ZTC/USDT
+2026-01-10 21:59:31 | INFO     | apex_hunter | BNB/USDT | Price: $913.05 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:31 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for BNB/USDT
+2026-01-10 21:59:31 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for BNB/USDT
+2026-01-10 21:59:31 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for BNB/USDT
+2026-01-10 21:59:31 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for BNB/USDT
+2026-01-10 21:59:32 | INFO     | apex_hunter | DN/USDT | Price: $1.24 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:32 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for DN/USDT
+2026-01-10 21:59:32 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for DN/USDT
+2026-01-10 21:59:32 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for DN/USDT
+2026-01-10 21:59:32 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for DN/USDT
+2026-01-10 21:59:32 | INFO     | apex_hunter | POL/USDT | Price: $0.18 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:32 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for POL/USDT
+2026-01-10 21:59:32 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for POL/USDT
+2026-01-10 21:59:32 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for POL/USDT
+2026-01-10 21:59:32 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for POL/USDT
+2026-01-10 21:59:33 | INFO     | apex_hunter | BTG/USDT | Price: $6.10 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:33 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for BTG/USDT
+2026-01-10 21:59:33 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for BTG/USDT
+2026-01-10 21:59:33 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for BTG/USDT
+2026-01-10 21:59:33 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for BTG/USDT
+2026-01-10 21:59:33 | INFO     | apex_hunter | CLO/USDT | Price: $0.62 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:33 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for CLO/USDT
+2026-01-10 21:59:33 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for CLO/USDT
+2026-01-10 21:59:33 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for CLO/USDT
+2026-01-10 21:59:33 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for CLO/USDT
+2026-01-10 21:59:34 | INFO     | apex_hunter | NEAR/USDT | Price: $1.70 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:34 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for NEAR/USDT
+2026-01-10 21:59:34 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for NEAR/USDT
+2026-01-10 21:59:34 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for NEAR/USDT
+2026-01-10 21:59:34 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for NEAR/USDT
+2026-01-10 21:59:34 | INFO     | apex_hunter | ADA/USDT | Price: $0.39 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:34 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ADA/USDT
+2026-01-10 21:59:34 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ADA/USDT
+2026-01-10 21:59:34 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ADA/USDT
+2026-01-10 21:59:34 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ADA/USDT
+2026-01-10 21:59:34 | INFO     | apex_hunter | DOGE/USDT | Price: $0.14 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:34 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for DOGE/USDT
+2026-01-10 21:59:34 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for DOGE/USDT
+2026-01-10 21:59:34 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for DOGE/USDT
+2026-01-10 21:59:34 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for DOGE/USDT
+2026-01-10 21:59:35 | INFO     | apex_hunter | KCS/USDT | Price: $10.90 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:35 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for KCS/USDT
+2026-01-10 21:59:35 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for KCS/USDT
+2026-01-10 21:59:35 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for KCS/USDT
+2026-01-10 21:59:35 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for KCS/USDT
+2026-01-10 21:59:35 | INFO     | apex_hunter | SIREN/USDT | Price: $0.08 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:35 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for SIREN/USDT
+2026-01-10 21:59:35 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for SIREN/USDT
+2026-01-10 21:59:35 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for SIREN/USDT
+2026-01-10 21:59:35 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for SIREN/USDT
+2026-01-10 21:59:36 | INFO     | apex_hunter | FET/USDT | Price: $0.28 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:36 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for FET/USDT
+2026-01-10 21:59:36 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for FET/USDT
+2026-01-10 21:59:36 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for FET/USDT
+2026-01-10 21:59:36 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for FET/USDT
+2026-01-10 21:59:36 | INFO     | apex_hunter | BYTE/USDT | Price: $0.01 | Open: 0 | Total P&L: $+0.00
+2026-01-10 21:59:36 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for BYTE/USDT
+2026-01-10 21:59:36 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for BYTE/USDT
+2026-01-10 21:59:36 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for BYTE/USDT
+2026-01-10 21:59:36 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for BYTE/USDT
+2026-01-10 22:00:36 | INFO     | apex_hunter | BTC/USDT | Price: $90588.90 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:36 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for BTC/USDT
+2026-01-10 22:00:36 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for BTC/USDT
+2026-01-10 22:00:36 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for BTC/USDT
+2026-01-10 22:00:36 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for BTC/USDT
+2026-01-10 22:00:37 | INFO     | apex_hunter | ETH/USDT | Price: $3092.94 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:37 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ETH/USDT
+2026-01-10 22:00:37 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ETH/USDT
+2026-01-10 22:00:37 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ETH/USDT
+2026-01-10 22:00:37 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ETH/USDT
+2026-01-10 22:00:37 | INFO     | apex_hunter | XMR/USDT | Price: $471.45 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:37 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for XMR/USDT
+2026-01-10 22:00:37 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for XMR/USDT
+2026-01-10 22:00:37 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for XMR/USDT
+2026-01-10 22:00:37 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for XMR/USDT
+2026-01-10 22:00:38 | INFO     | apex_hunter | XRP/USDT | Price: $2.10 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:38 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for XRP/USDT
+2026-01-10 22:00:38 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for XRP/USDT
+2026-01-10 22:00:38 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for XRP/USDT
+2026-01-10 22:00:38 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for XRP/USDT
+2026-01-10 22:00:38 | INFO     | apex_hunter | ZEC/USDT | Price: $376.25 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:38 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ZEC/USDT
+2026-01-10 22:00:38 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ZEC/USDT
+2026-01-10 22:00:38 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ZEC/USDT
+2026-01-10 22:00:38 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ZEC/USDT
+2026-01-10 22:00:39 | INFO     | apex_hunter | SOL/USDT | Price: $136.19 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:39 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for SOL/USDT
+2026-01-10 22:00:39 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for SOL/USDT
+2026-01-10 22:00:39 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for SOL/USDT
+2026-01-10 22:00:39 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for SOL/USDT
+2026-01-10 22:00:39 | INFO     | apex_hunter | SUI/USDT | Price: $1.80 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:39 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for SUI/USDT
+2026-01-10 22:00:39 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for SUI/USDT
+2026-01-10 22:00:39 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for SUI/USDT
+2026-01-10 22:00:39 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for SUI/USDT
+2026-01-10 22:00:39 | INFO     | apex_hunter | BREV/USDT | Price: $0.38 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:39 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for BREV/USDT
+2026-01-10 22:00:39 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for BREV/USDT
+2026-01-10 22:00:39 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for BREV/USDT
+2026-01-10 22:00:39 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for BREV/USDT
+2026-01-10 22:00:40 | INFO     | apex_hunter | HYPE/USDT | Price: $24.10 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:40 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for HYPE/USDT
+2026-01-10 22:00:40 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for HYPE/USDT
+2026-01-10 22:00:40 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for HYPE/USDT
+2026-01-10 22:00:40 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for HYPE/USDT
+2026-01-10 22:00:40 | INFO     | apex_hunter | LTC/USDT | Price: $81.27 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:40 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for LTC/USDT
+2026-01-10 22:00:40 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for LTC/USDT
+2026-01-10 22:00:40 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for LTC/USDT
+2026-01-10 22:00:40 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for LTC/USDT
+2026-01-10 22:00:41 | INFO     | apex_hunter | ESIM/USDT | Price: $0.05 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:41 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ESIM/USDT
+2026-01-10 22:00:41 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ESIM/USDT
+2026-01-10 22:00:41 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ESIM/USDT
+2026-01-10 22:00:41 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ESIM/USDT
+2026-01-10 22:00:41 | INFO     | apex_hunter | USDC/USDT | Price: $1.00 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:41 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for USDC/USDT
+2026-01-10 22:00:41 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for USDC/USDT
+2026-01-10 22:00:41 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for USDC/USDT
+2026-01-10 22:00:41 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for USDC/USDT
+2026-01-10 22:00:41 | INFO     | apex_hunter | TAO/USDT | Price: $279.81 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:41 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for TAO/USDT
+2026-01-10 22:00:41 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for TAO/USDT
+2026-01-10 22:00:41 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for TAO/USDT
+2026-01-10 22:00:41 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for TAO/USDT
+2026-01-10 22:00:42 | INFO     | apex_hunter | PEPE/USDT | Price: $0.00 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:42 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for PEPE/USDT
+2026-01-10 22:00:42 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for PEPE/USDT
+2026-01-10 22:00:42 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for PEPE/USDT
+2026-01-10 22:00:42 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for PEPE/USDT
+2026-01-10 22:00:42 | INFO     | apex_hunter | TRX/USDT | Price: $0.30 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:42 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for TRX/USDT
+2026-01-10 22:00:42 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for TRX/USDT
+2026-01-10 22:00:42 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for TRX/USDT
+2026-01-10 22:00:42 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for TRX/USDT
+2026-01-10 22:00:43 | INFO     | apex_hunter | RAIN/USDT | Price: $0.01 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:43 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for RAIN/USDT
+2026-01-10 22:00:43 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for RAIN/USDT
+2026-01-10 22:00:43 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for RAIN/USDT
+2026-01-10 22:00:43 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for RAIN/USDT
+2026-01-10 22:00:43 | INFO     | apex_hunter | TON/USDT | Price: $1.75 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:43 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for TON/USDT
+2026-01-10 22:00:43 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for TON/USDT
+2026-01-10 22:00:43 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for TON/USDT
+2026-01-10 22:00:43 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for TON/USDT
+2026-01-10 22:00:44 | INFO     | apex_hunter | ZTC/USDT | Price: $0.00 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:44 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ZTC/USDT
+2026-01-10 22:00:44 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ZTC/USDT
+2026-01-10 22:00:44 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ZTC/USDT
+2026-01-10 22:00:44 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ZTC/USDT
+2026-01-10 22:00:44 | INFO     | apex_hunter | BNB/USDT | Price: $913.49 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:44 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for BNB/USDT
+2026-01-10 22:00:44 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for BNB/USDT
+2026-01-10 22:00:44 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for BNB/USDT
+2026-01-10 22:00:44 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for BNB/USDT
+2026-01-10 22:00:44 | INFO     | apex_hunter | DN/USDT | Price: $1.24 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:44 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for DN/USDT
+2026-01-10 22:00:44 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for DN/USDT
+2026-01-10 22:00:44 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for DN/USDT
+2026-01-10 22:00:44 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for DN/USDT
+2026-01-10 22:00:45 | INFO     | apex_hunter | POL/USDT | Price: $0.18 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:45 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for POL/USDT
+2026-01-10 22:00:45 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for POL/USDT
+2026-01-10 22:00:45 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for POL/USDT
+2026-01-10 22:00:45 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for POL/USDT
+2026-01-10 22:00:45 | INFO     | apex_hunter | BTG/USDT | Price: $6.10 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:45 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for BTG/USDT
+2026-01-10 22:00:45 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for BTG/USDT
+2026-01-10 22:00:45 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for BTG/USDT
+2026-01-10 22:00:45 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for BTG/USDT
+2026-01-10 22:00:46 | INFO     | apex_hunter | CLO/USDT | Price: $0.63 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:46 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for CLO/USDT
+2026-01-10 22:00:46 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for CLO/USDT
+2026-01-10 22:00:46 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for CLO/USDT
+2026-01-10 22:00:46 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for CLO/USDT
+2026-01-10 22:00:46 | INFO     | apex_hunter | NEAR/USDT | Price: $1.70 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:46 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for NEAR/USDT
+2026-01-10 22:00:46 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for NEAR/USDT
+2026-01-10 22:00:46 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for NEAR/USDT
+2026-01-10 22:00:46 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for NEAR/USDT
+2026-01-10 22:00:46 | INFO     | apex_hunter | ADA/USDT | Price: $0.39 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:46 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ADA/USDT
+2026-01-10 22:00:46 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ADA/USDT
+2026-01-10 22:00:46 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ADA/USDT
+2026-01-10 22:00:46 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ADA/USDT
+2026-01-10 22:00:47 | INFO     | apex_hunter | DOGE/USDT | Price: $0.14 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:47 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for DOGE/USDT
+2026-01-10 22:00:47 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for DOGE/USDT
+2026-01-10 22:00:47 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for DOGE/USDT
+2026-01-10 22:00:47 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for DOGE/USDT
+2026-01-10 22:00:47 | INFO     | apex_hunter | KCS/USDT | Price: $10.90 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:47 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for KCS/USDT
+2026-01-10 22:00:47 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for KCS/USDT
+2026-01-10 22:00:47 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for KCS/USDT
+2026-01-10 22:00:47 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for KCS/USDT
+2026-01-10 22:00:48 | INFO     | apex_hunter | SIREN/USDT | Price: $0.08 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:48 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for SIREN/USDT
+2026-01-10 22:00:48 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for SIREN/USDT
+2026-01-10 22:00:48 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for SIREN/USDT
+2026-01-10 22:00:48 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for SIREN/USDT
+2026-01-10 22:00:48 | INFO     | apex_hunter | FET/USDT | Price: $0.28 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:48 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for FET/USDT
+2026-01-10 22:00:48 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for FET/USDT
+2026-01-10 22:00:48 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for FET/USDT
+2026-01-10 22:00:48 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for FET/USDT
+2026-01-10 22:00:49 | INFO     | apex_hunter | BYTE/USDT | Price: $0.01 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:00:49 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for BYTE/USDT
+2026-01-10 22:00:49 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for BYTE/USDT
+2026-01-10 22:00:49 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for BYTE/USDT
+2026-01-10 22:00:49 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for BYTE/USDT
+2026-01-10 22:01:49 | INFO     | apex_hunter | BTC/USDT | Price: $90587.70 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:49 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for BTC/USDT
+2026-01-10 22:01:49 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for BTC/USDT
+2026-01-10 22:01:49 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for BTC/USDT
+2026-01-10 22:01:49 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for BTC/USDT
+2026-01-10 22:01:50 | INFO     | apex_hunter | ETH/USDT | Price: $3092.94 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:50 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ETH/USDT
+2026-01-10 22:01:50 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ETH/USDT
+2026-01-10 22:01:50 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ETH/USDT
+2026-01-10 22:01:50 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ETH/USDT
+2026-01-10 22:01:50 | INFO     | apex_hunter | XMR/USDT | Price: $471.46 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:50 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for XMR/USDT
+2026-01-10 22:01:50 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for XMR/USDT
+2026-01-10 22:01:50 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for XMR/USDT
+2026-01-10 22:01:50 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for XMR/USDT
+2026-01-10 22:01:51 | INFO     | apex_hunter | XRP/USDT | Price: $2.10 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:51 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for XRP/USDT
+2026-01-10 22:01:51 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for XRP/USDT
+2026-01-10 22:01:51 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for XRP/USDT
+2026-01-10 22:01:51 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for XRP/USDT
+2026-01-10 22:01:51 | INFO     | apex_hunter | ZEC/USDT | Price: $377.17 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:51 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ZEC/USDT
+2026-01-10 22:01:51 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ZEC/USDT
+2026-01-10 22:01:51 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ZEC/USDT
+2026-01-10 22:01:51 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ZEC/USDT
+2026-01-10 22:01:51 | INFO     | apex_hunter | SOL/USDT | Price: $136.18 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:51 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for SOL/USDT
+2026-01-10 22:01:51 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for SOL/USDT
+2026-01-10 22:01:51 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for SOL/USDT
+2026-01-10 22:01:51 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for SOL/USDT
+2026-01-10 22:01:52 | INFO     | apex_hunter | SUI/USDT | Price: $1.80 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:52 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for SUI/USDT
+2026-01-10 22:01:52 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for SUI/USDT
+2026-01-10 22:01:52 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for SUI/USDT
+2026-01-10 22:01:52 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for SUI/USDT
+2026-01-10 22:01:52 | INFO     | apex_hunter | BREV/USDT | Price: $0.38 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:52 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for BREV/USDT
+2026-01-10 22:01:52 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for BREV/USDT
+2026-01-10 22:01:52 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for BREV/USDT
+2026-01-10 22:01:52 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for BREV/USDT
+2026-01-10 22:01:53 | INFO     | apex_hunter | HYPE/USDT | Price: $24.10 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:53 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for HYPE/USDT
+2026-01-10 22:01:53 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for HYPE/USDT
+2026-01-10 22:01:53 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for HYPE/USDT
+2026-01-10 22:01:53 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for HYPE/USDT
+2026-01-10 22:01:53 | INFO     | apex_hunter | LTC/USDT | Price: $81.28 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:53 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for LTC/USDT
+2026-01-10 22:01:53 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for LTC/USDT
+2026-01-10 22:01:53 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for LTC/USDT
+2026-01-10 22:01:53 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for LTC/USDT
+2026-01-10 22:01:54 | INFO     | apex_hunter | ESIM/USDT | Price: $0.05 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:54 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ESIM/USDT
+2026-01-10 22:01:54 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ESIM/USDT
+2026-01-10 22:01:54 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ESIM/USDT
+2026-01-10 22:01:54 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ESIM/USDT
+2026-01-10 22:01:54 | INFO     | apex_hunter | USDC/USDT | Price: $1.00 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:54 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for USDC/USDT
+2026-01-10 22:01:54 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for USDC/USDT
+2026-01-10 22:01:54 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for USDC/USDT
+2026-01-10 22:01:54 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for USDC/USDT
+2026-01-10 22:01:54 | INFO     | apex_hunter | TAO/USDT | Price: $279.62 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:54 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for TAO/USDT
+2026-01-10 22:01:54 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for TAO/USDT
+2026-01-10 22:01:54 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for TAO/USDT
+2026-01-10 22:01:54 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for TAO/USDT
+2026-01-10 22:01:55 | INFO     | apex_hunter | PEPE/USDT | Price: $0.00 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:55 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for PEPE/USDT
+2026-01-10 22:01:55 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for PEPE/USDT
+2026-01-10 22:01:55 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for PEPE/USDT
+2026-01-10 22:01:55 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for PEPE/USDT
+2026-01-10 22:01:55 | INFO     | apex_hunter | TRX/USDT | Price: $0.30 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:55 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for TRX/USDT
+2026-01-10 22:01:55 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for TRX/USDT
+2026-01-10 22:01:55 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for TRX/USDT
+2026-01-10 22:01:55 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for TRX/USDT
+2026-01-10 22:01:56 | INFO     | apex_hunter | RAIN/USDT | Price: $0.01 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:56 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for RAIN/USDT
+2026-01-10 22:01:56 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for RAIN/USDT
+2026-01-10 22:01:56 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for RAIN/USDT
+2026-01-10 22:01:56 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for RAIN/USDT
+2026-01-10 22:01:56 | INFO     | apex_hunter | TON/USDT | Price: $1.75 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:56 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for TON/USDT
+2026-01-10 22:01:56 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for TON/USDT
+2026-01-10 22:01:56 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for TON/USDT
+2026-01-10 22:01:56 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for TON/USDT
+2026-01-10 22:01:57 | INFO     | apex_hunter | ZTC/USDT | Price: $0.00 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:57 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ZTC/USDT
+2026-01-10 22:01:57 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ZTC/USDT
+2026-01-10 22:01:57 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ZTC/USDT
+2026-01-10 22:01:57 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ZTC/USDT
+2026-01-10 22:01:57 | INFO     | apex_hunter | BNB/USDT | Price: $913.58 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:57 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for BNB/USDT
+2026-01-10 22:01:57 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for BNB/USDT
+2026-01-10 22:01:57 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for BNB/USDT
+2026-01-10 22:01:57 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for BNB/USDT
+2026-01-10 22:01:57 | INFO     | apex_hunter | DN/USDT | Price: $1.24 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:57 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for DN/USDT
+2026-01-10 22:01:57 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for DN/USDT
+2026-01-10 22:01:57 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for DN/USDT
+2026-01-10 22:01:57 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for DN/USDT
+2026-01-10 22:01:58 | INFO     | apex_hunter | POL/USDT | Price: $0.18 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:58 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for POL/USDT
+2026-01-10 22:01:58 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for POL/USDT
+2026-01-10 22:01:58 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for POL/USDT
+2026-01-10 22:01:58 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for POL/USDT
+2026-01-10 22:01:58 | INFO     | apex_hunter | BTG/USDT | Price: $6.13 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:58 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for BTG/USDT
+2026-01-10 22:01:58 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for BTG/USDT
+2026-01-10 22:01:58 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for BTG/USDT
+2026-01-10 22:01:58 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for BTG/USDT
+2026-01-10 22:01:59 | INFO     | apex_hunter | CLO/USDT | Price: $0.63 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:59 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for CLO/USDT
+2026-01-10 22:01:59 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for CLO/USDT
+2026-01-10 22:01:59 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for CLO/USDT
+2026-01-10 22:01:59 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for CLO/USDT
+2026-01-10 22:01:59 | INFO     | apex_hunter | NEAR/USDT | Price: $1.70 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:01:59 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for NEAR/USDT
+2026-01-10 22:01:59 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for NEAR/USDT
+2026-01-10 22:01:59 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for NEAR/USDT
+2026-01-10 22:01:59 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for NEAR/USDT
+2026-01-10 22:02:00 | INFO     | apex_hunter | ADA/USDT | Price: $0.39 | Open: 0 | Total P&L: $+0.00
+2026-01-10 22:02:00 | DEBUG    | apex_hunter | Strategy A1: EMA Only: AVAILABLE for ADA/USDT
+2026-01-10 22:02:00 | DEBUG    | apex_hunter | Strategy A2: EMA+RSI: AVAILABLE for ADA/USDT
+2026-01-10 22:02:00 | DEBUG    | apex_hunter | Strategy A3: Fast Scalp: AVAILABLE for ADA/USDT
+2026-01-10 22:02:00 | DEBUG    | apex_hunter | Strategy A4: Trend Filter: AVAILABLE for ADA/USDT
+2026-01-10 22:02:00 | INFO     | apex_hunter | Bot stopped
+2026-01-10 22:02:01 | INFO     | apex_hunter | Test message to MongoDB Atlas

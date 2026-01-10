@@ -1,0 +1,33 @@
+# fly.toml app configuration file generated for apex-hunter on 2026-01-10T23:00:48+03:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'apex-hunter'
+primary_region = 'iad'
+
+[build]
+
+[env]
+  PYTHONDONTWRITEBYTECODE = '1'
+  PYTHONUNBUFFERED = '1'
+
+[processes]
+  app = 'python3 main.py --mode paper --interval 60'
+
+[[mounts]]
+  source = 'apex_data'
+  destination = '/app/data'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+[[vm]]
+  memory = '512mb'
+  cpus = 1
+  memory_mb = 512
