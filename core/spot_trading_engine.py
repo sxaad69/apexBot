@@ -184,6 +184,18 @@ class SpotTradingEngine:
 
         self.logger.info(f"SPOT [{strategy_name}] {symbol} ENTRY {signal['side'].upper()} @ ${signal['entry_price']:.2f} ✅ Risk Approved")
 
+        # MongoDB structured logging
+        self.logger.trade_entry(
+            symbol=symbol,
+            side=signal['side'],
+            size=position['size_usdt'],
+            price=signal['entry_price'],
+            leverage=1,
+            strategy=strategy_name,
+            stop_loss=signal.get('stop_loss'),
+            take_profit=signal.get('take_profit')
+        )
+
         # Telegram notification
         if self.telegram and hasattr(self.telegram, 'send_spot_trade_entry'):
             self.telegram.send_spot_trade_entry({
@@ -459,6 +471,21 @@ class SpotTradingEngine:
         self.trades.append(trade)
 
         self.logger.info(f"SPOT [{strategy_name}] {symbol} EXIT {reason.upper()} @ ${exit_price:.2f}, P&L: ${pnl_usdt:+.2f} ({pnl_pct*100:+.2f}%)")
+
+        # MongoDB structured logging
+        duration_str = str(datetime.now() - position['entry_time'])
+        self.logger.trade_exit(
+            symbol=symbol,
+            pnl=pnl_usdt,
+            pnl_percent=pnl_pct * 100,
+            duration=duration_str,
+            exit_price=exit_price,
+            reason=reason,
+            strategy=strategy_name,
+            entry_price=entry_price,
+            side=side,
+            leverage=1
+        )
 
         # Telegram notification
         if self.telegram and hasattr(self.telegram, 'send_spot_trade_exit'):

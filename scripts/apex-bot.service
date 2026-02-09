@@ -6,9 +6,9 @@ After=network.target
 # User should replace 'ubuntu' with their actual username if different
 User=ubuntu
 Group=ubuntu
-WorkingDirectory=/home/ubuntu/apex-hunter-v14-complete
-EnvironmentFile=/home/ubuntu/apex-hunter-v14-complete/.env
-ExecStart=/home/ubuntu/apex-hunter-v14-complete/venv/bin/python main.py
+WorkingDirectory=/home/ubuntu/apexBot
+EnvironmentFile=/home/ubuntu/apexBot/.env
+ExecStart=/home/ubuntu/apexBot/venv/bin/python3 main.py
 Restart=always
 RestartSec=10
 StandardOutput=syslog
