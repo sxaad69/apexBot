@@ -49,6 +49,10 @@ motor==3.3.2  # Async MongoDB driver
 pytest==7.4.3
 pytest-asyncio==0.21.1
 
+# Dashboard & Visualization
+streamlit==1.29.0
+plotly==5.17.0
+
 # Code Quality (Optional)
 black==23.12.1
 flake8==7.0.0

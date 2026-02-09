@@ -27,6 +27,7 @@ class JSONManager:
         # Collection names (same as MongoDB)
         self.collections = {
             'futures_trades': 'futures_trades.json',
+            'active_positions': 'active_positions.json',
             'spot_signals': 'spot_signals.json',
             'arbitrage_opportunities': 'arbitrage_opportunities.json',
             'trailing_stops': 'trailing_stops.json',
@@ -348,6 +349,141 @@ class JSONManager:
         for collection in self.collections.keys():
             self.clean_collection(collection)
         print("🗑️ All database collections cleaned")
+
+    def save_market_analysis(self, date: str, hour: str, analysis_data: Dict[str, Any]) -> bool:
+        """Save market analysis data to JSON file"""
+        try:
+            filename = f"market_analyses_{date.replace('-', '')}.json"
+            filepath = self.data_dir / filename
+
+            # Load existing data or create new
+            existing_data = {}
+            if filepath.exists():
+                try:
+                    with open(filepath, 'r') as f:
+                        existing_data = json.load(f)
+                except:
+                    existing_data = {}
+
+            # Add new analysis data
+            hour_key = analysis_data.get('hour', hour)
+            existing_data[hour_key] = analysis_data
+
+            # Save back to file
+            with open(filepath, 'w') as f:
+                json.dump(existing_data, f, indent=2, default=str)
+
+            return True
+
+        except Exception as e:
+            print(f"⚠️ JSON market analysis save failed: {e}")
+            return False
+
+    def save_strategy_signals(self, date: str, hour: str, strategy_data: Dict[str, Any]) -> bool:
+        """Save strategy signals data to JSON file"""
+        try:
+            filename = f"strategy_signals_{date.replace('-', '')}.json"
+            filepath = self.data_dir / filename
+
+            # Load existing data or create new
+            existing_data = {}
+            if filepath.exists():
+                try:
+                    with open(filepath, 'r') as f:
+                        existing_data = json.load(f)
+                except:
+                    existing_data = {}
+
+            # Add new strategy data
+            hour_key = strategy_data.get('hour', hour)
+            existing_data[hour_key] = strategy_data
+
+            # Save back to file
+            with open(filepath, 'w') as f:
+                json.dump(existing_data, f, indent=2, default=str)
+
+            return True
+
+        except Exception as e:
+            print(f"⚠️ JSON strategy signals save failed: {e}")
+            return False
+
+    def save_hourly_metrics(self, date: str, hour: str, metrics_data: Dict[str, Any]) -> bool:
+        """Save hourly metrics data to JSON file"""
+        try:
+            filename = f"hourly_metrics_{date.replace('-', '')}.json"
+            filepath = self.data_dir / filename
+
+            # Load existing data or create new
+            existing_data = {}
+            if filepath.exists():
+                try:
+                    with open(filepath, 'r') as f:
+                        existing_data = json.load(f)
+                except:
+                    existing_data = {}
+
+            # Add new metrics data
+            hour_key = metrics_data.get('hour', hour)
+            existing_data[hour_key] = metrics_data
+
+            # Save back to file
+            with open(filepath, 'w') as f:
+                json.dump(existing_data, f, indent=2, default=str)
+
+            return True
+
+        except Exception as e:
+            print(f"⚠️ JSON hourly metrics save failed: {e}")
+            return False
+
+    def load_market_analysis(self, date: str) -> Dict[str, Any]:
+        """Load market analysis data for a specific date"""
+        try:
+            filename = f"market_analyses_{date.replace('-', '')}.json"
+            filepath = self.data_dir / filename
+
+            if not filepath.exists():
+                return {}
+
+            with open(filepath, 'r') as f:
+                return json.load(f)
+
+        except Exception as e:
+            print(f"⚠️ JSON market analysis load failed: {e}")
+            return {}
+
+    def load_strategy_signals(self, date: str) -> Dict[str, Any]:
+        """Load strategy signals data for a specific date"""
+        try:
+            filename = f"strategy_signals_{date.replace('-', '')}.json"
+            filepath = self.data_dir / filename
+
+            if not filepath.exists():
+                return {}
+
+            with open(filepath, 'r') as f:
+                return json.load(f)
+
+        except Exception as e:
+            print(f"⚠️ JSON strategy signals load failed: {e}")
+            return {}
+
+    def load_hourly_metrics(self, date: str) -> Dict[str, Any]:
+        """Load hourly metrics data for a specific date"""
+        try:
+            filename = f"hourly_metrics_{date.replace('-', '')}.json"
+            filepath = self.data_dir / filename
+
+            if not filepath.exists():
+                return {}
+
+            with open(filepath, 'r') as f:
+                return json.load(f)
+
+        except Exception as e:
+            print(f"⚠️ JSON hourly metrics load failed: {e}")
+            return {}
 
     def close(self):
         """Close (no-op for JSON files)"""

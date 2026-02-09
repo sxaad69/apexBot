@@ -194,3 +194,110 @@ class BaseStrategy(ABC):
 
         # Current volume should be at least 1.2x average
         return current_volume >= (avg_volume * multiplier)
+
+    def calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+        """
+        Calculate ATR (Average True Range) for dynamic stop loss/take profit
+
+        Args:
+            df: DataFrame with high, low, close columns
+            period: ATR calculation period (default 14)
+
+        Returns:
+            DataFrame with ATR column added
+        """
+        df = df.copy()
+
+        # Calculate True Range
+        df['tr1'] = df['high'] - df['low']
+        df['tr2'] = abs(df['high'] - df['close'].shift(1))
+        df['tr3'] = abs(df['low'] - df['close'].shift(1))
+        df['true_range'] = df[['tr1', 'tr2', 'tr3']].max(axis=1)
+
+        # Calculate ATR using EMA
+        df['atr'] = df['true_range'].ewm(span=period, adjust=False).mean()
+
+        # Clean up temporary columns
+        df.drop(['tr1', 'tr2', 'tr3', 'true_range'], axis=1, inplace=True)
+
+        return df
+
+    def calculate_macd(self, df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
+        """
+        Calculate MACD (Moving Average Convergence Divergence)
+
+        Args:
+            df: DataFrame with close column
+            fast: Fast EMA period (default 12)
+            slow: Slow EMA period (default 26)
+            signal: Signal line period (default 9)
+
+        Returns:
+            DataFrame with MACD columns added
+        """
+        df = df.copy()
+
+        df['macd_fast'] = df['close'].ewm(span=fast, adjust=False).mean()
+        df['macd_slow'] = df['close'].ewm(span=slow, adjust=False).mean()
+        df['macd'] = df['macd_fast'] - df['macd_slow']
+        df['macd_signal'] = df['macd'].ewm(span=signal, adjust=False).mean()
+        df['macd_histogram'] = df['macd'] - df['macd_signal']
+
+        # Clean up temporary columns
+        df.drop(['macd_fast', 'macd_slow'], axis=1, inplace=True)
+
+        return df
+
+    def get_dynamic_stops(self, df: pd.DataFrame, side: str, atr_sl_mult: float = 1.5, atr_tp_mult: float = 3.0) -> tuple:
+        """
+        Calculate dynamic stop loss and take profit based on ATR
+
+        Args:
+            df: DataFrame with ATR calculated
+            side: 'buy' or 'sell'
+            atr_sl_mult: ATR multiplier for stop loss (default 1.5)
+            atr_tp_mult: ATR multiplier for take profit (default 3.0)
+
+        Returns:
+            (stop_loss, take_profit) tuple
+        """
+        if 'atr' not in df.columns:
+            df = self.calculate_atr(df)
+
+        current_price = df.iloc[-1]['close']
+        current_atr = df.iloc[-1]['atr']
+
+        if side == 'buy':
+            stop_loss = current_price - (current_atr * atr_sl_mult)
+            take_profit = current_price + (current_atr * atr_tp_mult)
+        else:  # sell
+            stop_loss = current_price + (current_atr * atr_sl_mult)
+            take_profit = current_price - (current_atr * atr_tp_mult)
+
+        return stop_loss, take_profit
+
+    def get_macd_confirmation(self, df: pd.DataFrame, side: str) -> bool:
+        """
+        Check if MACD confirms the signal direction
+
+        Args:
+            df: DataFrame with MACD calculated
+            side: 'buy' or 'sell'
+
+        Returns:
+            True if MACD confirms, False otherwise
+        """
+        if 'macd' not in df.columns:
+            df = self.calculate_macd(df)
+
+        current = df.iloc[-1]
+        previous = df.iloc[-2]
+
+        if side == 'buy':
+            # MACD bullish: histogram turning positive or MACD above signal
+            return (current['macd_histogram'] > 0 or
+                    (current['macd_histogram'] > previous['macd_histogram']))
+        else:  # sell
+            # MACD bearish: histogram turning negative or MACD below signal
+            return (current['macd_histogram'] < 0 or
+                    (current['macd_histogram'] < previous['macd_histogram']))

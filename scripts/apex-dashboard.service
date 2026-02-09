@@ -1,0 +1,18 @@
+[Unit]
+Description=Apex Hunter V14 Dashboard
+After=network.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/apex-hunter-v14-complete
+# Dashboard usually uses the same venv
+ExecStart=/home/ubuntu/apex-hunter-v14-complete/venv/bin/streamlit run dashboard/overview.py --server.port 8505 --server.address 0.0.0.0
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=apex-dashboard
+
+[Install]
+WantedBy=multi-user.target

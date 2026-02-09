@@ -1,0 +1,19 @@
+[Unit]
+Description=Apex Hunter V14 Trading Bot
+After=network.target
+
+[Service]
+# User should replace 'ubuntu' with their actual username if different
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/apex-hunter-v14-complete
+EnvironmentFile=/home/ubuntu/apex-hunter-v14-complete/.env
+ExecStart=/home/ubuntu/apex-hunter-v14-complete/venv/bin/python main.py
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=apex-bot
+
+[Install]
+WantedBy=multi-user.target

@@ -19,8 +19,33 @@ class MongoLogger(Logger):
     def __init__(self, config):
         super().__init__(config)
 
-        # Initialize JSON storage manager
-        self.mongo_manager = JSONManager(config)
+        # Determine storage engine based on config
+        use_mongo_db = False
+        
+        # Check for MongoDB Atlas connection string or credentials
+        if hasattr(config, 'MONGODB_HOST') and config.MONGODB_HOST:
+            if 'mongodb' in config.MONGODB_HOST or (hasattr(config, 'MONGODB_USERNAME') and config.MONGODB_USERNAME):
+                use_mongo_db = True
+                
+        if use_mongo_db:
+            try:
+                from database.mongo_manager import MongoManager
+                print("🍃 Attempting to connect to MongoDB Atlas...")
+                self.mongo_manager = MongoManager(config)
+                
+                if not self.mongo_manager.is_connected:
+                    print("⚠️ MongoDB connection failed, falling back to JSON storage")
+                    self.mongo_manager = JSONManager(config)
+            except ImportError:
+                print("⚠️ MongoDB drivers (pymongo/motor) not found, using JSON storage")
+                self.mongo_manager = JSONManager(config)
+            except Exception as e:
+                print(f"⚠️ MongoDB initialization error: {e}")
+                print("⚠️ Falling back to JSON storage")
+                self.mongo_manager = JSONManager(config)
+        else:
+            # Default to JSON storage
+            self.mongo_manager = JSONManager(config)
 
         # Async logging queue
         self.async_queue = asyncio.Queue()
@@ -239,6 +264,35 @@ class MongoLogger(Logger):
 
         self.mongo_manager.insert_document('spot_signals', document)
 
+    def save_active_positions(self, positions: Dict[str, Any], current_prices: Dict[str, float] = None):
+        """Save active positions with live prices for dashboard visibility"""
+        try:
+            if positions is None:
+                positions = {}
+                
+            # Insert current positions
+            docs = []
+            for key, pos in positions.items():
+                doc = pos.copy()
+                doc['position_key'] = key
+                
+                # Add current price if available for unrealized P&L calculation
+                symbol = pos.get('symbol')
+                if current_prices and symbol in current_prices:
+                    doc['current_price'] = current_prices[symbol]
+                
+                if 'timestamp' not in doc:
+                    doc['timestamp'] = datetime.utcnow()
+                docs.append(doc)
+            
+            # Use JSON manager's internal save method to overwrite
+            self.mongo_manager._save_collection('active_positions', docs)
+            return True
+            
+        except Exception as e:
+            print(f"⚠️ Failed to save active positions: {e}")
+            return False
+
     def log_arbitrage_opportunity(self, opportunity: Dict[str, Any]):
         """Log arbitrage opportunity to MongoDB"""
         document = {
@@ -257,6 +311,173 @@ class MongoLogger(Logger):
         }
 
         self.mongo_manager.insert_document('arbitrage_opportunities', document)
+
+    def save_market_analysis(self, date: str, hour: str, analysis_data: Dict[str, Any]) -> bool:
+        """Save market analysis data to MongoDB or JSON fallback"""
+        try:
+            document = {
+                'date': date,
+                'hour': hour,
+                'trading_type': analysis_data.get('trading_type', 'futures'),
+                'total_analyses': analysis_data.get('total_analyses', 0),
+                'futures_analyses': analysis_data.get('futures_analyses', 0),
+                'spot_analyses': analysis_data.get('spot_analyses', 0),
+                'arbitrage_analyses': analysis_data.get('arbitrage_analyses', 0),
+                'pairs_analyzed': analysis_data.get('pairs_analyzed', []),
+                'strategies_active': analysis_data.get('strategies_active', []),
+                'timestamp': datetime.utcnow()
+            }
+
+            # Try MongoDB first
+            if self.mongo_manager.is_connected:
+                self.mongo_manager.insert_document('market_analyses', document)
+                return True
+            else:
+                # Fallback to JSON
+                return self._save_market_analysis_json(date, analysis_data)
+
+        except Exception as e:
+            print(f"⚠️ Market analysis logging failed: {e}")
+            return False
+
+    def save_strategy_signals(self, date: str, hour: str, strategy_data: Dict[str, Any]) -> bool:
+        """Save strategy signals data to MongoDB or JSON fallback"""
+        try:
+            document = {
+                'date': date,
+                'hour': hour,
+                'trading_type': strategy_data.get('trading_type', 'futures'),
+                **{k: v for k, v in strategy_data.items() if k not in ['date', 'hour', 'trading_type']},
+                'timestamp': datetime.utcnow()
+            }
+
+            # Try MongoDB first
+            if self.mongo_manager.is_connected:
+                self.mongo_manager.insert_document('strategy_signals', document)
+                return True
+            else:
+                # Fallback to JSON
+                return self._save_strategy_signals_json(date, strategy_data)
+
+        except Exception as e:
+            print(f"⚠️ Strategy signals logging failed: {e}")
+            return False
+
+    def save_hourly_metrics(self, date: str, hour: str, metrics_data: Dict[str, Any]) -> bool:
+        """Save hourly trading metrics to MongoDB or JSON fallback"""
+        try:
+            document = {
+                'date': date,
+                'hour': hour,
+                'trading_type': metrics_data.get('trading_type', 'futures'),
+                'signals_generated': metrics_data.get('signals_generated', 0),
+                'trades_executed': metrics_data.get('trades_executed', 0),
+                'volume_rejections': metrics_data.get('volume_rejections', 0),
+                'adx_rejections': metrics_data.get('adx_rejections', 0),
+                'other_rejections': metrics_data.get('other_rejections', 0),
+                'total_rejections': metrics_data.get('total_rejections', 0),
+                'conversion_rate': metrics_data.get('conversion_rate', 0.0),
+                'timestamp': datetime.utcnow()
+            }
+
+            # Try MongoDB first
+            if self.mongo_manager.is_connected:
+                self.mongo_manager.insert_document('hourly_metrics', document)
+                return True
+            else:
+                # Fallback to JSON
+                return self._save_hourly_metrics_json(date, metrics_data)
+
+        except Exception as e:
+            print(f"⚠️ Hourly metrics logging failed: {e}")
+            return False
+
+    def _save_market_analysis_json(self, date: str, analysis_data: Dict[str, Any]) -> bool:
+        """Save market analysis data to JSON file (MongoDB fallback)"""
+        try:
+            filename = f"market_analyses_{date.replace('-', '')}.json"
+            filepath = self.mongo_manager.data_dir / filename
+
+            # Load existing data or create new
+            existing_data = {}
+            if filepath.exists():
+                try:
+                    with open(filepath, 'r') as f:
+                        existing_data = json.load(f)
+                except:
+                    existing_data = {}
+
+            # Add new analysis data
+            hour_key = analysis_data.get('hour', '00:00')
+            existing_data[hour_key] = analysis_data
+
+            # Save back to file
+            with open(filepath, 'w') as f:
+                json.dump(existing_data, f, indent=2, default=str)
+
+            return True
+
+        except Exception as e:
+            print(f"⚠️ JSON market analysis save failed: {e}")
+            return False
+
+    def _save_strategy_signals_json(self, date: str, strategy_data: Dict[str, Any]) -> bool:
+        """Save strategy signals data to JSON file (MongoDB fallback)"""
+        try:
+            filename = f"strategy_signals_{date.replace('-', '')}.json"
+            filepath = self.mongo_manager.data_dir / filename
+
+            # Load existing data or create new
+            existing_data = {}
+            if filepath.exists():
+                try:
+                    with open(filepath, 'r') as f:
+                        existing_data = json.load(f)
+                except:
+                    existing_data = {}
+
+            # Add new strategy data
+            hour_key = strategy_data.get('hour', '00:00')
+            existing_data[hour_key] = strategy_data
+
+            # Save back to file
+            with open(filepath, 'w') as f:
+                json.dump(existing_data, f, indent=2, default=str)
+
+            return True
+
+        except Exception as e:
+            print(f"⚠️ JSON strategy signals save failed: {e}")
+            return False
+
+    def _save_hourly_metrics_json(self, date: str, metrics_data: Dict[str, Any]) -> bool:
+        """Save hourly metrics data to JSON file (MongoDB fallback)"""
+        try:
+            filename = f"hourly_metrics_{date.replace('-', '')}.json"
+            filepath = self.mongo_manager.data_dir / filename
+
+            # Load existing data or create new
+            existing_data = {}
+            if filepath.exists():
+                try:
+                    with open(filepath, 'r') as f:
+                        existing_data = json.load(f)
+                except:
+                    existing_data = {}
+
+            # Add new metrics data
+            hour_key = metrics_data.get('hour', '00:00')
+            existing_data[hour_key] = metrics_data
+
+            # Save back to file
+            with open(filepath, 'w') as f:
+                json.dump(existing_data, f, indent=2, default=str)
+
+            return True
+
+        except Exception as e:
+            print(f"⚠️ JSON hourly metrics save failed: {e}")
+            return False
 
     def debug(self, message: str, **kwargs):
         """Log debug message to dedicated debug_logs.json file"""

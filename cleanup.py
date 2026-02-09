@@ -57,49 +57,101 @@ def clean_log_files(config, dry_run=False):
 
 
 def clean_database_files(config, dry_run=False):
-    """Clean all JSON database files"""
+    """Clean all JSON database files including new market analysis files"""
     data_dir = Path("data")
 
     if not data_dir.exists():
         print("⚠️  Data directory not found")
         return 0
 
-    # JSON files to clean
-    json_files = [
+    # Base JSON files to clean (main database files)
+    base_json_files = [
         "futures_trades.json",
         "spot_signals.json",
         "arbitrage_opportunities.json",
         "trailing_stops.json",
         "risk_rejections.json",
-        "system_logs.json"
+        "system_logs.json",
+        "debug_logs.json"
+    ]
+
+    # Market analysis database files (may have dated versions)
+    market_analysis_files = [
+        "market_analyses.json",
+        "strategy_signals.json",
+        "hourly_metrics.json"
     ]
 
     files_to_clean = []
     total_size = 0
 
-    for json_file in json_files:
+    # Clean base files
+    for json_file in base_json_files:
         file_path = data_dir / json_file
         if file_path.exists():
             file_size = file_path.stat().st_size
             total_size += file_size
             files_to_clean.append((file_path, file_size))
 
+    # Clean market analysis files and their dated versions
+    for base_file in market_analysis_files:
+        # Clean the main file
+        file_path = data_dir / base_file
+        if file_path.exists():
+            file_size = file_path.stat().st_size
+            total_size += file_size
+            files_to_clean.append((file_path, file_size))
+
+        # Clean dated versions (e.g., market_analyses_20260112.json)
+        base_name = base_file.replace('.json', '')
+        dated_files = list(data_dir.glob(f"{base_name}_*.json"))
+        for dated_file in dated_files:
+            file_size = dated_file.stat().st_size
+            total_size += file_size
+            files_to_clean.append((dated_file, file_size))
+
+    # Also clean any other JSON files that might exist
+    all_json_files = list(data_dir.glob("*.json"))
+    existing_files = [f[0] for f in files_to_clean]
+
+    for json_file in all_json_files:
+        if json_file not in existing_files:
+            file_size = json_file.stat().st_size
+            total_size += file_size
+            files_to_clean.append((json_file, file_size))
+
     if not files_to_clean:
         print("ℹ️  No database files found")
         return 0
 
+    # Sort by filename for cleaner output
+    files_to_clean.sort(key=lambda x: x[0].name)
+
     print(f"🗑️  Found {len(files_to_clean)} database files to clean:")
     print(f"   Total size: {total_size / (1024 * 1024):.2f} MB")
-    for file_path, file_size in files_to_clean:
-        size_mb = file_size / (1024 * 1024)
-        print(f"   • {file_path.name} ({size_mb:.2f} MB)")
+
+    # Group files by type for better organization
+    main_files = [f for f in files_to_clean if '_' not in f[0].name or f[0].name.count('_') == 0]
+    dated_files = [f for f in files_to_clean if f[0].name.count('_') > 0]
+
+    if main_files:
+        print("   📄 Main database files:")
+        for file_path, file_size in main_files:
+            size_mb = file_size / (1024 * 1024)
+            print(f"      • {file_path.name} ({size_mb:.2f} MB)")
+
+    if dated_files:
+        print("   📅 Dated analysis files:")
+        for file_path, file_size in dated_files:
+            size_mb = file_size / (1024 * 1024)
+            print(f"      • {file_path.name} ({size_mb:.2f} MB)")
 
     if dry_run:
         print("\n🔍 Dry run - no files deleted")
         return len(files_to_clean)
 
     # Confirm deletion
-    confirm = input(f"\n⚠️  Delete {len(files_to_clean)} database files? (yes/no): ").lower().strip()
+    confirm = input(f"\n⚠️  Delete {len(files_to_clean)} database files ({total_size / (1024 * 1024):.2f} MB)? (yes/no): ").lower().strip()
 
     if confirm not in ['yes', 'y']:
         print("❌ Cleanup cancelled")
@@ -107,15 +159,21 @@ def clean_database_files(config, dry_run=False):
 
     # Delete files
     deleted_count = 0
-    for file_path, _ in files_to_clean:
+    deleted_size = 0
+
+    for file_path, file_size in files_to_clean:
         try:
             file_path.unlink()
-            print(f"   ✅ Deleted: {file_path.name}")
+            print(f"   ✅ Deleted: {file_path.name} ({file_size / (1024 * 1024):.2f} MB)")
             deleted_count += 1
+            deleted_size += file_size
         except Exception as e:
             print(f"   ❌ Error deleting {file_path.name}: {e}")
 
-    print(f"\n✅ Database cleanup completed: {deleted_count} files deleted")
+    print(f"\n✅ Database cleanup completed:")
+    print(f"   • Files deleted: {deleted_count}")
+    print(f"   • Space freed: {deleted_size / (1024 * 1024):.2f} MB")
+
     return deleted_count
 
 
