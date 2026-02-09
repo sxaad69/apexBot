@@ -60,10 +60,10 @@ class TelegramBot:
             parse_mode: HTML or Markdown
         
         Returns:
-            True if sent successfully
+            Message ID (int) if sent successfully, None otherwise
         """
         if not self.is_connected:
-            return False
+            return None
         
         try:
             url = f"{self.base_url}/sendMessage"
@@ -76,13 +76,41 @@ class TelegramBot:
             response = requests.post(url, json=payload, timeout=10)
             
             if response.status_code == 200:
-                return True
+                return response.json().get('result', {}).get('message_id')
             else:
                 print(f"❌ {self.bot_name} failed to send message: {response.text}")
-                return False
+                return None
                 
         except Exception as e:
             print(f"❌ {self.bot_name} send error: {e}")
+            return None
+
+    def delete_message(self, message_id: int) -> bool:
+        """
+        Delete a message from the chat
+        
+        Args:
+            message_id: ID of the message to delete
+            
+        Returns:
+            True if deleted successfully
+        """
+        if not self.is_connected:
+            return False
+            
+        try:
+            url = f"{self.base_url}/deleteMessage"
+            payload = {
+                'chat_id': self.chat_id,
+                'message_id': message_id
+            }
+            
+            response = requests.post(url, json=payload, timeout=10)
+            
+            return response.status_code == 200
+                
+        except Exception as e:
+            # print(f"❌ {self.bot_name} delete error: {e}")
             return False
     
     def send_alert(self, title: str, message: str, level: str = "INFO") -> bool:
@@ -164,12 +192,108 @@ class TelegramNotificationManager:
                 logger.system("Arbitrage Telegram bot initialized")
             else:
                 logger.warning("Arbitrage Telegram enabled but credentials missing")
+        
+        # Message history file
+        from pathlib import Path
+        self.history_file = Path(getattr(config, 'DATA_DIRECTORY', './data')) / 'telegram_history.json'
+        self._ensure_history_file()
+
+    def _ensure_history_file(self):
+        """Ensure history file exists"""
+        import json
+        if not self.history_file.parent.exists():
+            self.history_file.parent.mkdir(parents=True, exist_ok=True)
+            
+        if not self.history_file.exists():
+            with open(self.history_file, 'w') as f:
+                json.dump([], f)
+
+    def _log_message(self, message_id: int, chat_id: str, bot_name: str):
+        """Log message ID for future wiping"""
+        import json
+        try:
+            entry = {
+                'message_id': message_id,
+                'chat_id': chat_id,
+                'bot': bot_name,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            history = []
+            if self.history_file.exists():
+                with open(self.history_file, 'r') as f:
+                    try:
+                        history = json.load(f)
+                    except json.JSONDecodeError:
+                        history = []
+            
+            history.append(entry)
+            
+            with open(self.history_file, 'w') as f:
+                json.dump(history, f, indent=2)
+                
+        except Exception as e:
+            print(f"Failed to log Telegram message: {e}")
+
+    def wipe_all_messages(self):
+        """Delete all tracked messages from Telegram"""
+        import json
+        import time
+        
+        if not self.history_file.exists():
+            print("ℹ️  No Telegram message history found to wipe")
+            return
+            
+        print("🗑️  Wiping Telegram messages...")
+        
+        try:
+            with open(self.history_file, 'r') as f:
+                history = json.load(f)
+        except Exception:
+            print("❌ Failed to read telegram history")
+            return
+            
+        if not history:
+            print("ℹ️  Telegram history is empty")
+            return
+            
+        deleted_count = 0
+        failed_count = 0
+        
+        # Bots map
+        bots = {
+            'Futures': self.futures_bot,
+            'Spot': self.spot_bot,
+            'Arbitrage': self.arbitrage_bot
+        }
+        
+        for entry in history:
+            bot_name = entry.get('bot')
+            message_id = entry.get('message_id')
+            
+            bot = bots.get(bot_name)
+            if bot and bot.delete_message(message_id):
+                deleted_count += 1
+            else:
+                failed_count += 1
+            
+            # Rate limit avoidance
+            time.sleep(0.05)
+            
+        print(f"✅ Deleted {deleted_count} messages ({failed_count} failed/expired)")
+        
+        # Clear history file
+        with open(self.history_file, 'w') as f:
+            json.dump([], f)
     
     # Futures bot methods
     def send_futures_message(self, message: str) -> bool:
         """Send message to Futures bot"""
         if self.futures_bot:
-            return self.futures_bot.send_message(message)
+            msg_id = self.futures_bot.send_message(message)
+            if msg_id:
+                self._log_message(msg_id, self.futures_bot.chat_id, "Futures")
+                return True
         return False
     
     def send_futures_trade_entry(self, trade: Dict) -> bool:
@@ -217,7 +341,11 @@ class TelegramNotificationManager:
 
 <b>Strategy:</b> {trade.get('strategy', 'Unknown')}
 """
-        return self.futures_bot.send_message(message)
+        msg_id = self.futures_bot.send_message(message)
+        if msg_id:
+            self._log_message(msg_id, self.futures_bot.chat_id, "Futures")
+            return True
+        return False
 
     def send_futures_trailing_stop_update(self, update: Dict) -> bool:
         """Send futures trailing stop update notification"""
@@ -242,8 +370,47 @@ class TelegramNotificationManager:
 
 ⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
-        return self.futures_bot.send_message(message)
-    
+        msg_id = self.futures_bot.send_message(message)
+        if msg_id:
+            self._log_message(msg_id, self.futures_bot.chat_id, "Futures")
+            return True
+        return False
+
+    def send_futures_trailing_tp_update(self, update: Dict) -> bool:
+        """Send futures trailing take profit update notification"""
+        if not self.futures_bot:
+            return False
+
+        update_type = update.get('type', 'update')  # 'activated' or 'update'
+        emoji = "🎯" if update_type == 'activated' else "💰"
+
+        # Get peak/trough price depending on position type
+        peak_price = update.get('peak_price') or update.get('trough_price', 0)
+        peak_label = "Peak Price" if update.get('peak_price') else "Trough Price"
+
+        message = f"""
+{emoji} <b>FUTURES TRAILING TP {update_type.upper()}</b>
+
+<b>Symbol:</b> {update.get('symbol')}
+<b>Current Price:</b> ${update.get('current_price', 0):,.2f}
+
+<b>Strategy:</b> {update.get('strategy', 'Unknown')}
+
+<b>Profit:</b> {update.get('profit_percent', 0):.2f}%
+<b>{peak_label}:</b> ${peak_price:,.2f}
+
+<b>Take Profit:</b> ${update.get('old_take_profit', 0):,.2f} → ${update.get('new_take_profit', 0):,.2f}
+
+💡 Locking in profits as trade extends!
+
+⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
+        msg_id = self.futures_bot.send_message(message)
+        if msg_id:
+            self._log_message(msg_id, self.futures_bot.chat_id, "Futures")
+            return True
+        return False
+
     def send_futures_daily_summary(self, summary: Dict) -> bool:
         """Send futures daily summary"""
         if not self.futures_bot:
@@ -266,13 +433,20 @@ Win Rate: {summary.get('win_rate', 0):.1f}%
 Max Drawdown: {summary.get('max_drawdown', 0):.2f}%
 Sharpe Ratio: {summary.get('sharpe_ratio', 0):.2f}
 """
-        return self.futures_bot.send_message(message)
+        msg_id = self.futures_bot.send_message(message)
+        if msg_id:
+            self._log_message(msg_id, self.futures_bot.chat_id, "Futures")
+            return True
+        return False
     
     # Spot bot methods
     def send_spot_message(self, message: str) -> bool:
         """Send message to Spot bot"""
         if self.spot_bot:
-            return self.spot_bot.send_message(message)
+            msg_id = self.spot_bot.send_message(message)
+            if msg_id:
+                self._log_message(msg_id, self.spot_bot.chat_id, "Spot")
+                return True
         return False
     
     def send_spot_signal(self, signal: Dict) -> bool:
@@ -299,8 +473,128 @@ Sharpe Ratio: {summary.get('sharpe_ratio', 0):.2f}
 
 ⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
-        return self.spot_bot.send_message(message)
-    
+        msg_id = self.spot_bot.send_message(message)
+        if msg_id:
+            self._log_message(msg_id, self.spot_bot.chat_id, "Spot")
+            return True
+        return False
+
+    def send_spot_trailing_stop_update(self, update: Dict) -> bool:
+        """Send spot trailing stop update notification"""
+        if not self.spot_bot:
+            return False
+
+        update_type = update.get('type', 'update')  # 'activated' or 'update'
+        emoji = "🚀" if update_type == 'activated' else "📈"
+
+        message = f"""
+{emoji} <b>SPOT TRAILING STOP {update_type.upper()}</b>
+
+<b>Symbol:</b> {update.get('symbol')}
+<b>Current Price:</b> ${update.get('current_price', 0):,.2f}
+
+<b>Strategy:</b> {update.get('strategy', 'Unknown')}
+<b>Profit:</b> {update.get('profit_percent', 0):.2f}%
+
+<b>Stop Loss:</b> ${update.get('old_stop_loss', 0):,.2f} → ${update.get('new_stop_loss', 0):,.2f}
+
+⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
+        msg_id = self.spot_bot.send_message(message)
+        if msg_id:
+            self._log_message(msg_id, self.spot_bot.chat_id, "Spot")
+            return True
+        return False
+
+    def send_spot_trailing_tp_update(self, update: Dict) -> bool:
+        """Send spot trailing take profit update notification"""
+        if not self.spot_bot:
+            return False
+
+        update_type = update.get('type', 'update')  # 'activated' or 'update'
+        emoji = "🎯" if update_type == 'activated' else "💰"
+
+        message = f"""
+{emoji} <b>SPOT TRAILING TP {update_type.upper()}</b>
+
+<b>Symbol:</b> {update.get('symbol')}
+<b>Current Price:</b> ${update.get('current_price', 0):,.2f}
+
+<b>Strategy:</b> {update.get('strategy', 'Unknown')}
+<b>Profit:</b> {update.get('profit_percent', 0):.2f}%
+
+<b>Take Profit:</b> ${update.get('old_take_profit', 0):,.2f} → ${update.get('new_take_profit', 0):,.2f}
+
+💡 Locking in profits!
+
+⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
+        msg_id = self.spot_bot.send_message(message)
+        if msg_id:
+            self._log_message(msg_id, self.spot_bot.chat_id, "Spot")
+            return True
+        return False
+
+    def send_spot_trade_entry(self, trade: Dict) -> bool:
+        """Send spot trade entry notification"""
+        if not self.spot_bot:
+            return False
+
+        message = f"""
+🟢 <b>SPOT TRADE ENTRY</b>
+
+<b>Symbol:</b> {trade.get('symbol')}
+<b>Side:</b> {trade.get('side', '').upper()}
+<b>Entry Price:</b> ${trade.get('entry_price', 0):,.2f}
+<b>Size:</b> ${trade.get('size', 0):,.2f}
+
+<b>Stop Loss:</b> ${trade.get('stop_loss', 0):,.2f}
+<b>Take Profit:</b> ${trade.get('take_profit', 0):,.2f}
+
+<b>Strategy:</b> {trade.get('strategy', 'Unknown')}
+
+⏰ {trade.get('timestamp', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}
+"""
+        msg_id = self.spot_bot.send_message(message)
+        if msg_id:
+            self._log_message(msg_id, self.spot_bot.chat_id, "Spot")
+            return True
+        return False
+
+    def send_spot_trade_exit(self, trade: Dict) -> bool:
+        """Send spot trade exit notification"""
+        if not self.spot_bot:
+            return False
+
+        pnl = trade.get('pnl_usdt', 0)
+        pnl_pct = trade.get('pnl_pct', 0)
+        emoji = "🟢" if pnl >= 0 else "🔴"
+        result = "WIN" if pnl >= 0 else "LOSS"
+
+        message = f"""
+{emoji} <b>SPOT TRADE EXIT - {result}</b>
+
+<b>Symbol:</b> {trade.get('symbol')}
+<b>Side:</b> {trade.get('side', '').upper()}
+
+<b>Entry:</b> ${trade.get('entry_price', 0):,.2f}
+<b>Exit:</b> ${trade.get('exit_price', 0):,.2f}
+<b>Reason:</b> {trade.get('reason', 'Unknown').replace('_', ' ').upper()}
+
+<b>P&L:</b> ${pnl:+,.2f} ({pnl_pct:+.2f}%)
+<b>Duration:</b> {trade.get('duration', 0)} minutes
+
+<b>Strategy:</b> {trade.get('strategy', 'Unknown')}
+<b>Balance:</b> ${trade.get('balance_after', 0):,.2f}
+
+⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
+        msg_id = self.spot_bot.send_message(message)
+        if msg_id:
+            self._log_message(msg_id, self.spot_bot.chat_id, "Spot")
+            return True
+        return False
+
     def send_spot_daily_summary(self, summary: Dict) -> bool:
         """Send spot daily summary"""
         if not self.spot_bot:
@@ -321,13 +615,20 @@ Spot (No Leverage): +{summary.get('spot_return', 0):.2f}%
 Futures (With Leverage): +{summary.get('futures_return', 0):.2f}%
 Leverage Benefit: {summary.get('leverage_multiplier', 0):.2f}x
 """
-        return self.spot_bot.send_message(message)
+        msg_id = self.spot_bot.send_message(message)
+        if msg_id:
+            self._log_message(msg_id, self.spot_bot.chat_id, "Spot")
+            return True
+        return False
     
     # Arbitrage bot methods
     def send_arbitrage_message(self, message: str) -> bool:
         """Send message to Arbitrage bot"""
         if self.arbitrage_bot:
-            return self.arbitrage_bot.send_message(message)
+            msg_id = self.arbitrage_bot.send_message(message)
+            if msg_id:
+                self._log_message(msg_id, self.arbitrage_bot.chat_id, "Arbitrage")
+                return True
         return False
     
     def send_arbitrage_opportunity(self, opportunity: Dict) -> bool:
@@ -372,7 +673,11 @@ Profit %: {opportunity.get('profit_percent', 0):.2f}%
 ⏰ {datetime.now().strftime('%H:%M:%S')}
 """
         
-        return self.arbitrage_bot.send_message(message)
+        msg_id = self.arbitrage_bot.send_message(message)
+        if msg_id:
+            self._log_message(msg_id, self.arbitrage_bot.chat_id, "Arbitrage")
+            return True
+        return False
     
     def send_arbitrage_daily_summary(self, summary: Dict) -> bool:
         """Send arbitrage daily summary"""
@@ -395,7 +700,11 @@ Average per Trade: ${summary.get('avg_profit', 0):.2f}
 📈 <b>Most Active:</b>
 Pair: {summary.get('most_active_pair', 'N/A')}
 """
-        return self.arbitrage_bot.send_message(message)
+        msg_id = self.arbitrage_bot.send_message(message)
+        if msg_id:
+            self._log_message(msg_id, self.arbitrage_bot.chat_id, "Arbitrage")
+            return True
+        return False
     
     # General methods
     def send_startup_message(self):
@@ -418,13 +727,16 @@ Bot is now monitoring markets...
 """
         
         if self.futures_bot:
-            self.futures_bot.send_message(startup_msg)
+            msg_id = self.futures_bot.send_message(startup_msg)
+            if msg_id: self._log_message(msg_id, self.futures_bot.chat_id, "Futures")
         
         if self.spot_bot:
-            self.spot_bot.send_message(startup_msg)
+            msg_id = self.spot_bot.send_message(startup_msg)
+            if msg_id: self._log_message(msg_id, self.spot_bot.chat_id, "Spot")
         
         if self.arbitrage_bot:
-            self.arbitrage_bot.send_message(startup_msg)
+            msg_id = self.arbitrage_bot.send_message(startup_msg)
+            if msg_id: self._log_message(msg_id, self.arbitrage_bot.chat_id, "Arbitrage")
     
     def send_error_alert(self, error_msg: str, module: str = "System"):
         """Send error alert to all active bots"""
@@ -438,13 +750,16 @@ Bot is now monitoring markets...
 """
         
         if self.futures_bot:
-            self.futures_bot.send_alert("Error Alert", alert, "ERROR")
+            msg_id = self.futures_bot.send_alert("Error Alert", alert, "ERROR")
+            if msg_id: self._log_message(msg_id, self.futures_bot.chat_id, "Futures")
         
         if self.spot_bot:
-            self.spot_bot.send_alert("Error Alert", alert, "ERROR")
+            msg_id = self.spot_bot.send_alert("Error Alert", alert, "ERROR")
+            if msg_id: self._log_message(msg_id, self.spot_bot.chat_id, "Spot")
         
         if self.arbitrage_bot:
-            self.arbitrage_bot.send_alert("Error Alert", alert, "ERROR")
+            msg_id = self.arbitrage_bot.send_alert("Error Alert", alert, "ERROR")
+            if msg_id: self._log_message(msg_id, self.arbitrage_bot.chat_id, "Arbitrage")
 
 
 # For backwards compatibility and convenience

@@ -148,6 +148,12 @@ class Config:
         self.STOP_LOSS_PERCENT = float(os.getenv('STOP_LOSS_PERCENT', '2'))
         self.TRAILING_STOP_ACTIVATION = float(os.getenv('TRAILING_STOP_ACTIVATION', '5'))
         self.TRAILING_STOP_DISTANCE = float(os.getenv('TRAILING_STOP_DISTANCE', '2'))
+
+        # Trailing Take Profit Configuration
+        self.TRAILING_TP_ENABLED = self._str_to_bool(os.getenv('TRAILING_TP_ENABLED', 'true'))
+        self.TRAILING_TP_ACTIVATION = float(os.getenv('TRAILING_TP_ACTIVATION', '3'))  # Activate at 3% profit
+        self.TRAILING_TP_DISTANCE = float(os.getenv('TRAILING_TP_DISTANCE', '1.5'))    # Trail 1.5% behind peak
+
         self.MAX_DAILY_LOSS_PERCENT = float(os.getenv('MAX_DAILY_LOSS_PERCENT', '5'))
         self.MAX_DRAWDOWN_PERCENT = float(os.getenv('MAX_DRAWDOWN_PERCENT', '15'))
         self.CORRELATION_THRESHOLD = float(os.getenv('CORRELATION_THRESHOLD', '0.7'))
@@ -210,6 +216,15 @@ class Config:
         # ===== Cleanup Configuration =====
         self.CLEAN_LOGS = self._str_to_bool(os.getenv('CLEAN_LOGS', 'no'))
         self.CLEAN_DB = self._str_to_bool(os.getenv('CLEAN_DB', 'no'))
+        self.CLEAN_TELEGRAM = self._str_to_bool(os.getenv('CLEAN_TELEGRAM', 'no'))
+
+        # ===== Testing/Filter Configuration =====
+        self.TESTING_MODE = self._str_to_bool(os.getenv('TESTING_MODE', 'false'))
+        self.TESTING_ADX_MIN = float(os.getenv('TESTING_ADX_MIN', '15'))
+        self.TESTING_VOLUME_MULT = float(os.getenv('TESTING_VOLUME_MULT', '0.8'))
+        self.MIN_VOLUME_USDT = float(os.getenv('MIN_VOLUME_USDT', '10000'))
+        self.MAX_VOLATILITY_PERCENT = float(os.getenv('MAX_VOLATILITY_PERCENT', '5.0'))
+        self.FORCE_TRADES = self._str_to_bool(os.getenv('FORCE_TRADES', 'false'))
 
         # ===== System Configuration =====
         self.HEARTBEAT_INTERVAL = int(os.getenv('HEARTBEAT_INTERVAL', '60'))
