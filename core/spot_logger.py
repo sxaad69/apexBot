@@ -116,6 +116,16 @@ class SpotLogger:
         }
         
         self.logger.info(f"Virtual spot position opened: {symbol} @ ${signal['entry_price']}")
+
+        # MongoDB structured logging
+        self.logger.trade_entry(
+            symbol=symbol,
+            side=signal['side'],
+            size=signal['position_size'],
+            price=signal['entry_price'],
+            leverage=1,
+            strategy="SpotLogger"
+        )
     
     def _close_virtual_position(self, symbol: str, exit_price: float):
         """Close a virtual position and calculate P&L"""
@@ -149,13 +159,19 @@ class SpotLogger:
         if self.virtual_balance > self.peak_balance:
             self.peak_balance = self.virtual_balance
         
-        # Log exit
+        # Log exit (Enhanced for MongoDB Atlas)
         duration = datetime.now() - position['entry_time']
         self.logger.trade_exit(
             symbol=symbol,
             pnl=pnl_usdt,
             pnl_percent=pnl_percent,
-            duration=str(duration)
+            duration=str(duration),
+            exit_price=exit_price,
+            reason="simulation",
+            strategy="SpotLogger",
+            entry_price=entry_price,
+            side=side,
+            leverage=1
         )
         
         # Remove position

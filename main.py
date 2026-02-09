@@ -644,6 +644,19 @@ class PaperTradingEngine:
 
             self.logger.info(f"[{strategy_name}] {symbol} ENTRY {signal['side'].upper()} @ ${signal['entry_price']:.2f} (Leverage: {leverage}x) ✅ Risk Approved")
 
+            # MongoDB structured logging
+            self.logger.trade_entry(
+                symbol=symbol,
+                side=signal['side'],
+                size=position['size'],
+                price=signal['entry_price'],
+                leverage=leverage,
+                strategy=strategy_name,
+                confidence=confidence,
+                stop_loss=signal['stop_loss'],
+                take_profit=signal['take_profit']
+            )
+
             # Telegram notification
             if self.telegram and self.telegram.futures_bot:
                 self.telegram.send_futures_trade_entry({
@@ -715,6 +728,22 @@ class PaperTradingEngine:
 
                 self.logger.info(f"[{strategy_name}] {symbol} EXIT {reason.upper()} @ ${current_price:.2f}, "
                                f"Leverage: {leverage}x, P&L: ${pnl_amount:+.2f} ({leveraged_pnl_percent*100:+.2f}%)")
+
+                # MongoDB structured logging
+                self.logger.trade_exit(
+                    symbol=symbol,
+                    pnl=pnl_amount,
+                    pnl_percent=leveraged_pnl_percent * 100,
+                    duration=f"{(trade['exit_time'] - trade['entry_time']).seconds // 60} minutes",
+                    exit_price=current_price,
+                    reason=reason,
+                    strategy=strategy_name,
+                    entry_price=position['entry_price'],
+                    side=position['side'],
+                    leverage=leverage,
+                    stop_loss=position['stop_loss'],
+                    take_profit=position['take_profit']
+                )
 
                 # Telegram notification
                 if self.telegram and self.telegram.futures_bot:

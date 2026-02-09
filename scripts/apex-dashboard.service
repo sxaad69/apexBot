@@ -5,9 +5,9 @@ After=network.target
 [Service]
 User=ubuntu
 Group=ubuntu
-WorkingDirectory=/home/ubuntu/apex-hunter-v14-complete
+WorkingDirectory=/home/ubuntu/apexBot
 # Dashboard usually uses the same venv
-ExecStart=/home/ubuntu/apex-hunter-v14-complete/venv/bin/streamlit run dashboard/overview.py --server.port 8505 --server.address 0.0.0.0
+ExecStart=/home/ubuntu/apexBot/venv/bin/streamlit run dashboard/overview.py --server.port 8505 --server.address 0.0.0.0
 Restart=always
 RestartSec=10
 StandardOutput=syslog
