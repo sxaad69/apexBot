@@ -1356,7 +1356,7 @@ class ApexHunterBot:
         self.running = False
         
         print("=" * 80)
-        print("  APEX HUNTER V14")
+        print("  APEX HUNTER V14 - V14.1-FIXED-LOGGING")
         print("=" * 80)
         print()
         
