@@ -67,6 +67,10 @@ class PaperTradingEngine:
                 StrategyA5(config, logger)
             ]
         
+        # Inject exchange client into strategies for microstructure analysis (A5)
+        for strategy in self.strategies:
+            strategy.exchange_client = self.exchange
+        
         # Virtual positions (key: "strategy_name:symbol" -> position_data)
         self.positions = {}
 
@@ -178,8 +182,10 @@ class PaperTradingEngine:
             # Fallback to configured pairs
             return getattr(self.config, 'FUTURES_PAIRS', ['BTC/USDT', 'ETH/USDT', 'SOL/USDT'])
 
-    def fetch_market_data(self, symbol='BTC/USDT', timeframe='15m', limit=200):
-        """Fetch live market data"""
+    def fetch_market_data(self, symbol='BTC/USDT', timeframe=None, limit=300):
+        """Fetch spot market data using CCXT (exchange-agnostic)"""
+        if timeframe is None:
+            timeframe = self.config.TIMEFRAME
         try:
             ohlcv = self.exchange.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
@@ -537,12 +543,12 @@ class PaperTradingEngine:
 
         # Dynamic leverage based on actual strategy confidence output
         # Adjusted thresholds to match real strategy performance (0.40-0.70 range)
-        if confidence > 0.75:  # A5 exceptional signals (rare, high conviction)
-            leverage = min(5, max_leverage)  # Up to 5x
+        if confidence > 0.75:  # A5 exceptional signals
+            leverage = max_leverage  # Use full power
         elif confidence > 0.65:  # A1-A4 strong signals
-            leverage = min(3, max_leverage)  # Up to 3x
-        elif confidence > 0.55:  # Medium confidence signals
-            leverage = min(2, max_leverage)  # Up to 2x
+            leverage = max_leverage * 0.7  # Use 70% of max power
+        elif confidence > 0.55:  # Medium signals
+            leverage = max_leverage * 0.4  # Use 40% of max power
         else:
             leverage = 1.0  # Low confidence: no leverage
 
@@ -1391,7 +1397,7 @@ class ApexHunterBot:
             # Initialize Spot Trading Engine for spot trading simulation
             if getattr(self.config, 'ENABLE_SPOT_TRADING', False):
                 print("📊 Initializing SPOT TRADING ENGINE...")
-                self.spot_engine = SpotTradingEngine(self.config, self.logger, self.telegram, self.engine.risk_manager)
+                self.spot_engine = SpotTradingEngine(self.config, self.logger, self.telegram, self.engine.risk_manager, self.engine.exchange)
                 print("✅ Spot trading engine ready")
 
             # Initialize Spot Logger for spot signal logging (if enabled separately)

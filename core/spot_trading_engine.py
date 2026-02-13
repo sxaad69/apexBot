@@ -14,11 +14,12 @@ class SpotTradingEngine:
     No leverage, but complete position management like futures engine
     """
 
-    def __init__(self, config, logger, telegram, risk_manager):
+    def __init__(self, config, logger, telegram, risk_manager, exchange_client=None):
         self.config = config
         self.logger = logger
         self.telegram = telegram
         self.risk_manager = risk_manager
+        self.exchange_client = exchange_client
 
         # Virtual capital (spot - no leverage)
         self.virtual_capital = getattr(config, 'SPOT_VIRTUAL_CAPITAL', 100)
@@ -59,13 +60,20 @@ class SpotTradingEngine:
                 StrategyA4(config, logger),
                 StrategyA5(config, logger)
             ]
+        
+        # Inject exchange client into strategies
+        if self.exchange_client:
+            for strategy in self.strategies:
+                strategy.exchange_client = self.exchange_client
 
         self.logger.info(f"Spot trading initialized with {len(self.strategies)} strategies")
         self.logger.info(f"Virtual capital: ${self.virtual_capital}")
         self.logger.info(f"Exchange: {config.SPOT_EXCHANGE}")
 
-    def fetch_market_data(self, symbol='BTC/USDT', timeframe='15m', limit=200):
+    def fetch_market_data(self, symbol='BTC/USDT', timeframe=None, limit=300):
         """Fetch spot market data using CCXT (exchange-agnostic)"""
+        if timeframe is None:
+            timeframe = self.config.TIMEFRAME
         try:
             import ccxt
 
