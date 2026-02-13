@@ -23,7 +23,13 @@ def main():
     print("  APEX HUNTER V14 - Performance Analysis")
     print("=" * 60)
 
-    config = Config()
+    # Create config without running validation for diagnostic purposes
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    config = Config.__new__(Config)
+    config._load_configuration() 
+    # Skip _validate_configuration() to avoid Telegram credential errors during analysis
     mongo = MongoManager(config)
 
     if not mongo.is_connected:
