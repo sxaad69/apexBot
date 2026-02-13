@@ -34,18 +34,21 @@ class MongoLogger(Logger):
                 self.mongo_manager = MongoManager(config)
                 
                 if not self.mongo_manager.is_connected:
-                    print("⚠️ MongoDB connection failed, falling back to JSON storage")
+                    self.system("⚠️ MongoDB connection failed, falling back to JSON storage")
                     self.mongo_manager = JSONManager(config)
+                else:
+                    self.system(f"🍃 MongoDB Atlas connected: {config.MONGODB_DATABASE}")
             except ImportError:
-                print("⚠️ MongoDB drivers (pymongo/motor) not found, using JSON storage")
+                self.system("⚠️ MongoDB drivers (pymongo/motor) not found, using JSON storage")
                 self.mongo_manager = JSONManager(config)
             except Exception as e:
-                print(f"⚠️ MongoDB initialization error: {e}")
-                print("⚠️ Falling back to JSON storage")
+                self.system(f"⚠️ MongoDB initialization error: {e}")
+                self.system("⚠️ Falling back to JSON storage")
                 self.mongo_manager = JSONManager(config)
         else:
             # Default to JSON storage
             self.mongo_manager = JSONManager(config)
+            self.system("📂 Using local JSON storage (MongoDB Atlas disabled or no host provided)")
 
         # Async logging queue
         self.async_queue = asyncio.Queue()
