@@ -34,9 +34,9 @@ class StrategyA3(BaseStrategy):
         # Volume spike threshold
         self.volume_spike_mult = 1.5
 
-        # Tighter stops for scalping (1:2 R:R)
-        self.atr_sl_mult = 1.0   # Tight stop
-        self.atr_tp_mult = 2.0   # 2:1 reward:risk
+        # Balanced stops for scalping (1:2.3+ R:R)
+        self.atr_sl_mult = 1.5   # Wider stop for safety
+        self.atr_tp_mult = 3.5   # Higher reward target
 
         # Universal filters
         self.filters = get_strategy_filters(config)

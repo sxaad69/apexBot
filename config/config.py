@@ -97,6 +97,7 @@ class Config:
         self.FUTURES_AUTO_MIN_VOLUME = float(os.getenv('FUTURES_AUTO_MIN_VOLUME', '1000000'))
 
         # ===== Spot Trading Configuration =====
+        self.ENABLE_SPOT_TRADING = self._str_to_bool(os.getenv('ENABLE_SPOT_TRADING', 'false'))
         self.ENABLE_SPOT_LOGGER = self._str_to_bool(os.getenv('ENABLE_SPOT_LOGGER', 'true'))
         self.SPOT_VIRTUAL_CAPITAL = float(os.getenv('SPOT_VIRTUAL_CAPITAL', '100'))
         self.SPOT_POSITION_SIZE_PERCENT = float(os.getenv('SPOT_POSITION_SIZE_PERCENT', '10'))
@@ -227,6 +228,7 @@ class Config:
         self.FORCE_TRADES = self._str_to_bool(os.getenv('FORCE_TRADES', 'false'))
 
         # ===== System Configuration =====
+        self.TIMEFRAME = os.getenv('TIMEFRAME', '15m')
         self.HEARTBEAT_INTERVAL = int(os.getenv('HEARTBEAT_INTERVAL', '60'))
         self.API_TIMEOUT = int(os.getenv('API_TIMEOUT', '10'))
         self.RETRY_ATTEMPTS = int(os.getenv('RETRY_ATTEMPTS', '3'))

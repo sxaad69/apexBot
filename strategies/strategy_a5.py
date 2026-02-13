@@ -29,11 +29,11 @@ class StrategyA5(BaseStrategy):
 
         # Conviction requirements (adaptive based on session)
         self.testing_mode = getattr(config, 'TESTING_MODE', False)
-        self.base_confidence_threshold = 0.40 if self.testing_mode else 0.70
-        self.peak_confidence_threshold = 0.50 if self.testing_mode else 0.80
-        self.min_orderbook_imbalance = 0.05 if self.testing_mode else 0.20
-        self.min_whale_value = 1000 if self.testing_mode else 25000
-        self.volume_multiplier = 0.5 if self.testing_mode else 1.3
+        self.base_confidence_threshold = 0.50 if self.testing_mode else 0.75
+        self.peak_confidence_threshold = 0.60 if self.testing_mode else 0.85
+        self.min_orderbook_imbalance = 0.10 if self.testing_mode else 0.25
+        self.min_whale_value = 1000 if self.testing_mode else 50000
+        self.volume_multiplier = 0.8 if self.testing_mode else 1.5
 
         # Session definitions (UTC hours)
         # Crypto trades 24/7 but has peak activity periods
@@ -44,9 +44,9 @@ class StrategyA5(BaseStrategy):
             'us_late': {'start': 21, 'end': 24, 'confidence_boost': 0.0}  # 9PM-12AM UTC
         }
 
-        # ATR multipliers for microstructure trades
-        self.atr_sl_mult = 1.5
-        self.atr_tp_mult = 3.0
+        # ATR multipliers for microstructure trades (slightly wider for safety)
+        self.atr_sl_mult = 2.0
+        self.atr_tp_mult = 4.0
 
         # Universal filters
         self.filters = get_strategy_filters(config)
@@ -58,13 +58,13 @@ class StrategyA5(BaseStrategy):
     def analyze_order_book(self, symbol: str, market_type: str = 'spot') -> float:
         """Analyze order book imbalance for real market pressure"""
         try:
-            # Get appropriate exchange
-            if market_type == 'futures':
-                exchange_class = getattr(ccxt, self.config.FUTURES_EXCHANGE.lower())
+            # Get exchange client from engine if available, otherwise fallback to creating one
+            if hasattr(self, 'exchange_client') and self.exchange_client:
+                exchange = self.exchange_client.exchange
             else:
-                exchange_class = getattr(ccxt, self.config.SPOT_EXCHANGE.lower())
-
-            exchange = exchange_class()
+                # Fallback (less efficient)
+                exchange_class = getattr(ccxt, self.config.FUTURES_EXCHANGE.lower() if market_type == 'futures' else self.config.SPOT_EXCHANGE.lower())
+                exchange = exchange_class()
 
             # Fetch order book (top 20 levels)
             orderbook = exchange.fetch_order_book(symbol, limit=20)
@@ -91,13 +91,13 @@ class StrategyA5(BaseStrategy):
     def detect_whales(self, symbol: str, market_type: str = 'spot') -> Dict:
         """Detect large institutional trades (whales)"""
         try:
-            # Get appropriate exchange
-            if market_type == 'futures':
-                exchange_class = getattr(ccxt, self.config.FUTURES_EXCHANGE.lower())
+            # Get exchange client from engine if available
+            if hasattr(self, 'exchange_client') and self.exchange_client:
+                exchange = self.exchange_client.exchange
             else:
-                exchange_class = getattr(ccxt, self.config.SPOT_EXCHANGE.lower())
-
-            exchange = exchange_class()
+                # Fallback (less efficient)
+                exchange_class = getattr(ccxt, self.config.FUTURES_EXCHANGE.lower() if market_type == 'futures' else self.config.SPOT_EXCHANGE.lower())
+                exchange = exchange_class()
 
             # Fetch recent trades (last 100)
             recent_trades = exchange.fetch_trades(symbol, limit=100)
