@@ -590,7 +590,8 @@ class PaperTradingEngine:
                 'leverage': leverage,
                 'stop_loss': signal['stop_loss'],
                 'take_profit': signal['take_profit'],
-                'strategy': strategy_name
+                'strategy': strategy_name,
+                'confidence': signal.get('confidence', 0.5)
             }
 
             # Prepare account state for risk evaluation
@@ -627,26 +628,41 @@ class PaperTradingEngine:
                 self.logger.warning(f"[{strategy_name}] {symbol} TRADE REJECTED by risk management")
                 return
 
-            # Trade approved - execute
+            # Approved trade - execute
+            entry_price = approved_params['entry_price']
+            size = approved_params['size']
+            leverage = approved_params.get('leverage', leverage)
+            
+            # Calculate entry fee
+            fee_percent = getattr(self.config, 'FUTURES_FEE_PERCENT', 0.04) / 100
+            entry_fee = size * fee_percent
+            
+            # Deduct capital immediately (Size + Fee)
+            # Size is the margin used for the position
+            self.capital[strategy_name] -= (size + entry_fee)
+            
             position = {
                 'entry_time': datetime.now(),
-                'entry_price': approved_params['entry_price'],
+                'entry_price': entry_price,
                 'side': approved_params['side'],
                 'stop_loss': approved_params['stop_loss'],
                 'take_profit': approved_params['take_profit'],
-                'size': approved_params['size'],
+                'size': size,
+                'entry_fee': entry_fee,
                 'leverage': approved_params['leverage'],
                 'strategy': strategy_name,
                 'symbol': symbol,
                 # Trailing stop initialization
                 'trailing_stop_active': False,
-                'highest_price': approved_params['entry_price'] if approved_params['side'] == 'buy' else None,
-                'lowest_price': approved_params['entry_price'] if approved_params['side'] == 'sell' else None,
+                'highest_price': entry_price if approved_params['side'] == 'buy' else None,
+                'lowest_price': entry_price if approved_params['side'] == 'sell' else None,
                 'trailing_activation_price': None,
                 'original_stop_loss': approved_params['stop_loss']
             }
 
             self.positions[position_key] = position
+            
+            self.logger.info(f"[{strategy_name}] {symbol} BALANCE DEDUCTED: ${size + entry_fee:.2f} (Entry: ${size:.2f} + Fee: ${entry_fee:.2f})")
 
             self.logger.info(f"[{strategy_name}] {symbol} ENTRY {signal['side'].upper()} @ ${signal['entry_price']:.2f} (Leverage: {leverage}x) ✅ Risk Approved")
 
@@ -701,9 +717,20 @@ class PaperTradingEngine:
 
                 # Apply leverage to P&L
                 leveraged_pnl_percent = pnl_percent * leverage
-                pnl_amount = position['size'] * leveraged_pnl_percent
-
-                self.capital[strategy_name] += pnl_amount
+                gross_pnl_amount = position['size'] * leveraged_pnl_percent
+                
+                # Calculate exit fee
+                fee_percent = getattr(self.config, 'FUTURES_FEE_PERCENT', 0.04) / 100
+                exit_fee = position['size'] * (1 + pnl_percent) * fee_percent # Fee based on exit value
+                
+                # Net P&L after all fees (entry + exit)
+                total_fees = position.get('entry_fee', 0) + exit_fee
+                net_pnl_amount = gross_pnl_amount - exit_fee # subtract exit fee from pnl
+                
+                # Return margin + net PnL to capital
+                self.capital[strategy_name] += (position['size'] + net_pnl_amount)
+                
+                pnl_amount = net_pnl_amount # Use net for logging
 
                 # Update peak balance (for drawdown tracking)
                 if self.capital[strategy_name] > self.peak_balance[strategy_name]:

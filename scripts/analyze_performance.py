@@ -1,9 +1,10 @@
 import os
 import sys
 from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Dict, List, Any
+from collections import defaultdict
 
-# Add parent directory to path so we can import internal modules
+# Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
@@ -18,77 +19,97 @@ def format_currency(amount: float) -> str:
     reset = "\033[0m"
     return f"{color}${amount:+.2f}{reset}"
 
+def get_day_key(dt_obj):
+    if isinstance(dt_obj, str):
+        try:
+            # Handle ISO format strings
+            dt_obj = datetime.fromisoformat(dt_obj.replace('Z', '+00:00'))
+        except:
+            return "Unknown"
+    return dt_obj.strftime("%Y-%m-%d")
+
 def main():
     print("=" * 60)
-    print("  APEX HUNTER V14 - Performance Analysis")
+    print("      🚀 APEX HUNTER V14 - DEEP DIVE PERFORMANCE 🚀")
     print("=" * 60)
 
-    # Create config without running validation for diagnostic purposes
     from dotenv import load_dotenv
     load_dotenv()
     
     config = Config.__new__(Config)
-    config._load_configuration() 
-    # Skip _validate_configuration() to avoid Telegram credential errors during analysis
+    config._load_configuration()
     mongo = MongoManager(config)
 
     if not mongo.is_connected:
-        print("❌ Could not connect to MongoDB Atlas. Check your .env file.")
+        print("❌ Could not connect to MongoDB Atlas.")
+        print("💡 Suggestion: Run this on the server or ensure your .env has correct Atlas credentials.")
         return
 
-    # 1. Summarize Futures Trades
-    print("\n📊 FUTURES PERFORMANCE SUMMARY")
-    print("-" * 30)
-    
-    trades = mongo.find_documents('futures_trades', limit=1000)
-    if not trades:
-        print("ℹ️ No futures trades found in database.")
-    else:
-        # P&L Calculation
-        # Note: In our system, both 'entry' and 'exit' are in the same collection
-        # But based on the code, trade_exit inserts a full document with 'pnl_amount'
-        completed_trades = [t for t in trades if 'pnl_amount' in t]
-        
-        total_pnl = sum(t.get('pnl_amount', 0) for t in completed_trades)
-        wins = sum(1 for t in completed_trades if t.get('pnl_amount', 0) > 0)
-        losses = sum(1 for t in completed_trades if t.get('pnl_amount', 0) <= 0)
-        
-        print(f"Total Trades Completed: {len(completed_trades)}")
-        print(f"Total P&L:             {format_currency(total_pnl)}")
-        
-        if completed_trades:
-            win_rate = (wins / len(completed_trades)) * 100
-            print(f"Win Rate:              {win_rate:.1f}% ({wins}W / {losses}L)")
-            
-            # Best/Worst
-            best = max(t.get('pnl_amount', 0) for t in completed_trades)
-            worst = min(t.get('pnl_amount', 0) for t in completed_trades)
-            print(f"Best Trade:            {format_currency(best)}")
-            print(f"Worst Trade:           {format_currency(worst)}")
-            
-            # Strategy Breakdown
-            strategies = {}
-            for t in completed_trades:
-                strat = t.get('strategy', 'Unknown')
-                strategies[strat] = strategies.get(strat, 0) + t.get('pnl_amount', 0)
-            
-            print("\n📈 Strategy Performance:")
-            for strat, pnl in sorted(strategies.items(), key=lambda x: x[1], reverse=True):
-                print(f"   - {strat:20}: {format_currency(pnl)}")
+    # --- 1. DAILY FUTURES PERFORMANCE ---
+    print("\n📅 DAY-BY-DAY FUTURES PERFORMANCE")
+    print("-" * 60)
+    print(f"{'Date':<12} | {'Trades':<8} | {'Win%':<8} | {'Net P&L':<12} | {'Top Strategy'}")
+    print("-" * 60)
 
-    # 2. Summarize Spot Signals
-    print("\n📊 SPOT SIGNALS SUMMARY")
-    print("-" * 30)
-    spot_signals = mongo.find_documents('spot_signals', limit=1000)
-    if not spot_signals:
-        print("ℹ️ No spot signals found.")
+    # Fetch more trades for history
+    trades = mongo.find_documents('futures_trades', limit=2000)
+    daily_stats = defaultdict(lambda: {
+        'count': 0, 'wins': 0, 'pnl': 0.0, 'strats': defaultdict(float)
+    })
+
+    for t in trades:
+        if 'pnl_amount' not in t: continue
+        day = get_day_key(t['timestamp'])
+        stats = daily_stats[day]
+        stats['count'] += 1
+        stats['pnl'] += t['pnl_amount']
+        if t['pnl_amount'] > 0: stats['wins'] += 1
+        
+        strat = t.get('strategy', 'Unknown')
+        stats['strats'][strat] += t['pnl_amount']
+
+    for day in sorted(daily_stats.keys(), reverse=True):
+        s = daily_stats[day]
+        wr = (s['wins'] / s['count'] * 100) if s['count'] > 0 else 0
+        top_strat = max(s['strats'].items(), key=lambda x: x[1])[0] if s['strats'] else "N/A"
+        print(f"{day:<12} | {s['count']:<8} | {wr:>5.1f}% | {format_currency(s['pnl']):<12} | {top_strat}")
+
+    # --- 2. SPOT PERFORMANCE ---
+    print("\n📦 SPOT TRADING AUDIT")
+    print("-" * 60)
+    spot_data = mongo.find_documents('spot_signals', query={'executed': True}, limit=1000)
+    
+    total_spot_pnl = sum(s.get('pnl_amount', 0) for s in spot_data if s.get('pnl_amount') is not None)
+    spot_wins = sum(1 for s in spot_data if s.get('pnl_amount', 0) > 0)
+    
+    print(f"Executed Spot Trades: {len(spot_data)}")
+    print(f"Total Spot Net P&L:   {format_currency(total_spot_pnl)}")
+    if spot_data:
+        print(f"Spot Win Rate:        {(spot_wins/len(spot_data)*100):.1f}%")
+
+    # --- 3. RISK FRICTION ANALYSIS ---
+    print("\n🛡️ RISK REJECTION AUDIT (Bottleneck Detection)")
+    print("-" * 60)
+    rejections = mongo.find_documents('risk_rejections', limit=1000)
+    layer_stats = defaultdict(int)
+    for r in rejections:
+        layer_stats[r.get('layer_name', 'Unknown')] += 1
+
+    if not rejections:
+        print("✅ No trade rejections found. Risk layers are smooth.")
     else:
-        executed = sum(1 for s in spot_signals if s.get('executed', False))
-        print(f"Total Signals:         {len(spot_signals)}")
-        print(f"Executed Trades:       {executed}")
+        for layer, count in sorted(layer_stats.items(), key=lambda x: x[1], reverse=True):
+            print(f" - {layer:25}: {count} rejections")
+
+    # --- 4. FEE IMPACT AUDIT ---
+    # Assuming avg fee of 0.04% for futures
+    total_volume = sum(t.get('position_size', 0) * t.get('leverage', 1) for t in trades)
+    est_fees = total_volume * 0.0004 * 2 # Entry + Exit
+    print(f"\n💸 Estimated Exchange Fees Paid: {format_currency(-est_fees)}")
+    print(f"📊 Net Efficiency Score:        {((sum(t.get('pnl_amount',0) for t in trades if 'pnl_amount' in t) / (est_fees+0.0001)) * 100):.1f}%")
 
     print("\n" + "=" * 60)
-    print("📜 END OF REPORT")
+    print("📜 ANALYSIS COMPLETE")
     print("=" * 60)
 
 if __name__ == "__main__":

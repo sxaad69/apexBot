@@ -152,12 +152,15 @@ class SpotTradingEngine:
             'leverage': 1,  # Spot - no leverage
             'stop_loss': signal.get('stop_loss'),
             'take_profit': signal.get('take_profit'),
-            'strategy': strategy_name
+            'strategy': strategy_name,
+            'confidence': signal.get('confidence', 0.5)
         }
 
         # Prepare account state for risk evaluation
         account_state = {
             'balance': self.virtual_balance,
+            'available_balance': self.virtual_balance, # Fix for PositionSizingLayer
+            'total_balance': self.virtual_balance,     # Fix for MaximumDrawdownLayer
             'peak_balance': self.peak_balance,
             'open_positions': list(self.positions.values()),
             'recent_trades': self.trades[-20:],  # Last 20 trades
@@ -172,23 +175,36 @@ class SpotTradingEngine:
             return
 
         # Create position (spot - no leverage calculations)
+        size_usdt = approved_params['position_size']
+        entry_price = approved_params['entry_price']
+        
+        # Calculate entry fee
+        fee_percent = getattr(self.config, 'SPOT_FEE_PERCENT', 0.1) / 100
+        entry_fee = size_usdt * fee_percent
+        
+        # Deduct balance immediately
+        self.virtual_balance -= (size_usdt + entry_fee)
+        
         position = {
             'entry_time': datetime.now(),
-            'entry_price': approved_params['entry_price'],
+            'entry_price': entry_price,
             'side': approved_params['side'],
             'stop_loss': approved_params.get('stop_loss'),
             'take_profit': approved_params.get('take_profit'),
-            'size_usdt': approved_params['position_size'],
+            'size_usdt': size_usdt,
+            'entry_fee': entry_fee,
             'strategy': strategy_name,
             'symbol': symbol,
             # Trailing stop tracking
             'trailing_stop_active': False,
-            'highest_price': approved_params['entry_price'] if approved_params['side'] == 'buy' else None,
-            'lowest_price': approved_params['entry_price'] if approved_params['side'] == 'sell' else None,
+            'highest_price': entry_price if approved_params['side'] == 'buy' else None,
+            'lowest_price': entry_price if approved_params['side'] == 'sell' else None,
             'trailing_activation_price': None
         }
 
         self.positions[position_key] = position
+        
+        self.logger.info(f"SPOT [{strategy_name}] {symbol} BALANCE DEDUCTED: ${size_usdt + entry_fee:.2f} (Entry: ${size_usdt:.2f} + Fee: ${entry_fee:.2f})")
 
         self.logger.info(f"SPOT [{strategy_name}] {symbol} ENTRY {signal['side'].upper()} @ ${signal['entry_price']:.2f} ✅ Risk Approved")
 
@@ -439,7 +455,7 @@ class SpotTradingEngine:
         return False, ''
 
     def _close_position(self, position_key: str, position: Dict, exit_price: float, reason: str):
-        """Close position and calculate P&L"""
+        """Close position and calculate P&L including fees"""
         strategy_name = position['strategy']
         symbol = position['symbol']
         entry_price = position['entry_price']
@@ -452,10 +468,16 @@ class SpotTradingEngine:
         else:
             pnl_pct = (entry_price - exit_price) / entry_price
 
-        pnl_usdt = size_usdt * pnl_pct
+        gross_pnl_usdt = size_usdt * pnl_pct
 
-        # Update balance
-        self.virtual_balance += pnl_usdt
+        # Calculate exit fee
+        fee_percent = getattr(self.config, 'SPOT_FEE_PERCENT', 0.1) / 100
+        exit_fee = size_usdt * (1 + pnl_pct) * fee_percent
+        
+        net_pnl_usdt = gross_pnl_usdt - exit_fee
+
+        # Update balance: Return cost basis + net PnL
+        self.virtual_balance += (size_usdt + net_pnl_usdt)
 
         # Update peak balance
         if self.virtual_balance > self.peak_balance:
@@ -470,7 +492,7 @@ class SpotTradingEngine:
             'side': side,
             'entry_price': entry_price,
             'exit_price': exit_price,
-            'pnl_usdt': pnl_usdt,
+            'pnl_usdt': net_pnl_usdt,
             'pnl_pct': pnl_pct * 100,
             'reason': reason,
             'balance_after': self.virtual_balance
@@ -478,13 +500,13 @@ class SpotTradingEngine:
 
         self.trades.append(trade)
 
-        self.logger.info(f"SPOT [{strategy_name}] {symbol} EXIT {reason.upper()} @ ${exit_price:.2f}, P&L: ${pnl_usdt:+.2f} ({pnl_pct*100:+.2f}%)")
+        self.logger.info(f"SPOT [{strategy_name}] {symbol} EXIT {reason.upper()} @ ${exit_price:.2f}, Net P&L: ${net_pnl_usdt:+.2f} ({pnl_pct*100:+.2f}%)")
 
         # MongoDB structured logging
         duration_str = str(datetime.now() - position['entry_time'])
         self.logger.trade_exit(
             symbol=symbol,
-            pnl=pnl_usdt,
+            pnl=net_pnl_usdt,
             pnl_percent=pnl_pct * 100,
             duration=duration_str,
             exit_price=exit_price,
@@ -501,8 +523,8 @@ class SpotTradingEngine:
             self.telegram.send_spot_trade_exit({
                 'symbol': symbol,
                 'exit_price': exit_price,
-                'pnl': pnl_usdt,
-                'pnl_pct': pnl_pct * 100,
+                'pnl': net_pnl_usdt,
+                'pnl_percent': pnl_pct * 100,
                 'duration': f"{duration} minutes",
                 'strategy': strategy_name,
                 'reason': reason

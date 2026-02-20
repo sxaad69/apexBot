@@ -145,6 +145,10 @@ class Config:
         self.MAX_POSITION_SIZE = float(os.getenv('MAX_POSITION_SIZE', '1000'))
         self.MAX_OPEN_POSITIONS = int(os.getenv('MAX_OPEN_POSITIONS', '5'))
         
+        # ===== Fee Configuration (Simulation) =====
+        self.FUTURES_FEE_PERCENT = float(os.getenv('FUTURES_FEE_PERCENT', '0.04'))
+        self.SPOT_FEE_PERCENT = float(os.getenv('SPOT_FEE_PERCENT', '0.1'))
+        
         # ===== Risk Management Configuration =====
         self.STOP_LOSS_PERCENT = float(os.getenv('STOP_LOSS_PERCENT', '2'))
         self.TRAILING_STOP_ACTIVATION = float(os.getenv('TRAILING_STOP_ACTIVATION', '5'))
