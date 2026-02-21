@@ -45,12 +45,12 @@ class MongoManager:
             # MongoDB Atlas connection string
             connection_string = self._build_connection_string()
 
-            # Sync client
+            # Sync client (Increased timeouts for slow local DNS resolution)
             self.client = MongoClient(
                 connection_string,
-                serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=5000,
-                socketTimeoutMS=5000,
+                serverSelectionTimeoutMS=30000,
+                connectTimeoutMS=30000,
+                socketTimeoutMS=30000,
                 maxPoolSize=10,
                 minPoolSize=2
             )
