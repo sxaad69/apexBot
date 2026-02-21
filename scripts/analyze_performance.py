@@ -10,8 +10,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     from config.config import Config
     from database.mongo_manager import MongoManager
-except ImportError:
-    print("❌ Error: Could not import bot modules. Run this from the root 'apexBot' folder.")
+except ImportError as e:
+    print(f"❌ Error: Could not import bot modules: {e}")
+    print("💡 Tip: Ensure you have installed requirements: pip install -r requirements.txt")
     sys.exit(1)
 
 def format_currency(amount: float) -> str:
