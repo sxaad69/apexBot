@@ -153,10 +153,10 @@ class MongoLogger(Logger):
         self._log_to_mongodb('risk_management', 'WARNING', f"Risk Layer Triggered: {layer}",
                            reason=reason, action=action, **kwargs)
 
-    def trade_entry(self, symbol: str, side: str, size: float, price: float, leverage: int, **kwargs):
+    def trade_entry(self, symbol: str, side: str, size: float, price: float, leverage: int, market_type: str = 'futures', **kwargs):
         """Log trade entry to both file and MongoDB"""
         # Call parent method for file logging
-        super().trade_entry(symbol, side, size, price, leverage, **kwargs)
+        super().trade_entry(symbol, side, size, price, leverage, market_type, **kwargs)
 
         # Log complete trade entry to MongoDB
         document = {
@@ -169,17 +169,22 @@ class MongoLogger(Logger):
             'confidence': kwargs.get('confidence', 0),
             'stop_loss': kwargs.get('stop_loss'),
             'take_profit': kwargs.get('take_profit'),
+            'market_type': market_type,
+            'timestamp': datetime.utcnow(),
             'metadata': kwargs
         }
 
-        # This will be updated with exit details later
-        # For now, we log the entry
-        self.mongo_manager.insert_document('futures_trades', document)
+        # Route to correct collection
+        if market_type == 'spot':
+            document['executed'] = True
+            self.mongo_manager.insert_document('spot_signals', document)
+        else:
+            self.mongo_manager.insert_document('futures_trades', document)
 
-    def trade_exit(self, symbol: str, pnl: float, pnl_percent: float, duration: str, **kwargs):
+    def trade_exit(self, symbol: str, pnl: float, pnl_percent: float, duration: str, market_type: str = 'futures', **kwargs):
         """Log trade exit to both file and MongoDB"""
         # Call parent method for file logging
-        super().trade_exit(symbol, pnl, pnl_percent, duration, **kwargs)
+        super().trade_exit(symbol, pnl, pnl_percent, duration, market_type, **kwargs)
 
         # Log complete trade exit to MongoDB
         document = {
@@ -195,10 +200,16 @@ class MongoLogger(Logger):
             'leverage': kwargs.get('leverage'),
             'stop_loss': kwargs.get('stop_loss'),
             'take_profit': kwargs.get('take_profit'),
+            'market_type': market_type,
+            'timestamp': datetime.utcnow(),
             'metadata': kwargs
         }
 
-        self.mongo_manager.insert_document('futures_trades', document)
+        if market_type == 'spot':
+            document['executed'] = True
+            self.mongo_manager.insert_document('spot_signals', document)
+        else:
+            self.mongo_manager.insert_document('futures_trades', document)
 
     def performance_update(self, total_pnl: float, win_rate: float, total_trades: int, **kwargs):
         """Log performance metrics to both file and MongoDB"""

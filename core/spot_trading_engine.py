@@ -215,6 +215,7 @@ class SpotTradingEngine:
             size=position['size_usdt'],
             price=signal['entry_price'],
             leverage=1,
+            market_type='spot',
             strategy=strategy_name,
             stop_loss=signal.get('stop_loss'),
             take_profit=signal.get('take_profit')

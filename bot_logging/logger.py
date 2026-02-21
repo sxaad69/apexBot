@@ -214,27 +214,29 @@ class Logger:
             **kwargs
         )
     
-    def trade_entry(self, symbol: str, side: str, size: float, price: float, leverage: int, **kwargs):
+    def trade_entry(self, symbol: str, side: str, size: float, price: float, leverage: int, market_type: str = 'futures', **kwargs):
         """Log trade entry"""
         self._log(
             LogCategory.TRADE_EXECUTION,
             logging.INFO,
-            f"Trade Entry: {side} {symbol}",
+            f"Trade Entry: {side} {symbol} ({market_type.upper()})",
             size=size,
             price=price,
             leverage=leverage,
+            market_type=market_type,
             **kwargs
         )
     
-    def trade_exit(self, symbol: str, pnl: float, pnl_percent: float, duration: str, **kwargs):
+    def trade_exit(self, symbol: str, pnl: float, pnl_percent: float, duration: str, market_type: str = 'futures', **kwargs):
         """Log trade exit"""
         self._log(
             LogCategory.TRADE_EXECUTION,
             logging.INFO,
-            f"Trade Exit: {symbol}",
+            f"Trade Exit: {symbol} ({market_type.upper()})",
             pnl=f"{pnl:+.2f} USDT",
             pnl_percent=f"{pnl_percent:+.2f}%",
             duration=duration,
+            market_type=market_type,
             **kwargs
         )
     

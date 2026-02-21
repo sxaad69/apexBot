@@ -29,11 +29,12 @@ class StrategyA5(BaseStrategy):
 
         # Conviction requirements (adaptive based on session)
         self.testing_mode = getattr(config, 'TESTING_MODE', False)
-        self.base_confidence_threshold = 0.50 if self.testing_mode else 0.75
-        self.peak_confidence_threshold = 0.60 if self.testing_mode else 0.85
-        self.min_orderbook_imbalance = 0.10 if self.testing_mode else 0.25
-        self.min_whale_value = 1000 if self.testing_mode else 50000
-        self.volume_multiplier = 0.8 if self.testing_mode else 1.5
+        # Tightened thresholds based on performance audit to reach 10% Daily ROI
+        self.base_confidence_threshold = 0.65 if self.testing_mode else 0.80
+        self.peak_confidence_threshold = 0.75 if self.testing_mode else 0.90
+        self.min_orderbook_imbalance = 0.20 if self.testing_mode else 0.35
+        self.min_whale_value = 2000 if self.testing_mode else 50000
+        self.volume_multiplier = 1.0 if self.testing_mode else 1.5
 
         # Session definitions (UTC hours)
         # Crypto trades 24/7 but has peak activity periods
