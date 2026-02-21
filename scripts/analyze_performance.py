@@ -52,12 +52,23 @@ def main():
     print("-" * 60)
 
     # Fetch more trades for history
-    trades = mongo.find_documents('futures_trades', limit=2000)
+    raw_trades = mongo.find_documents('futures_trades', limit=2000)
+    
+    # Categorize trades (separating spot that leaked into futures)
+    futures_trades = []
+    spot_leaks = []
+    
+    for t in raw_trades:
+        if t.get('market_type') == 'spot' or t.get('strategy') == 'SpotLogger':
+            spot_leaks.append(t)
+        else:
+            futures_trades.append(t)
+
     daily_stats = defaultdict(lambda: {
         'count': 0, 'wins': 0, 'pnl': 0.0, 'strats': defaultdict(float)
     })
 
-    for t in trades:
+    for t in futures_trades:
         if 'pnl_amount' not in t: continue
         day = get_day_key(t['timestamp'])
         stats = daily_stats[day]
@@ -77,15 +88,22 @@ def main():
     # --- 2. SPOT PERFORMANCE ---
     print("\n📦 SPOT TRADING AUDIT")
     print("-" * 60)
-    spot_data = mongo.find_documents('spot_signals', query={'executed': True}, limit=1000)
     
-    total_spot_pnl = sum(s.get('pnl_amount', 0) for s in spot_data if s.get('pnl_amount') is not None)
-    spot_wins = sum(1 for s in spot_data if s.get('pnl_amount', 0) > 0)
+    # Check official spot collection
+    spot_signals = mongo.find_documents('spot_signals', query={'executed': True}, limit=1000)
     
-    print(f"Executed Spot Trades: {len(spot_data)}")
+    # Combine signals + leaks
+    all_spot = spot_signals + spot_leaks
+    
+    total_spot_pnl = sum(s.get('pnl_amount', 0) for s in all_spot if s.get('pnl_amount') is not None)
+    total_spot_pnl += sum(s.get('pnl', 0) for s in all_spot if s.get('pnl') is not None) # Handle both keys
+    
+    spot_wins = sum(1 for s in all_spot if (s.get('pnl_amount', 0) > 0 or s.get('pnl', 0) > 0))
+    
+    print(f"Executed Spot Trades: {len(all_spot)}")
     print(f"Total Spot Net P&L:   {format_currency(total_spot_pnl)}")
-    if spot_data:
-        print(f"Spot Win Rate:        {(spot_wins/len(spot_data)*100):.1f}%")
+    if all_spot:
+        print(f"Spot Win Rate:        {(spot_wins/len(all_spot)*100):.1f}%")
 
     # --- 3. RISK FRICTION ANALYSIS ---
     print("\n🛡️ RISK REJECTION AUDIT (Bottleneck Detection)")

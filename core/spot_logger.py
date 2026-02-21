@@ -124,6 +124,7 @@ class SpotLogger:
             size=signal['position_size'],
             price=signal['entry_price'],
             leverage=1,
+            market_type='spot',
             strategy="SpotLogger"
         )
     
@@ -163,10 +164,11 @@ class SpotLogger:
         duration = datetime.now() - position['entry_time']
         self.logger.trade_exit(
             symbol=symbol,
-            pnl=pnl_usdt,
+            pnl_amount=pnl_usdt,
             pnl_percent=pnl_percent,
             duration=str(duration),
             exit_price=exit_price,
+            market_type='spot',
             reason="simulation",
             strategy="SpotLogger",
             entry_price=entry_price,
