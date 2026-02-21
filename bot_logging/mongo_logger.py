@@ -17,6 +17,7 @@ class MongoLogger(Logger):
     """
 
     def __init__(self, config):
+        self.mongo_manager = None
         super().__init__(config)
 
         # Determine storage engine based on config
@@ -69,7 +70,7 @@ class MongoLogger(Logger):
 
     def _log_to_mongodb(self, category: str, level: str, message: str, **kwargs):
         """Log to MongoDB database"""
-        if not self.mongo_manager.is_connected:
+        if not self.mongo_manager or not self.mongo_manager.is_connected:
             return
 
         try:
