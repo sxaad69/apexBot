@@ -13,12 +13,18 @@
 
 # Virtual environments
 venv/
+.venv/
 .env
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .pytest_cache/
+
+# Other common junk
+.claude/           # if you don't need this in repo
+*.log
+bot_logging/
 
 # ============================================================================
 # LOGS & DATA
