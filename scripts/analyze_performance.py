@@ -10,6 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     from config.config import Config
     from database.mongo_manager import MongoManager
+    from database.json_manager import JSONManager
 except ImportError as e:
     print(f"❌ Error: Could not import bot modules: {e}")
     print("💡 Tip: Ensure you have installed requirements: pip install -r requirements.txt")
@@ -39,12 +40,24 @@ def main():
     
     config = Config.__new__(Config)
     config._load_configuration()
-    mongo = MongoManager(config)
+    
+    # Check for forced JSON mode or MongoDB connection
+    force_json = os.getenv('FORCE_JSON_ANALYSIS', 'false').lower() == 'true'
+    mongo = None
+    db_manager = None
+    
+    if not force_json:
+        try:
+            mongo = MongoManager(config)
+            if mongo.is_connected:
+                db_manager = mongo
+                print("✅ Connected to MongoDB Atlas")
+        except Exception:
+            pass
 
-    if not mongo.is_connected:
-        print("❌ Could not connect to MongoDB Atlas.")
-        print("💡 Suggestion: Run this on the server or ensure your .env has correct Atlas credentials.")
-        return
+    if db_manager is None:
+        print("📁 Using Local JSON Fallback (Connect to AWS for latest data)")
+        db_manager = JSONManager(config)
 
     # --- 1. DAILY FUTURES PERFORMANCE ---
     print("\n📅 DAY-BY-DAY FUTURES PERFORMANCE")
@@ -52,15 +65,17 @@ def main():
     print(f"{'Date':<12} | {'Trades':<8} | {'Win%':<8} | {'Net P&L':<12} | {'Top Strategy'}")
     print("-" * 60)
 
-    # Fetch more trades for history
-    raw_trades = mongo.find_documents('futures_trades', limit=2000)
+    # Fetch trades
+    raw_trades = db_manager.find_documents('futures_trades', limit=2000)
     
-    # Categorize trades (separating spot that leaked into futures)
+    # Categorize trades
     futures_trades = []
     spot_leaks = []
     
     for t in raw_trades:
-        if t.get('market_type') == 'spot' or t.get('strategy') == 'SpotLogger':
+        # Normalize strategy name for filtering
+        strat = t.get('strategy', 'Unknown')
+        if t.get('market_type') == 'spot' or strat == 'SpotLogger':
             spot_leaks.append(t)
         else:
             futures_trades.append(t)
@@ -68,6 +83,10 @@ def main():
     daily_stats = defaultdict(lambda: {
         'count': 0, 'wins': 0, 'pnl': 0.0, 'strats': defaultdict(float)
     })
+
+    total_futures_pnl = 0.0
+    total_futures_count = 0
+    total_futures_wins = 0
 
     for t in futures_trades:
         if 'pnl_amount' not in t: continue
@@ -79,6 +98,10 @@ def main():
         
         strat = t.get('strategy', 'Unknown')
         stats['strats'][strat] += t['pnl_amount']
+        
+        total_futures_pnl += t['pnl_amount']
+        total_futures_count += 1
+        if t['pnl_amount'] > 0: total_futures_wins += 1
 
     for day in sorted(daily_stats.keys(), reverse=True):
         s = daily_stats[day]
@@ -91,7 +114,7 @@ def main():
     print("-" * 60)
     
     # Check official spot collection
-    spot_signals = mongo.find_documents('spot_signals', query={'executed': True}, limit=1000)
+    spot_signals = db_manager.find_documents('spot_signals', query={'executed': True}, limit=1000)
     
     # Combine signals + leaks
     all_spot = spot_signals + spot_leaks
@@ -104,12 +127,13 @@ def main():
     print(f"Executed Spot Trades: {len(all_spot)}")
     print(f"Total Spot Net P&L:   {format_currency(total_spot_pnl)}")
     if all_spot:
-        print(f"Spot Win Rate:        {(spot_wins/len(all_spot)*100):.1f}%")
+        spot_wr = (spot_wins/len(all_spot)*100)
+        print(f"Spot Win Rate:        {spot_wr:.1f}%")
 
     # --- 3. RISK FRICTION ANALYSIS ---
     print("\n🛡️ RISK REJECTION AUDIT (Bottleneck Detection)")
     print("-" * 60)
-    rejections = mongo.find_documents('risk_rejections', limit=1000)
+    rejections = db_manager.find_documents('risk_rejections', limit=1000)
     layer_stats = defaultdict(int)
     for r in rejections:
         layer_stats[r.get('layer_name', 'Unknown')] += 1
@@ -121,15 +145,33 @@ def main():
             print(f" - {layer:25}: {count} rejections")
 
     # --- 4. FEE IMPACT AUDIT ---
-    # Assuming avg fee of 0.04% for futures
-    total_volume = sum(t.get('position_size', 0) * t.get('leverage', 1) for t in trades)
+    # Using futures_trades for analysis
+    total_volume = sum(t.get('position_size', 0) * t.get('leverage', 1) for t in futures_trades)
     est_fees = total_volume * 0.0004 * 2 # Entry + Exit
     print(f"\n💸 Estimated Exchange Fees Paid: {format_currency(-est_fees)}")
-    print(f"📊 Net Efficiency Score:        {((sum(t.get('pnl_amount',0) for t in trades if 'pnl_amount' in t) / (est_fees+0.0001)) * 100):.1f}%")
+    
+    net_efficiency = (total_futures_pnl / (est_fees + 0.0001)) * 100
+    print(f"📊 Net Efficiency Score:        {net_efficiency:.1f}%")
+
+    # --- 5. OVERALL SUMMARY ---
+    print("\n💰 TOTAL MANAGED PERFORMANCE SUMMARY")
+    print("-" * 60)
+    grand_total_pnl = total_futures_pnl + total_spot_pnl
+    print(f"Combined Net P&L (All Markets): {format_currency(grand_total_pnl)}")
+    
+    total_trades = total_futures_count + len(all_spot)
+    print(f"Total Executed Trades:         {total_trades}")
+    
+    avg_win_rate = ((total_futures_wins + spot_wins) / (total_trades + 0.0001)) * 100
+    print(f"Global Win Rate:               {avg_win_rate:.1f}%")
 
     print("\n" + "=" * 60)
     print("📜 ANALYSIS COMPLETE")
     print("=" * 60)
+
+if __name__ == "__main__":
+    main()
+
 
 if __name__ == "__main__":
     main()
