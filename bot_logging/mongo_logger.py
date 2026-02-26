@@ -21,12 +21,7 @@ class MongoLogger(Logger):
         super().__init__(config)
 
         # Determine storage engine based on config
-        use_mongo_db = False
-        
-        # Check for MongoDB Atlas connection string or credentials
-        if hasattr(config, 'MONGODB_HOST') and config.MONGODB_HOST:
-            if 'mongodb' in config.MONGODB_HOST or (hasattr(config, 'MONGODB_USERNAME') and config.MONGODB_USERNAME):
-                use_mongo_db = True
+        use_mongo_db = getattr(config, 'MONGODB_ENABLED', False)
                 
         if use_mongo_db:
             try:
@@ -49,7 +44,7 @@ class MongoLogger(Logger):
         else:
             # Default to JSON storage
             self.mongo_manager = JSONManager(config)
-            self.system("📂 Using local JSON storage (MongoDB Atlas disabled or no host provided)")
+            self.system("📂 Using local JSON storage (MongoDB Atlas disabled)")
 
         # Async logging queue
         self.async_queue = asyncio.Queue()
@@ -112,9 +107,10 @@ class MongoLogger(Logger):
         # Call parent method for file logging
         super().api_call(method, url, status, duration, **kwargs)
 
-        # Log to MongoDB
-        self._log_to_mongodb('api_calls', 'INFO', f"API Call: {method} {url}",
-                           status=status, duration_ms=f"{duration*1000:.2f}" if duration else None, **kwargs)
+        # Log to MongoDB (Respect level)
+        if self.log_to_db and self._should_log('DEBUG'):
+            self._log_to_mongodb('activity_log', 'DEBUG', f"API Call: {method} {url}",
+                               type='api_call', status=status, duration_ms=f"{duration*1000:.2f}" if duration else None, **kwargs)
 
     def position_rejected(self, symbol: str, reason: str, layer: str, **kwargs):
         """Log rejected position with reason to both file and MongoDB"""
@@ -134,7 +130,14 @@ class MongoLogger(Logger):
                         if k not in ['trade_params', 'account_state', 'strategy']}
         }
 
-        self.mongo_manager.insert_document('risk_rejections', document)
+        if self.log_to_db and self._should_log('INFO'):
+            document['type'] = 'risk_rejection'
+            document['timestamp'] = datetime.utcnow()
+            # Add 7-day TTL
+            if hasattr(self.config, 'MONGODB_RETENTION_DAYS'):
+                 document['expires_at'] = datetime.utcnow() + timedelta(days=min(7, self.config.MONGODB_RETENTION_DAYS))
+            
+            self.mongo_manager.insert_document('activity_log', document)
 
     def token_usage(self, endpoint: str, tokens: int, total: int):
         """Log API token usage to both file and MongoDB"""
@@ -151,8 +154,9 @@ class MongoLogger(Logger):
         super().risk_layer_triggered(layer, reason, action, **kwargs)
 
         # Log to MongoDB
-        self._log_to_mongodb('risk_management', 'WARNING', f"Risk Layer Triggered: {layer}",
-                           reason=reason, action=action, **kwargs)
+        if self.log_to_db and self._should_log('WARNING'):
+            self._log_to_mongodb('activity_log', 'WARNING', f"Risk Layer Triggered: {layer}",
+                               type='risk_alert', reason=reason, action=action, **kwargs)
 
     def trade_entry(self, symbol: str, side: str, size: float, price: float, leverage: int, market_type: str = 'futures', **kwargs):
         """Log trade entry to both file and MongoDB"""
@@ -189,6 +193,7 @@ class MongoLogger(Logger):
 
         # Log complete trade exit to MongoDB
         document = {
+            'type': 'exit',
             'symbol': symbol,
             'exit_price': kwargs.get('exit_price'),
             'pnl_amount': pnl,
@@ -198,12 +203,12 @@ class MongoLogger(Logger):
             'strategy': kwargs.get('strategy', 'Unknown'),
             'entry_price': kwargs.get('entry_price'),
             'side': kwargs.get('side'),
-            'leverage': kwargs.get('leverage'),
+            'leverage': kwargs.get('leverage', 1),
             'stop_loss': kwargs.get('stop_loss'),
             'take_profit': kwargs.get('take_profit'),
             'market_type': market_type,
             'timestamp': datetime.utcnow(),
-            'metadata': kwargs
+            'metadata': {k: v for k, v in kwargs.items() if k not in ['exit_price', 'reason', 'strategy', 'entry_price', 'side', 'leverage', 'stop_loss', 'take_profit']}
         }
 
         if market_type == 'spot':
@@ -245,7 +250,11 @@ class MongoLogger(Logger):
                           current_price: float, profit_percent: float,
                           old_stop: float, new_stop: float, **kwargs):
         """Log trailing stop actions to MongoDB"""
+        if not self.log_to_db or not self._should_log('DEBUG'):
+            return
+
         document = {
+            'type': 'trailing_stop',
             'action': action,  # 'activated' or 'updated'
             'symbol': symbol,
             'strategy': strategy,
@@ -256,10 +265,12 @@ class MongoLogger(Logger):
             'highest_price': kwargs.get('highest_price'),
             'lowest_price': kwargs.get('lowest_price'),
             'position_side': kwargs.get('position_side'),
+            'timestamp': datetime.utcnow(),
+            'expires_at': datetime.utcnow() + timedelta(days=7),
             'metadata': kwargs
         }
 
-        self.mongo_manager.insert_document('trailing_stops', document)
+        self.mongo_manager.insert_document('activity_log', document)
 
     def log_spot_signal(self, signal: Dict[str, Any]):
         """Log spot trading signal to MongoDB"""
@@ -379,32 +390,41 @@ class MongoLogger(Logger):
             return False
 
     def save_hourly_metrics(self, date: str, hour: str, metrics_data: Dict[str, Any]) -> bool:
-        """Save hourly trading metrics to MongoDB or JSON fallback"""
+        """Save hourly trading metrics using UPSERT to reduce document count"""
         try:
-            document = {
-                'date': date,
-                'hour': hour,
-                'trading_type': metrics_data.get('trading_type', 'futures'),
-                'signals_generated': metrics_data.get('signals_generated', 0),
-                'trades_executed': metrics_data.get('trades_executed', 0),
-                'volume_rejections': metrics_data.get('volume_rejections', 0),
-                'adx_rejections': metrics_data.get('adx_rejections', 0),
-                'other_rejections': metrics_data.get('other_rejections', 0),
-                'total_rejections': metrics_data.get('total_rejections', 0),
-                'conversion_rate': metrics_data.get('conversion_rate', 0.0),
-                'timestamp': datetime.utcnow()
-            }
-
-            # Try MongoDB first
+            trading_type = metrics_data.get('trading_type', 'futures')
+            
+            # MongoDB Upsert Logic (Consolidated)
             if self.mongo_manager.is_connected:
-                self.mongo_manager.insert_document('hourly_metrics', document)
-                return True
+                filter_query = {
+                    'date': date,
+                    'hour': hour,
+                    'type': trading_type
+                }
+                
+                update_data = {
+                    '$set': {
+                        'timestamp': datetime.utcnow(),
+                        'conversion_rate': metrics_data.get('conversion_rate', 0.0)
+                    },
+                    '$inc': {
+                        'signals_generated': metrics_data.get('signals_generated', 0),
+                        'trades_executed': metrics_data.get('trades_executed', 0),
+                        'volume_rejections': metrics_data.get('volume_rejections', 0),
+                        'adx_rejections': metrics_data.get('adx_rejections', 0),
+                        'volatility_rejections': metrics_data.get('volatility_rejections', 0),
+                        'other_rejections': metrics_data.get('other_rejections', 0),
+                        'total_rejections': metrics_data.get('total_rejections', 0)
+                    }
+                }
+                
+                return self.mongo_manager.upsert_document('metrics_summary', filter_query, update_data)
             else:
-                # Fallback to JSON
+                # Fallback to JSON (existing behavior)
                 return self._save_hourly_metrics_json(date, metrics_data)
 
         except Exception as e:
-            print(f"⚠️ Hourly metrics logging failed: {e}")
+            print(f"⚠️ Metrics summary update failed: {e}")
             return False
 
     def _save_market_analysis_json(self, date: str, analysis_data: Dict[str, Any]) -> bool:

@@ -3,6 +3,7 @@ import sys
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 from collections import defaultdict
+from pathlib import Path
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -31,8 +32,11 @@ def get_day_key(dt_obj):
     return dt_obj.strftime("%Y-%m-%d")
 
 def main():
+    START_DATE = "2026-02-20"
+    
     print("=" * 60)
     print("      🚀 APEX HUNTER V14 - DEEP DIVE PERFORMANCE 🚀")
+    print(f"      (Analyzing data from {START_DATE} onwards)")
     print("=" * 60)
 
     from dotenv import load_dotenv
@@ -56,114 +60,113 @@ def main():
             pass
 
     if db_manager is None:
-        print("📁 Using Local JSON Fallback (Connect to AWS for latest data)")
-        db_manager = JSONManager(config)
+        # Check if we have an export folder 'db' with data
+        db_path = Path("db")
+        if db_path.exists() and any(db_path.glob("*.json")):
+            print("📦 Using Exported MongoDB Data (db/ folder)")
+            db_manager = JSONManager(config, data_dir="db")
+        else:
+            print("📁 Using Local JSON Fallback (data/ folder)")
+            db_manager = JSONManager(config)
 
-    # --- 1. DAILY FUTURES PERFORMANCE ---
-    print("\n📅 DAY-BY-DAY FUTURES PERFORMANCE")
-    print("-" * 60)
-    print(f"{'Date':<12} | {'Trades':<8} | {'Win%':<8} | {'Net P&L':<12} | {'Top Strategy'}")
-    print("-" * 60)
-
-    # Fetch trades
-    raw_trades = db_manager.find_documents('futures_trades', limit=2000)
+    # Fetch all data
+    raw_futures = db_manager.find_documents('futures_trades', limit=5000)
+    raw_spot_signals = db_manager.find_documents('spot_signals', query={'executed': True}, limit=2000)
     
-    # Categorize trades
+    # Categorize and Filter
     futures_trades = []
-    spot_leaks = []
+    spot_trades = []
     
-    for t in raw_trades:
-        # Normalize strategy name for filtering
+    # Process futures
+    for t in raw_futures:
+        day = get_day_key(t['timestamp'])
+        if day < START_DATE: continue
+        
+        # Check if it's actually spot leaked into futures
         strat = t.get('strategy', 'Unknown')
         if t.get('market_type') == 'spot' or strat == 'SpotLogger':
-            spot_leaks.append(t)
+            spot_trades.append(t)
         else:
             futures_trades.append(t)
+            
+    # Process spot
+    for t in raw_spot_signals:
+        day = get_day_key(t['timestamp'])
+        if day < START_DATE: continue
+        spot_trades.append(t)
 
-    daily_stats = defaultdict(lambda: {
-        'count': 0, 'wins': 0, 'pnl': 0.0, 'strats': defaultdict(float)
+    # --- 1. DAILY COMBINED PERFORMANCE ---
+    print("\n📅 DAILY PERFORMANCE BREAKDOWN (Futures & Spot)")
+    print("-" * 80)
+    print(f"{'Date':<12} | {'F.Trades':<8} | {'F.P&L':<12} | {'S.Trades':<8} | {'S.P&L':<12} | {'Total P&L'}")
+    print("-" * 80)
+
+    daily_report = defaultdict(lambda: {
+        'f_count': 0, 'f_pnl': 0.0, 's_count': 0, 's_pnl': 0.0
     })
 
-    total_futures_pnl = 0.0
-    total_futures_count = 0
-    total_futures_wins = 0
-
+    # Aggregate Futures
     for t in futures_trades:
         if 'pnl_amount' not in t: continue
         day = get_day_key(t['timestamp'])
-        stats = daily_stats[day]
-        stats['count'] += 1
-        stats['pnl'] += t['pnl_amount']
-        if t['pnl_amount'] > 0: stats['wins'] += 1
+        daily_report[day]['f_count'] += 1
+        daily_report[day]['f_pnl'] += t['pnl_amount']
+
+    # Aggregate Spot (Exits only)
+    for t in spot_trades:
+        # Check if it's an exit record (has pnl or pnl_amount)
+        pnl = t.get('pnl_amount') or t.get('pnl') or t.get('pnl_usdt')
+        if pnl is None and t.get('type') != 'exit':
+            continue
+            
+        pnl = pnl or 0.0
+        day = get_day_key(t['timestamp'])
+        daily_report[day]['s_count'] += 1
+        daily_report[day]['s_pnl'] += pnl
+
+    total_f_pnl = 0.0
+    total_s_pnl = 0.0
+    total_f_trades = 0
+    total_s_trades = 0
+
+    for day in sorted(daily_report.keys(), reverse=True):
+        d = daily_report[day]
+        total = d['f_pnl'] + d['s_pnl']
+        print(f"{day:<12} | {d['f_count']:<8} | {format_currency(d['f_pnl']):<12} | {d['s_count']:<8} | {format_currency(d['s_pnl']):<12} | {format_currency(total)}")
         
-        strat = t.get('strategy', 'Unknown')
-        stats['strats'][strat] += t['pnl_amount']
-        
-        total_futures_pnl += t['pnl_amount']
-        total_futures_count += 1
-        if t['pnl_amount'] > 0: total_futures_wins += 1
+        total_f_pnl += d['f_pnl']
+        total_s_pnl += d['s_pnl']
+        total_f_trades += d['f_count']
+        total_s_trades += d['s_count']
 
-    for day in sorted(daily_stats.keys(), reverse=True):
-        s = daily_stats[day]
-        wr = (s['wins'] / s['count'] * 100) if s['count'] > 0 else 0
-        top_strat = max(s['strats'].items(), key=lambda x: x[1])[0] if s['strats'] else "N/A"
-        print(f"{day:<12} | {s['count']:<8} | {wr:>5.1f}% | {format_currency(s['pnl']):<12} | {top_strat}")
-
-    # --- 2. SPOT PERFORMANCE ---
-    print("\n📦 SPOT TRADING AUDIT")
-    print("-" * 60)
-    
-    # Check official spot collection
-    spot_signals = db_manager.find_documents('spot_signals', query={'executed': True}, limit=1000)
-    
-    # Combine signals + leaks
-    all_spot = spot_signals + spot_leaks
-    
-    total_spot_pnl = sum(s.get('pnl_amount', 0) for s in all_spot if s.get('pnl_amount') is not None)
-    total_spot_pnl += sum(s.get('pnl', 0) for s in all_spot if s.get('pnl') is not None) # Handle both keys
-    
-    spot_wins = sum(1 for s in all_spot if (s.get('pnl_amount', 0) > 0 or s.get('pnl', 0) > 0))
-    
-    print(f"Executed Spot Trades: {len(all_spot)}")
-    print(f"Total Spot Net P&L:   {format_currency(total_spot_pnl)}")
-    if all_spot:
-        spot_wr = (spot_wins/len(all_spot)*100)
-        print(f"Spot Win Rate:        {spot_wr:.1f}%")
-
-    # --- 3. RISK FRICTION ANALYSIS ---
+    # --- 2. RISK FRICTION ANALYSIS ---
     print("\n🛡️ RISK REJECTION AUDIT (Bottleneck Detection)")
     print("-" * 60)
     rejections = db_manager.find_documents('risk_rejections', limit=1000)
     layer_stats = defaultdict(int)
     for r in rejections:
+        day = get_day_key(r['timestamp'])
+        if day < START_DATE: continue
         layer_stats[r.get('layer_name', 'Unknown')] += 1
 
-    if not rejections:
+    if not layer_stats:
         print("✅ No trade rejections found. Risk layers are smooth.")
     else:
         for layer, count in sorted(layer_stats.items(), key=lambda x: x[1], reverse=True):
             print(f" - {layer:25}: {count} rejections")
 
-    # --- 4. FEE IMPACT AUDIT ---
-    # Using futures_trades for analysis
-    total_volume = sum(t.get('position_size', 0) * t.get('leverage', 1) for t in futures_trades)
-    est_fees = total_volume * 0.0004 * 2 # Entry + Exit
-    print(f"\n💸 Estimated Exchange Fees Paid: {format_currency(-est_fees)}")
-    
-    net_efficiency = (total_futures_pnl / (est_fees + 0.0001)) * 100
-    print(f"📊 Net Efficiency Score:        {net_efficiency:.1f}%")
-
-    # --- 5. OVERALL SUMMARY ---
-    print("\n💰 TOTAL MANAGED PERFORMANCE SUMMARY")
+    # --- 3. OVERALL SUMMARY ---
+    print("\n💰 PERFORMANCE SUMMARY (Feb 20th - Present)")
     print("-" * 60)
-    grand_total_pnl = total_futures_pnl + total_spot_pnl
-    print(f"Combined Net P&L (All Markets): {format_currency(grand_total_pnl)}")
+    print(f"Total Futures P&L:      {format_currency(total_f_pnl)} ({total_f_trades} trades)")
+    print(f"Total Spot P&L:         {format_currency(total_s_pnl)} ({total_s_trades} trades)")
+    print(f"Combined Net P&L:       {format_currency(total_f_pnl + total_s_pnl)}")
     
-    total_trades = total_futures_count + len(all_spot)
-    print(f"Total Executed Trades:         {total_trades}")
-    
-    avg_win_rate = ((total_futures_wins + spot_wins) / (total_trades + 0.0001)) * 100
-    print(f"Global Win Rate:               {avg_win_rate:.1f}%")
+    # Fee Estimation
+    total_volume = sum(t.get('position_size', 0) * t.get('leverage', 1) for t in futures_trades)
+    est_fees = total_volume * 0.0004 * 2
+    print(f"Est. Exchange Fees:     {format_currency(-est_fees)}")
+    print(f"Final Adjusted P&L:     {format_currency(total_f_pnl + total_s_pnl - est_fees)}")
 
     print("\n" + "=" * 60)
     print("📜 ANALYSIS COMPLETE")
@@ -172,6 +175,3 @@ def main():
 if __name__ == "__main__":
     main()
 
-
-if __name__ == "__main__":
-    main()

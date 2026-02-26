@@ -64,15 +64,49 @@ def main():
         print(f"📦 Exporting {coll_name}...", end="", flush=True)
         
         try:
-            # Fetch all documents
-            documents = list(mongo.database[coll_name].find({}))
+            # 1. Fetch Atlas documents
+            atlas_documents = list(mongo.database[coll_name].find({}))
+            print(f" 🍃 {len(atlas_documents)} from Atlas", end="")
             
+            # 2. Check for local data (recovery from connection blips)
+            local_data_path = Path("data") / f"{coll_name}.json"
+            merged_count = 0
+            
+            if local_data_path.exists():
+                try:
+                    with open(local_data_path, 'r', encoding='utf-8') as f:
+                        local_docs = json.load(f)
+                        if isinstance(local_docs, list):
+                            # Simple deduplication based on timestamp and symbol if possible
+                            # or just append uniquely if _id doesn't exist in atlas_documents
+                            atlas_ids = {str(d.get('_id')) for d in atlas_documents if '_id' in d}
+                            
+                            for doc in local_docs:
+                                # Ensure we don't double count if Atlas already has it
+                                # (MongoDB _id might be different so we check timestamp/symbol/side)
+                                is_duplicate = False
+                                for a_doc in atlas_documents:
+                                    if (a_doc.get('timestamp') == doc.get('timestamp') and 
+                                        a_doc.get('symbol') == doc.get('symbol') and
+                                        a_doc.get('side') == doc.get('side')):
+                                        is_duplicate = True
+                                        break
+                                
+                                if not is_duplicate:
+                                    atlas_documents.append(doc)
+                                    merged_count += 1
+                            
+                            if merged_count > 0:
+                                print(f" + 📁 {merged_count} from local recovery", end="")
+                except Exception as e:
+                    print(f" (⚠️ Local merge skipped: {e})", end="")
+
             # Save to JSON file
             export_path = export_dir / f"{coll_name}.json"
             with open(export_path, 'w', encoding='utf-8') as f:
-                json.dump(documents, f, indent=2, default=json_serial, ensure_ascii=False)
+                json.dump(atlas_documents, f, indent=2, default=json_serial, ensure_ascii=False)
             
-            print(f" ✅ ({len(documents)} docs)")
+            print(" ✅")
         except Exception as e:
             print(f" ❌ Error: {e}")
 

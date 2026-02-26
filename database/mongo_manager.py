@@ -26,14 +26,14 @@ class MongoManager:
         self.async_database = None
         self.is_connected = False
 
-        # Collection names
+        # Consolidated collection names
         self.collections = {
-            'futures_trades': 'futures_trades',
-            'spot_signals': 'spot_signals',
-            'arbitrage_opportunities': 'arbitrage_opportunities',
-            'trailing_stops': 'trailing_stops',
-            'risk_rejections': 'risk_rejections',
-            'system_logs': 'system_logs'
+            'futures_trades': 'futures_trades', # High value, permanent
+            'spot_signals': 'spot_signals',   # High value, permanent
+            'activity_log': 'activity_log',   # Consolidated (api, risk, alerts), 7-day TTL
+            'metrics_summary': 'metrics_summary', # Hourly/Daily totals, permanent
+            'system_logs': 'system_logs',     # System state, 30-day TTL
+            'debug_logs': 'debug_logs'        # Verbose, 1-day TTL
         }
 
         # Initialize connection
@@ -143,11 +143,50 @@ class MongoManager:
                 ('timestamp', DESCENDING),
                 ('level', ASCENDING)
             ])
+            self.database[self.collections['system_logs']].create_index("expires_at", expireAfterSeconds=0)
+
+            # Activity log indexes (Consolidated)
+            self.database[self.collections['activity_log']].create_index([
+                ('timestamp', DESCENDING),
+                ('type', ASCENDING),
+                ('symbol', ASCENDING)
+            ])
+            self.database[self.collections['activity_log']].create_index("expires_at", expireAfterSeconds=0)
+
+            # Debug logs (High volume, short life)
+            self.database[self.collections['debug_logs']].create_index("timestamp", expireAfterSeconds=86400) # 1 day
+
+            # Metrics Summary (Upsert collection)
+            self.database[self.collections['metrics_summary']].create_index([
+                ('date', ASCENDING),
+                ('hour', ASCENDING),
+                ('type', ASCENDING)
+            ], unique=True)
 
             print("✅ Database indexes created successfully")
 
         except Exception as e:
             print(f"⚠️ Index creation failed: {e}")
+
+    def upsert_document(self, collection: str, filter_query: Dict, update_data: Dict) -> bool:
+        """Upsert document (increment or set)"""
+        if not self.is_connected:
+            return False
+        try:
+            # Ensure timestamp is updated
+            if '$set' not in update_data:
+                update_data['$set'] = {}
+            update_data['$set']['last_updated'] = datetime.utcnow()
+            
+            result = self.database[collection].update_one(
+                filter_query,
+                update_data,
+                upsert=True
+            )
+            return result.acknowledged
+        except Exception as e:
+            print(f"❌ MongoDB upsert error: {e}")
+            return False
 
     # ===== SYNC OPERATIONS =====
 

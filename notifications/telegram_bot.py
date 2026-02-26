@@ -333,6 +333,7 @@ class TelegramNotificationManager:
 {pnl_emoji} <b>FUTURES TRADE EXIT</b>
 
 <b>Symbol:</b> {trade.get('symbol')}
+<b>Entry Price:</b> ${trade.get('entry_price', 0):,.2f}
 <b>Exit Price:</b> ${trade.get('exit_price', 0):,.2f}
 <b>Leverage:</b> {leverage}x
 
@@ -566,8 +567,8 @@ Sharpe Ratio: {summary.get('sharpe_ratio', 0):.2f}
         if not self.spot_bot:
             return False
 
-        pnl = trade.get('pnl_usdt', 0)
-        pnl_pct = trade.get('pnl_pct', 0)
+        pnl = trade.get('pnl_usdt') or trade.get('pnl', 0)
+        pnl_pct = trade.get('pnl_pct') or trade.get('pnl_percent', 0)
         emoji = "🟢" if pnl >= 0 else "🔴"
         result = "WIN" if pnl >= 0 else "LOSS"
 

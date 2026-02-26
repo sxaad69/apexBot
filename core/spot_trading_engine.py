@@ -523,12 +523,14 @@ class SpotTradingEngine:
             duration = (trade['exit_time'] - trade['entry_time']).seconds // 60
             self.telegram.send_spot_trade_exit({
                 'symbol': symbol,
+                'entry_price': entry_price,
                 'exit_price': exit_price,
-                'pnl': net_pnl_usdt,
-                'pnl_percent': pnl_pct * 100,
-                'duration': f"{duration} minutes",
+                'pnl_usdt': net_pnl_usdt,
+                'pnl_pct': pnl_pct * 100,
+                'duration': duration,
                 'strategy': strategy_name,
-                'reason': reason
+                'reason': reason,
+                'balance_after': self.virtual_balance
             })
 
     def get_status(self) -> Dict:

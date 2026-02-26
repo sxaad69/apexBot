@@ -210,7 +210,7 @@ class Config:
         self.LOG_FILE_BACKUP_COUNT = int(os.getenv('LOG_FILE_BACKUP_COUNT', '5'))
 
         # ===== MongoDB Configuration =====
-        self.MONGODB_ENABLED = self._str_to_bool(os.getenv('MONGODB_ENABLED', 'true'))
+        self.MONGODB_ENABLED = self._str_to_bool(os.getenv('MONGODB_ENABLED', 'false'))
         self.MONGODB_HOST = os.getenv('MONGODB_HOST', '')
         self.MONGODB_PORT = int(os.getenv('MONGODB_PORT', '27017'))
         self.MONGODB_DATABASE = os.getenv('MONGODB_DATABASE', 'apex_hunter_v14')

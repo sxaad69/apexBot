@@ -791,6 +791,7 @@ class PaperTradingEngine:
                         duration = (trade['exit_time'] - trade['entry_time']).seconds // 60
                         self.telegram.send_futures_trade_exit({
                             'symbol': symbol,
+                            'entry_price': position['entry_price'],
                             'exit_price': current_price,
                             'pnl': pnl_amount,
                             'pnl_percent': leveraged_pnl_percent * 100,
@@ -1007,9 +1008,7 @@ class PaperTradingEngine:
             success2 = self.logger.save_strategy_signals(current_date, current_hour, signals_data)
             success3 = self.logger.save_hourly_metrics(current_date, current_hour, metrics_data)
 
-            if success1 and success2 and success3:
-                self.logger.debug(f"Market analysis data saved for {symbol} ({current_hour}) - {signals_generated} signals, {total_rejections} rejections")
-            else:
+            if not (success1 and success2 and success3):
                 self.logger.warning(f"Failed to save market analysis data for {symbol}")
 
         except Exception as e:

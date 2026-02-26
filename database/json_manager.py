@@ -19,9 +19,11 @@ class JSONManager:
     Drop-in replacement for MongoDB with identical interface
     """
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, data_dir: Optional[str] = None):
         self.config = config
-        self.data_dir = Path("data")
+        # Allow overriding the data directory
+        requested_dir = data_dir or "data"
+        self.data_dir = Path(requested_dir)
         self.data_dir.mkdir(exist_ok=True)
 
         # Collection names (same as MongoDB)
