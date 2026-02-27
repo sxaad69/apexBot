@@ -4,6 +4,7 @@ Similar to futures engine but without leverage, with trailing stops and take pro
 """
 
 import pandas as pd
+import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -185,7 +186,10 @@ class SpotTradingEngine:
         # Deduct balance immediately
         self.virtual_balance -= (size_usdt + entry_fee)
         
+        trade_id = f"SPT-{uuid.uuid4().hex[:8].upper()}"
+
         position = {
+            'trade_id': trade_id,
             'entry_time': datetime.now(),
             'entry_price': entry_price,
             'side': approved_params['side'],
@@ -218,7 +222,8 @@ class SpotTradingEngine:
             market_type='spot',
             strategy=strategy_name,
             stop_loss=signal.get('stop_loss'),
-            take_profit=signal.get('take_profit')
+            take_profit=signal.get('take_profit'),
+            trade_id=position['trade_id']
         )
 
         # Telegram notification
@@ -515,7 +520,8 @@ class SpotTradingEngine:
             strategy=strategy_name,
             entry_price=entry_price,
             side=side,
-            leverage=1
+            leverage=1,
+            trade_id=position.get('trade_id')
         )
 
         # Telegram notification

@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
+import sqlite3
 
 
 class StrategyDashboard:
@@ -56,17 +57,42 @@ class StrategyDashboard:
             st.error(f"Error loading {filename}: {e}")
             return []
 
-    def load_all_data(self):
-        """Load all trading data"""
-        futures_trades = self.load_json_data("futures_trades.json")
-        spot_trades = self.load_json_data("spot_trades.json")
-        active_positions = self.load_json_data("active_positions.json")
+    def load_sqlite_data(self):
+        """Load data from SQLite databases"""
+        main_db = self.data_dir / 'apex_hunter.db'
+        
+        if not main_db.exists():
+            return {'futures': [], 'spot': [], 'active': []}
+            
+        try:
+            conn = sqlite3.connect(main_db)
+            
+            # Load historical trades
+            trades_df = pd.read_sql_query("SELECT * FROM trades", conn)
+            # Map P&L amount column name (df refers to 'pnl' in process_strategy_performance)
+            if not trades_df.empty:
+                trades_df = trades_df.rename(columns={'pnl_amount': 'pnl'})
+            
+            futures_trades = trades_df[trades_df['market_type'] == 'futures'].to_dict('records')
+            spot_trades = trades_df[trades_df['market_type'] == 'spot'].to_dict('records')
+            
+            # Load active positions
+            active_df = pd.read_sql_query("SELECT * FROM active_positions", conn)
+            active_positions = active_df.to_dict('records')
+            
+            conn.close()
+            return {
+                'futures': futures_trades,
+                'spot': spot_trades,
+                'active': active_positions
+            }
+        except Exception as e:
+            st.error(f"Error loading SQLite data: {e}")
+            return {'futures': [], 'spot': [], 'active': []}
 
-        return {
-            'futures': futures_trades,
-            'spot': spot_trades,
-            'active': active_positions
-        }
+    def load_all_data(self):
+        """Load all trading data (Prioritizing SQLite)"""
+        return self.load_sqlite_data()
 
     def process_strategy_performance(self, trades_data):
         """Process trades data into strategy performance metrics"""
@@ -632,107 +658,67 @@ class StrategyDashboard:
         return pd.DataFrame(table_data) if table_data else None
 
     def get_hourly_market_analysis_data(self, selected_date):
-        """Get hourly market analysis data for selected date from JSON or logs"""
-        import glob
-        
-        # 1. Try to load from JSON first (More reliable)
-        date_str = selected_date.strftime('%Y%m%d')
-        json_filename = f"market_analyses_{date_str}.json"
-        
-        # Support both dated and undated JSON for compatibility
-        json_data = self.load_json_data(json_filename)
-        if not json_data:
-            json_data = self.load_json_data("market_analyses.json")
+        """Get hourly market analysis data for selected date from SQLite ACTIVITY LOG"""
+        log_db = self.data_dir / 'activity_log.db'
+        if not log_db.exists():
+            return {}
             
+        date_pattern = selected_date.strftime('%Y-%m-%d')
         hourly_data = {}
         
-        # Process JSON data if available
-        if isinstance(json_data, list):
-            for item in json_data:
-                # Check if it's the right date
-                if item.get('date') == selected_date.strftime('%Y-%m-%d'):
-                    hour = item.get('hour', '00:00').split(':')[0]
-                    if hour not in hourly_data:
-                        hourly_data[hour] = {
-                            'total_analyses': 0,
-                            'pairs_analyzed': set(),
-                            'strategy_signals': {'A1': 0, 'A2': 0, 'A3': 0, 'A4': 0, 'A5': 0},
-                            'rejections': {'volume': 0, 'adx': 0, 'volatility': 0, 'other': 0},
-                            'futures_analyses': 0,
-                            'spot_analyses': 0,
-                            'trades_taken': 0
-                        }
-                    
-                    hourly_data[hour]['total_analyses'] += item.get('total_analyses', 0)
-                    hourly_data[hour]['futures_analyses'] += item.get('futures_analyses', 0)
-                    hourly_data[hour]['spot_analyses'] += item.get('spot_analyses', 0)
-                    for p in item.get('pairs_analyzed', []):
-                        hourly_data[hour]['pairs_analyzed'].add(p)
-        elif isinstance(json_data, dict):
-            # If JSON is keyed by hour {"12:00": {...}}
-            for hour_key, item in json_data.items():
-                if item.get('date') == selected_date.strftime('%Y-%m-%d'):
-                    hour = hour_key.split(':')[0]
-                    if hour not in hourly_data:
-                        hourly_data[hour] = {
-                            'total_analyses': 0,
-                            'pairs_analyzed': set(),
-                            'strategy_signals': {'A1': 0, 'A2': 0, 'A3': 0, 'A4': 0, 'A5': 0},
-                            'rejections': {'volume': 0, 'adx': 0, 'volatility': 0, 'other': 0},
-                            'futures_analyses': 0,
-                            'spot_analyses': 0,
-                            'trades_taken': 0
-                        }
-                    hourly_data[hour]['total_analyses'] += item.get('total_analyses', 0)
-                    hourly_data[hour]['futures_analyses'] += item.get('futures_analyses', 0)
-                    hourly_data[hour]['spot_analyses'] += item.get('spot_analyses', 0)
-
-        # 2. Supplement with log data if available
-        log_files = glob.glob("logs/apex_hunter_*.log")
-
-        for log_file in log_files:
-            try:
-                with open(log_file, 'r') as f:
-                    for line in f:
-                        # Check if line is from selected date
-                        if f'2026-{selected_date.month:02d}-{selected_date.day:02d}' in line:
-                            try:
-                                # Extract hour from timestamp
-                                timestamp_part = line.split('|')[0].strip()
-                                hour = timestamp_part.split()[1].split(':')[0]  # HH from HH:MM:SS
-
-                                if hour not in hourly_data:
-                                    hourly_data[hour] = {
-                                        'total_analyses': 0,
-                                        'pairs_analyzed': set(),
-                                        'strategy_signals': {'A1': 0, 'A2': 0, 'A3': 0, 'A4': 0, 'A5': 0},
-                                        'rejections': {'volume': 0, 'adx': 0, 'other': 0},
-                                        'futures_analyses': 0,
-                                        'spot_analyses': 0
-                                    }
-
-                                # Count market analyses
-                                if 'Price:' in line and '$' in line:
-                                    hourly_data[hour]['total_analyses'] += 1
-
-                                    # Extract pair
-                                    if '|' in line:
-                                        pair_part = line.split('|')[0].strip()
-                                        if '/' in pair_part:
-                                            hourly_data[hour]['pairs_analyzed'].add(pair_part)
-
-                                    # Check if futures or spot
-                                    if 'SPOT' in line.upper():
-                                        hourly_data[hour]['spot_analyses'] += 1
-                                    else:
-                                        hourly_data[hour]['futures_analyses'] += 1
-
-                                # Count strategy signals
-                                if 'SIGNAL:' in line:
-                                    if '[A1:' in line or 'A1 EMA' in line:
-                                        hourly_data[hour]['strategy_signals']['A1'] += 1
-                                    elif '[A2:' in line or 'A2 EMA' in line:
-                                        hourly_data[hour]['strategy_signals']['A2'] += 1
+        try:
+            conn = sqlite3.connect(log_db)
+            
+            # Query market analysis counts by hour
+            query = f"""
+                SELECT substr(timestamp, 12, 2) as hour, count(*) as count
+                FROM market_analysis
+                WHERE timestamp LIKE '{date_pattern}%'
+                GROUP BY hour
+            """
+            analysis_df = pd.read_sql_query(query, conn)
+            
+            # Query signals counts by hour/strategy
+            query = f"""
+                SELECT substr(timestamp, 12, 2) as hour, strategy, count(*) as count
+                FROM strategy_signals
+                WHERE timestamp LIKE '{date_pattern}%'
+                GROUP BY hour, strategy
+            """
+            signals_df = pd.read_sql_query(query, conn)
+            
+            # Initialize 24 hours
+            for h in range(24):
+                hr_key = f"{h:02d}"
+                hourly_data[hr_key] = {
+                    'total_analyses': 0,
+                    'futures_analyses': 0, # Future tracking: could split in DB
+                    'spot_analyses': 0,
+                    'strategy_signals': {'A1': 0, 'A2': 0, 'A3': 0, 'A4': 0, 'A5': 0},
+                    'rejections': {'volume': 0, 'adx': 0, 'volatility': 0, 'other': 0},
+                    'trades_taken': 0
+                }
+            
+            # Populate with data
+            for _, row in analysis_df.iterrows():
+                hr = row['hour']
+                if hr in hourly_data:
+                    hourly_data[hr]['total_analyses'] = int(row['count'])
+                    # Simple assumption for now: split 50/50 for visualization if not specific
+                    hourly_data[hr]['futures_analyses'] = int(row['count'])
+            
+            for _, row in signals_df.iterrows():
+                hr = row['hour']
+                strat = row['strategy']
+                if hr in hourly_data and strat in hourly_data[hr]['strategy_signals']:
+                    hourly_data[hr]['strategy_signals'][strat] = int(row['count'])
+            
+            conn.close()
+            return hourly_data
+            
+        except Exception as e:
+            st.error(f"Error loading hourly SQLite data: {e}")
+            return {}
                                     elif '[A3:' in line or 'A3 Fast' in line:
                                         hourly_data[hour]['strategy_signals']['A3'] += 1
                                     elif '[A4:' in line or 'A4 Trend' in line:
@@ -1291,28 +1277,36 @@ class StrategyDashboard:
         self.display_trade_outcomes(hourly_data)
 
     def get_available_dates(self):
-        """Get list of available dates from log files"""
-        import glob
-
+        """Get list of available dates from SQLite databases"""
         dates = set()
-        log_files = glob.glob("logs/apex_hunter_*.log")
-
-        for log_file in log_files:
+        
+        # 1. Main DB (Trades)
+        main_db = self.data_dir / 'apex_hunter.db'
+        if main_db.exists():
             try:
-                # Extract date from filename (apex_hunter_20260112.log)
-                filename = os.path.basename(log_file)
-                if 'apex_hunter_' in filename and '.log' in filename:
-                    date_str = filename.replace('apex_hunter_', '').replace('.log', '')
-                    try:
-                        # Parse date string directly (already in YYYYMMDD format)
-                        date = pd.to_datetime(date_str, format='%Y%m%d')
-                        dates.add(date.date())
-                    except:
-                        continue
-            except:
-                continue
-
-        return sorted(list(dates)) if dates else []
+                conn = sqlite3.connect(main_db)
+                df = pd.read_sql_query("SELECT DISTINCT substr(entry_time, 1, 10) as date FROM trades", conn)
+                for d in df['date'].dropna():
+                    dates.add(pd.to_datetime(d).date())
+                conn.close()
+            except: pass
+            
+        # 2. Activity DB (Analysis)
+        log_db = self.data_dir / 'activity_log.db'
+        if log_db.exists():
+            try:
+                conn = sqlite3.connect(log_db)
+                df = pd.read_sql_query("SELECT DISTINCT substr(timestamp, 1, 10) as date FROM market_analysis", conn)
+                for d in df['date'].dropna():
+                    dates.add(pd.to_datetime(d).date())
+                conn.close()
+            except: pass
+            
+        # Fallback to today if empty
+        if not dates:
+            dates.add(datetime.utcnow().date())
+            
+        return sorted(list(dates))
 
     def get_hourly_analysis_data(self, selected_date):
         """Get hourly analysis data for selected date"""

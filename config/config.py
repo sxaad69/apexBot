@@ -211,6 +211,10 @@ class Config:
 
         # ===== MongoDB Configuration =====
         self.MONGODB_ENABLED = self._str_to_bool(os.getenv('MONGODB_ENABLED', 'false'))
+        # ===== SQLite Configuration =====
+        self.SQLITE_ENABLED = self._str_to_bool(os.getenv('SQLITE_ENABLED', 'true'))
+        self.SQLITE_DB_NAME = os.getenv('SQLITE_DB_NAME', 'apex_hunter_v14.db')
+
         self.MONGODB_HOST = os.getenv('MONGODB_HOST', '')
         self.MONGODB_PORT = int(os.getenv('MONGODB_PORT', '27017'))
         self.MONGODB_DATABASE = os.getenv('MONGODB_DATABASE', 'apex_hunter_v14')

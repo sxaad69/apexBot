@@ -8,6 +8,7 @@ import sys
 import time
 import signal
 import argparse
+import uuid
 from datetime import datetime, timedelta
 import pandas as pd
 
@@ -641,7 +642,10 @@ class PaperTradingEngine:
             # Size is the margin used for the position
             self.capital[strategy_name] -= (size + entry_fee)
             
+            trade_id = f"FUT-{uuid.uuid4().hex[:8].upper()}"
+            
             position = {
+                'trade_id': trade_id,
                 'entry_time': datetime.now(),
                 'entry_price': entry_price,
                 'side': approved_params['side'],
@@ -677,7 +681,8 @@ class PaperTradingEngine:
                 strategy=strategy_name,
                 confidence=confidence,
                 stop_loss=signal['stop_loss'],
-                take_profit=signal['take_profit']
+                take_profit=signal['take_profit'],
+                trade_id=position['trade_id']
             )
 
             # Telegram notification
@@ -777,7 +782,8 @@ class PaperTradingEngine:
                     side=position['side'],
                     leverage=leverage,
                     stop_loss=position['stop_loss'],
-                    take_profit=position['take_profit']
+                    take_profit=position['take_profit'],
+                    trade_id=position.get('trade_id')
                 )
 
                 # Telegram notification
