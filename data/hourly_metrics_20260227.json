@@ -1,0 +1,53 @@
+{
+  "03:00": {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "signals_generated": 0,
+    "trades_executed": 0,
+    "volume_rejections": 5,
+    "adx_rejections": 0,
+    "volatility_rejections": 0,
+    "other_rejections": 0,
+    "total_rejections": 5,
+    "conversion_rate": 0.0,
+    "detailed_rejections": {
+      "volume": [
+        {
+          "strategy": "A1: EMA+MACD",
+          "symbol": "DOGE/USDT",
+          "reason": "Volume < 0.1x average",
+          "timestamp": "2026-02-27 03:15:32.160435"
+        },
+        {
+          "strategy": "A2: EMA+RSI Momentum",
+          "symbol": "DOGE/USDT",
+          "reason": "Volume < 0.1x average",
+          "timestamp": "2026-02-27 03:15:32.160435"
+        },
+        {
+          "strategy": "A3: Momentum Scalp",
+          "symbol": "DOGE/USDT",
+          "reason": "Volume < 0.1x average",
+          "timestamp": "2026-02-27 03:15:32.160435"
+        },
+        {
+          "strategy": "A4: Trend Following",
+          "symbol": "DOGE/USDT",
+          "reason": "Volume < 0.1x average",
+          "timestamp": "2026-02-27 03:15:32.160435"
+        },
+        {
+          "strategy": "A5: Market Microstructure",
+          "symbol": "DOGE/USDT",
+          "reason": "Volume < 0.1x average",
+          "timestamp": "2026-02-27 03:15:32.160435"
+        }
+      ],
+      "adx": [],
+      "volatility": [],
+      "other": []
+    },
+    "timestamp": "2026-02-27 03:15:32.160435"
+  }
+}

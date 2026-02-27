@@ -1,0 +1,1472 @@
+[
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "dd1a7c11-fc5f-4ca3-9dfe-8e52abe33055",
+    "timestamp": "2026-02-27 00:15:25.392281",
+    "expires_at": "2026-03-29 00:15:25.392281"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "afbd533b-b358-4f2f-87c7-f33bdf671fbd",
+    "timestamp": "2026-02-27 00:15:25.414194",
+    "expires_at": "2026-03-29 00:15:25.414194"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "45cf39f9-5c67-4238-a365-5d8e10fad5c4",
+    "timestamp": "2026-02-27 00:15:25.433844",
+    "expires_at": "2026-03-29 00:15:25.433844"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "01e88105-19a7-4731-bd4b-ad0c754e4d3f",
+    "timestamp": "2026-02-27 00:15:25.454822",
+    "expires_at": "2026-03-29 00:15:25.454822"
+  },
+  {
+    "message": "[A5] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "3a913aa7-26b9-4f1b-8c46-6b408a6b2258",
+    "timestamp": "2026-02-27 00:15:25.483894",
+    "expires_at": "2026-03-29 00:15:25.483894"
+  },
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "b72a2ce7-0da0-44d0-ba89-3d0257e84c4e",
+    "timestamp": "2026-02-27 00:15:25.485209",
+    "expires_at": "2026-03-29 00:15:25.485209"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "0a53b0cd-dcae-4925-bb09-96d920825fdf",
+    "timestamp": "2026-02-27 00:15:25.486797",
+    "expires_at": "2026-03-29 00:15:25.486797"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "5e3372ad-b60d-4c87-951a-e1ec83536673",
+    "timestamp": "2026-02-27 00:15:25.487905",
+    "expires_at": "2026-03-29 00:15:25.487905"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "05aa6d6b-0e4a-4a77-8a40-5e68cca9a41a",
+    "timestamp": "2026-02-27 00:15:25.488761",
+    "expires_at": "2026-03-29 00:15:25.488761"
+  },
+  {
+    "message": "[A5: Market Microstructure] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "6708ef9f-ffb4-4da1-99bb-89cc4d11997a",
+    "timestamp": "2026-02-27 00:15:25.489684",
+    "expires_at": "2026-03-29 00:15:25.489684"
+  },
+  {
+    "message": "Strategy A1: EMA+MACD: AVAILABLE for BTC/USDT",
+    "metadata": {},
+    "_id": "da5f5e65-8d9b-4c58-9182-16bb19186da2",
+    "timestamp": "2026-02-27 00:15:25.497335",
+    "expires_at": "2026-03-29 00:15:25.497335"
+  },
+  {
+    "message": "Strategy A2: EMA+RSI Momentum: AVAILABLE for BTC/USDT",
+    "metadata": {},
+    "_id": "3a25f75a-263d-4ed1-bffa-9efe7d1a5283",
+    "timestamp": "2026-02-27 00:15:25.497891",
+    "expires_at": "2026-03-29 00:15:25.497891"
+  },
+  {
+    "message": "Strategy A3: Momentum Scalp: AVAILABLE for BTC/USDT",
+    "metadata": {},
+    "_id": "80aaa468-7fce-44fc-9c8c-2a7717923ada",
+    "timestamp": "2026-02-27 00:15:25.498430",
+    "expires_at": "2026-03-29 00:15:25.498430"
+  },
+  {
+    "message": "Strategy A4: Trend Following: AVAILABLE for BTC/USDT",
+    "metadata": {},
+    "_id": "4e668bb1-727a-4895-b523-b6506ca3a727",
+    "timestamp": "2026-02-27 00:15:25.498974",
+    "expires_at": "2026-03-29 00:15:25.498974"
+  },
+  {
+    "message": "Strategy A5: Market Microstructure: AVAILABLE for BTC/USDT",
+    "metadata": {},
+    "_id": "1d2c64e5-0f56-43e2-9e1d-00c25cfcda37",
+    "timestamp": "2026-02-27 00:15:25.499518",
+    "expires_at": "2026-03-29 00:15:25.499518"
+  },
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "efcf613f-953d-4eeb-a948-970077b66b25",
+    "timestamp": "2026-02-27 00:15:25.838483",
+    "expires_at": "2026-03-29 00:15:25.838483"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "2bab407f-e601-457b-86bb-8b0edb9e7478",
+    "timestamp": "2026-02-27 00:15:25.856341",
+    "expires_at": "2026-03-29 00:15:25.856341"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "1ba9b66d-9bf7-4b83-8671-4f888552f091",
+    "timestamp": "2026-02-27 00:15:25.875176",
+    "expires_at": "2026-03-29 00:15:25.875176"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "729e5178-964e-4651-9c49-ce78274ea666",
+    "timestamp": "2026-02-27 00:15:25.895508",
+    "expires_at": "2026-03-29 00:15:25.895508"
+  },
+  {
+    "message": "[A5] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "ee4851d3-a0eb-4fda-95dc-83b0873bc220",
+    "timestamp": "2026-02-27 00:15:25.923405",
+    "expires_at": "2026-03-29 00:15:25.923405"
+  },
+  {
+    "message": "[A1: EMA+MACD] ETH/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "1f345f78-be50-426f-a183-4fc0dbfb98c6",
+    "timestamp": "2026-02-27 00:15:25.924504",
+    "expires_at": "2026-03-29 00:15:25.924504"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] ETH/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "9606d538-3cf1-4a7a-80d3-9dd6a4efabf7",
+    "timestamp": "2026-02-27 00:15:25.925489",
+    "expires_at": "2026-03-29 00:15:25.925489"
+  },
+  {
+    "message": "[A3: Momentum Scalp] ETH/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "8160b69b-ab55-410a-959e-4e272b880042",
+    "timestamp": "2026-02-27 00:15:25.926801",
+    "expires_at": "2026-03-29 00:15:25.926801"
+  },
+  {
+    "message": "[A4: Trend Following] ETH/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "f26883d3-2a2a-46ed-a68f-4d04f4846486",
+    "timestamp": "2026-02-27 00:15:25.927964",
+    "expires_at": "2026-03-29 00:15:25.927964"
+  },
+  {
+    "message": "[A5: Market Microstructure] ETH/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "0b33350e-b15b-4ba8-b6d7-02cfef3a042d",
+    "timestamp": "2026-02-27 00:15:25.929252",
+    "expires_at": "2026-03-29 00:15:25.929252"
+  },
+  {
+    "message": "Strategy A1: EMA+MACD: AVAILABLE for ETH/USDT",
+    "metadata": {},
+    "_id": "f17ab81e-5370-4548-b32d-2c115ef296f2",
+    "timestamp": "2026-02-27 00:15:25.936266",
+    "expires_at": "2026-03-29 00:15:25.936266"
+  },
+  {
+    "message": "Strategy A2: EMA+RSI Momentum: AVAILABLE for ETH/USDT",
+    "metadata": {},
+    "_id": "9f8c23fc-171c-4f02-8b43-7549df2a3305",
+    "timestamp": "2026-02-27 00:15:25.937067",
+    "expires_at": "2026-03-29 00:15:25.937067"
+  },
+  {
+    "message": "Strategy A3: Momentum Scalp: AVAILABLE for ETH/USDT",
+    "metadata": {},
+    "_id": "d81cf19e-e39d-4f7e-9141-b69e3d4a20e7",
+    "timestamp": "2026-02-27 00:15:25.937811",
+    "expires_at": "2026-03-29 00:15:25.937811"
+  },
+  {
+    "message": "Strategy A4: Trend Following: AVAILABLE for ETH/USDT",
+    "metadata": {},
+    "_id": "fc2f1579-da3a-414b-afa0-c561941eb7d2",
+    "timestamp": "2026-02-27 00:15:25.938542",
+    "expires_at": "2026-03-29 00:15:25.938542"
+  },
+  {
+    "message": "Strategy A5: Market Microstructure: AVAILABLE for ETH/USDT",
+    "metadata": {},
+    "_id": "95d3cbb7-06d0-4734-9867-69a24caaf69b",
+    "timestamp": "2026-02-27 00:15:25.939287",
+    "expires_at": "2026-03-29 00:15:25.939287"
+  },
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "6459b2db-a5bd-4ad1-a86b-bbe593f152fe",
+    "timestamp": "2026-02-27 00:15:26.280693",
+    "expires_at": "2026-03-29 00:15:26.280693"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "a55c7d0c-8c66-49ee-889c-d853358d516c",
+    "timestamp": "2026-02-27 00:15:26.298286",
+    "expires_at": "2026-03-29 00:15:26.298286"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "0946ed8b-1bfc-4161-b428-5478f1264a9f",
+    "timestamp": "2026-02-27 00:15:26.316574",
+    "expires_at": "2026-03-29 00:15:26.316574"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "4d5f3f7f-23d8-4e1f-a14f-f113eab57d06",
+    "timestamp": "2026-02-27 00:15:26.336143",
+    "expires_at": "2026-03-29 00:15:26.336143"
+  },
+  {
+    "message": "[A5] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "1d846c3e-5666-43cd-8909-b8d14a7ff07c",
+    "timestamp": "2026-02-27 00:15:26.365516",
+    "expires_at": "2026-03-29 00:15:26.365516"
+  },
+  {
+    "message": "[A1: EMA+MACD] XRP/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "6d83b744-c1ba-4bfa-aa8e-fbfab260a6c7",
+    "timestamp": "2026-02-27 00:15:26.366682",
+    "expires_at": "2026-03-29 00:15:26.366682"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] XRP/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "4deba09d-37df-4a8f-8455-d3fc898886e0",
+    "timestamp": "2026-02-27 00:15:26.367768",
+    "expires_at": "2026-03-29 00:15:26.367768"
+  },
+  {
+    "message": "[A3: Momentum Scalp] XRP/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "48bf4af6-4c6f-49c8-87f6-a3211fb93a06",
+    "timestamp": "2026-02-27 00:15:26.368889",
+    "expires_at": "2026-03-29 00:15:26.368889"
+  },
+  {
+    "message": "[A4: Trend Following] XRP/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "99027246-4b41-4d0d-809b-5a4dc1394739",
+    "timestamp": "2026-02-27 00:15:26.370033",
+    "expires_at": "2026-03-29 00:15:26.370033"
+  },
+  {
+    "message": "[A5: Market Microstructure] XRP/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "4d75fd7a-2d81-4ca0-812b-9b23a39adda2",
+    "timestamp": "2026-02-27 00:15:26.371198",
+    "expires_at": "2026-03-29 00:15:26.371198"
+  },
+  {
+    "message": "Strategy A1: EMA+MACD: AVAILABLE for XRP/USDT",
+    "metadata": {},
+    "_id": "c0370d48-9178-4efd-9945-44722e8362b0",
+    "timestamp": "2026-02-27 00:15:26.378337",
+    "expires_at": "2026-03-29 00:15:26.378337"
+  },
+  {
+    "message": "Strategy A2: EMA+RSI Momentum: AVAILABLE for XRP/USDT",
+    "metadata": {},
+    "_id": "bc667ba9-4ed5-4f9c-b2e7-bae34ab95dd4",
+    "timestamp": "2026-02-27 00:15:26.379215",
+    "expires_at": "2026-03-29 00:15:26.379215"
+  },
+  {
+    "message": "Strategy A3: Momentum Scalp: AVAILABLE for XRP/USDT",
+    "metadata": {},
+    "_id": "84c33ce3-f998-47d1-a10c-2a87622c5612",
+    "timestamp": "2026-02-27 00:15:26.380053",
+    "expires_at": "2026-03-29 00:15:26.380053"
+  },
+  {
+    "message": "Strategy A4: Trend Following: AVAILABLE for XRP/USDT",
+    "metadata": {},
+    "_id": "8b133ca7-8971-43d0-adc6-8dea6c75d0f2",
+    "timestamp": "2026-02-27 00:15:26.380891",
+    "expires_at": "2026-03-29 00:15:26.380891"
+  },
+  {
+    "message": "Strategy A5: Market Microstructure: AVAILABLE for XRP/USDT",
+    "metadata": {},
+    "_id": "39c8be37-be76-410e-9696-9121cf3b00eb",
+    "timestamp": "2026-02-27 00:15:26.381739",
+    "expires_at": "2026-03-29 00:15:26.381739"
+  },
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "6b6a0253-b668-4411-be4e-674743c25634",
+    "timestamp": "2026-02-27 00:15:26.814307",
+    "expires_at": "2026-03-29 00:15:26.814307"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "7e36f6a9-bc2a-4a9f-8f2d-082bc1d14d0c",
+    "timestamp": "2026-02-27 00:15:26.833470",
+    "expires_at": "2026-03-29 00:15:26.833470"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "bb19de8f-8306-4b24-860e-b76df33357e9",
+    "timestamp": "2026-02-27 00:15:26.852607",
+    "expires_at": "2026-03-29 00:15:26.852607"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "2fe06979-63d5-410e-ba15-c2d8424c7c5e",
+    "timestamp": "2026-02-27 00:15:26.872291",
+    "expires_at": "2026-03-29 00:15:26.872291"
+  },
+  {
+    "message": "[A5] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "f5c899e6-8d7c-4c11-b44d-d82c1c03606b",
+    "timestamp": "2026-02-27 00:15:26.899061",
+    "expires_at": "2026-03-29 00:15:26.899061"
+  },
+  {
+    "message": "[A1: EMA+MACD] SOL/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "7e4a9d05-ceff-4a1c-9be9-92b00f9c16b2",
+    "timestamp": "2026-02-27 00:15:26.900194",
+    "expires_at": "2026-03-29 00:15:26.900194"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] SOL/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "260f142d-57e5-4959-bb4a-99b15eceec74",
+    "timestamp": "2026-02-27 00:15:26.901236",
+    "expires_at": "2026-03-29 00:15:26.901236"
+  },
+  {
+    "message": "[A3: Momentum Scalp] SOL/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "8737fd5b-eacc-4ce3-80f7-b6d434ae382e",
+    "timestamp": "2026-02-27 00:15:26.902476",
+    "expires_at": "2026-03-29 00:15:26.902476"
+  },
+  {
+    "message": "[A4: Trend Following] SOL/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "d27f4084-cd98-44eb-bcf3-cf98b054ce27",
+    "timestamp": "2026-02-27 00:15:26.903624",
+    "expires_at": "2026-03-29 00:15:26.903624"
+  },
+  {
+    "message": "[A5: Market Microstructure] SOL/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "fb61ecb5-3c1f-4409-9d9a-b8ff6949a0d3",
+    "timestamp": "2026-02-27 00:15:26.904853",
+    "expires_at": "2026-03-29 00:15:26.904853"
+  },
+  {
+    "message": "Strategy A1: EMA+MACD: AVAILABLE for SOL/USDT",
+    "metadata": {},
+    "_id": "0af14d1e-06ed-4726-89ee-6461fa19d575",
+    "timestamp": "2026-02-27 00:15:26.911044",
+    "expires_at": "2026-03-29 00:15:26.911044"
+  },
+  {
+    "message": "Strategy A2: EMA+RSI Momentum: AVAILABLE for SOL/USDT",
+    "metadata": {},
+    "_id": "4f3ec1b1-69f3-489b-ab5e-7e97e686de9f",
+    "timestamp": "2026-02-27 00:15:26.912069",
+    "expires_at": "2026-03-29 00:15:26.912069"
+  },
+  {
+    "message": "Strategy A3: Momentum Scalp: AVAILABLE for SOL/USDT",
+    "metadata": {},
+    "_id": "48062af3-d0e8-430e-86cf-7ff504dbf828",
+    "timestamp": "2026-02-27 00:15:26.913088",
+    "expires_at": "2026-03-29 00:15:26.913088"
+  },
+  {
+    "message": "Strategy A4: Trend Following: AVAILABLE for SOL/USDT",
+    "metadata": {},
+    "_id": "f9d719d1-2af0-4107-b9a0-fb9617958222",
+    "timestamp": "2026-02-27 00:15:26.914086",
+    "expires_at": "2026-03-29 00:15:26.914086"
+  },
+  {
+    "message": "Strategy A5: Market Microstructure: AVAILABLE for SOL/USDT",
+    "metadata": {},
+    "_id": "0dd9615f-2cd2-40a4-9a3f-98cef9bed679",
+    "timestamp": "2026-02-27 00:15:26.915117",
+    "expires_at": "2026-03-29 00:15:26.915117"
+  },
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "338f72a1-c6ea-4f5a-93a5-a6b01f329684",
+    "timestamp": "2026-02-27 00:15:27.325570",
+    "expires_at": "2026-03-29 00:15:27.325570"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "c3187599-f9c3-4092-9064-32a90c9e46aa",
+    "timestamp": "2026-02-27 00:15:27.343532",
+    "expires_at": "2026-03-29 00:15:27.343532"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "71db7629-fe4c-4eaf-ba68-5e6e52cc7bda",
+    "timestamp": "2026-02-27 00:15:27.362823",
+    "expires_at": "2026-03-29 00:15:27.362823"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "4802bb7c-091d-4e2a-8a12-9db3fb1fb172",
+    "timestamp": "2026-02-27 00:15:27.382803",
+    "expires_at": "2026-03-29 00:15:27.382803"
+  },
+  {
+    "message": "[A5] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "e93f2c0f-6369-438c-9a2a-8c3bda744794",
+    "timestamp": "2026-02-27 00:15:27.409643",
+    "expires_at": "2026-03-29 00:15:27.409643"
+  },
+  {
+    "message": "[A1: EMA+MACD] XMR/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "7a2c31be-4644-4b6a-90e3-30d4a3fbfbbd",
+    "timestamp": "2026-02-27 00:15:27.410974",
+    "expires_at": "2026-03-29 00:15:27.410974"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] XMR/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "35e778de-ba53-4905-8d42-a012d2986b6e",
+    "timestamp": "2026-02-27 00:15:27.412081",
+    "expires_at": "2026-03-29 00:15:27.412081"
+  },
+  {
+    "message": "[A3: Momentum Scalp] XMR/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "0f676a9c-73a3-435e-ad64-c4c3b09178f3",
+    "timestamp": "2026-02-27 00:15:27.413192",
+    "expires_at": "2026-03-29 00:15:27.413192"
+  },
+  {
+    "message": "[A4: Trend Following] XMR/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "f574be4e-2c05-4003-9a7e-3745394d5507",
+    "timestamp": "2026-02-27 00:15:27.414309",
+    "expires_at": "2026-03-29 00:15:27.414309"
+  },
+  {
+    "message": "[A5: Market Microstructure] XMR/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "f5ccb241-67a5-41da-8990-19b19bbd3c8f",
+    "timestamp": "2026-02-27 00:15:27.415446",
+    "expires_at": "2026-03-29 00:15:27.415446"
+  },
+  {
+    "message": "Strategy A1: EMA+MACD: AVAILABLE for XMR/USDT",
+    "metadata": {},
+    "_id": "49fcda48-6634-4a97-b183-e72b98751d62",
+    "timestamp": "2026-02-27 00:15:27.421744",
+    "expires_at": "2026-03-29 00:15:27.421744"
+  },
+  {
+    "message": "Strategy A2: EMA+RSI Momentum: AVAILABLE for XMR/USDT",
+    "metadata": {},
+    "_id": "b5746f7c-ddac-45e6-ada5-6ec43a751151",
+    "timestamp": "2026-02-27 00:15:27.422717",
+    "expires_at": "2026-03-29 00:15:27.422717"
+  },
+  {
+    "message": "Strategy A3: Momentum Scalp: AVAILABLE for XMR/USDT",
+    "metadata": {},
+    "_id": "6db21c6e-0677-4aa0-9c83-5edffe36d745",
+    "timestamp": "2026-02-27 00:15:27.423667",
+    "expires_at": "2026-03-29 00:15:27.423667"
+  },
+  {
+    "message": "Strategy A4: Trend Following: AVAILABLE for XMR/USDT",
+    "metadata": {},
+    "_id": "707aae1e-8692-4b8f-99ff-3fc7ea7aaf01",
+    "timestamp": "2026-02-27 00:15:27.424607",
+    "expires_at": "2026-03-29 00:15:27.424607"
+  },
+  {
+    "message": "Strategy A5: Market Microstructure: AVAILABLE for XMR/USDT",
+    "metadata": {},
+    "_id": "d45c40d7-f5a9-4342-93c8-5f50c0eeda53",
+    "timestamp": "2026-02-27 00:15:27.425564",
+    "expires_at": "2026-03-29 00:15:27.425564"
+  },
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "2315456a-6388-4c0f-9552-ecca0dc39949",
+    "timestamp": "2026-02-27 00:15:27.854977",
+    "expires_at": "2026-03-29 00:15:27.854977"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "e60dbf1f-826e-49ec-9e11-69efd3971767",
+    "timestamp": "2026-02-27 00:15:27.875646",
+    "expires_at": "2026-03-29 00:15:27.875646"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "a26546ba-3728-4184-85cc-65f9f02d1dfc",
+    "timestamp": "2026-02-27 00:15:27.894789",
+    "expires_at": "2026-03-29 00:15:27.894789"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "8b7ffbcb-95d1-42d2-951f-5a167b1f0da7",
+    "timestamp": "2026-02-27 00:15:27.914836",
+    "expires_at": "2026-03-29 00:15:27.914836"
+  },
+  {
+    "message": "[A5] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "242ed9b1-4103-4802-b6b3-a945b3fb0864",
+    "timestamp": "2026-02-27 00:15:27.943257",
+    "expires_at": "2026-03-29 00:15:27.943257"
+  },
+  {
+    "message": "[A1: EMA+MACD] DOT/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "78d77193-ba49-4440-907d-d1090f36ae9f",
+    "timestamp": "2026-02-27 00:15:27.945031",
+    "expires_at": "2026-03-29 00:15:27.945031"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] DOT/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "6c996fa8-4f53-4cca-ba07-10646a236285",
+    "timestamp": "2026-02-27 00:15:27.946507",
+    "expires_at": "2026-03-29 00:15:27.946507"
+  },
+  {
+    "message": "[A3: Momentum Scalp] DOT/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "a2cf14ec-34eb-40c8-9bd6-da87f88f6050",
+    "timestamp": "2026-02-27 00:15:27.947985",
+    "expires_at": "2026-03-29 00:15:27.947985"
+  },
+  {
+    "message": "[A4: Trend Following] DOT/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "d4870a3e-31f8-442a-b728-92adc6d5633e",
+    "timestamp": "2026-02-27 00:15:27.949536",
+    "expires_at": "2026-03-29 00:15:27.949536"
+  },
+  {
+    "message": "[A5: Market Microstructure] DOT/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "a037c90c-85ec-4105-b016-11248857da09",
+    "timestamp": "2026-02-27 00:15:27.950999",
+    "expires_at": "2026-03-29 00:15:27.950999"
+  },
+  {
+    "message": "Strategy A1: EMA+MACD: AVAILABLE for DOT/USDT",
+    "metadata": {},
+    "_id": "adda0692-d846-43cc-afd4-9783f4b6d6f3",
+    "timestamp": "2026-02-27 00:15:27.958052",
+    "expires_at": "2026-03-29 00:15:27.958052"
+  },
+  {
+    "message": "Strategy A2: EMA+RSI Momentum: AVAILABLE for DOT/USDT",
+    "metadata": {},
+    "_id": "50800eec-8975-4ab6-ac7a-c30a84ecb246",
+    "timestamp": "2026-02-27 00:15:27.959491",
+    "expires_at": "2026-03-29 00:15:27.959491"
+  },
+  {
+    "message": "Strategy A3: Momentum Scalp: AVAILABLE for DOT/USDT",
+    "metadata": {},
+    "_id": "f26f0542-bb77-48ea-a1a3-805c36d2016e",
+    "timestamp": "2026-02-27 00:15:27.960884",
+    "expires_at": "2026-03-29 00:15:27.960884"
+  },
+  {
+    "message": "Strategy A4: Trend Following: AVAILABLE for DOT/USDT",
+    "metadata": {},
+    "_id": "edcaf190-1749-4637-81cb-af2e74175021",
+    "timestamp": "2026-02-27 00:15:27.962186",
+    "expires_at": "2026-03-29 00:15:27.962186"
+  },
+  {
+    "message": "Strategy A5: Market Microstructure: AVAILABLE for DOT/USDT",
+    "metadata": {},
+    "_id": "dfdb8997-d0cb-4a49-a70f-b228d907fae0",
+    "timestamp": "2026-02-27 00:15:27.963476",
+    "expires_at": "2026-03-29 00:15:27.963476"
+  },
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "3f2b786a-ab97-429c-b928-c3f0ab7edaca",
+    "timestamp": "2026-02-27 00:15:28.379546",
+    "expires_at": "2026-03-29 00:15:28.379546"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "91728301-c698-42ff-b8ba-425b3c1e55d9",
+    "timestamp": "2026-02-27 00:15:28.399268",
+    "expires_at": "2026-03-29 00:15:28.399268"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "af6794bd-bea6-4c3c-b36f-475101c5d19e",
+    "timestamp": "2026-02-27 00:15:28.418762",
+    "expires_at": "2026-03-29 00:15:28.418762"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "cadab077-925e-4341-9dd8-823e6899d488",
+    "timestamp": "2026-02-27 00:15:28.440645",
+    "expires_at": "2026-03-29 00:15:28.440645"
+  },
+  {
+    "message": "[A5] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "0ccbff7e-77ba-486c-b729-4120d9255a61",
+    "timestamp": "2026-02-27 00:15:28.469887",
+    "expires_at": "2026-03-29 00:15:28.469887"
+  },
+  {
+    "message": "[A1: EMA+MACD] AAVE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "6926e5f8-275a-4d7b-a994-b8a29e51afbc",
+    "timestamp": "2026-02-27 00:15:28.471661",
+    "expires_at": "2026-03-29 00:15:28.471661"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] AAVE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "c165cb5d-1159-41c1-b44d-c21747f73fd2",
+    "timestamp": "2026-02-27 00:15:28.473292",
+    "expires_at": "2026-03-29 00:15:28.473292"
+  },
+  {
+    "message": "[A3: Momentum Scalp] AAVE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "c4d7de61-4591-411d-aacf-cb2fdbd278dc",
+    "timestamp": "2026-02-27 00:15:28.474895",
+    "expires_at": "2026-03-29 00:15:28.474895"
+  },
+  {
+    "message": "[A4: Trend Following] AAVE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "b9a4a980-5a54-43fe-9548-824a7edf976b",
+    "timestamp": "2026-02-27 00:15:28.476671",
+    "expires_at": "2026-03-29 00:15:28.476671"
+  },
+  {
+    "message": "[A5: Market Microstructure] AAVE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "a37fe6ce-e128-4aa1-a056-738fdbd3818e",
+    "timestamp": "2026-02-27 00:15:28.478356",
+    "expires_at": "2026-03-29 00:15:28.478356"
+  },
+  {
+    "message": "Strategy A1: EMA+MACD: AVAILABLE for AAVE/USDT",
+    "metadata": {},
+    "_id": "4d2456fd-a2b8-45fd-b5fc-42aa000da56d",
+    "timestamp": "2026-02-27 00:15:28.485820",
+    "expires_at": "2026-03-29 00:15:28.485820"
+  },
+  {
+    "message": "Strategy A2: EMA+RSI Momentum: AVAILABLE for AAVE/USDT",
+    "metadata": {},
+    "_id": "b03d061f-74b2-49a7-b4d3-d34c81203f47",
+    "timestamp": "2026-02-27 00:15:28.487978",
+    "expires_at": "2026-03-29 00:15:28.487978"
+  },
+  {
+    "message": "Strategy A3: Momentum Scalp: AVAILABLE for AAVE/USDT",
+    "metadata": {},
+    "_id": "bcf09f65-a01c-4adf-bb24-3e712e518bc3",
+    "timestamp": "2026-02-27 00:15:28.489826",
+    "expires_at": "2026-03-29 00:15:28.489826"
+  },
+  {
+    "message": "Strategy A4: Trend Following: AVAILABLE for AAVE/USDT",
+    "metadata": {},
+    "_id": "2843fcfb-5517-4d46-8e60-ef696fc23029",
+    "timestamp": "2026-02-27 00:15:28.491650",
+    "expires_at": "2026-03-29 00:15:28.491650"
+  },
+  {
+    "message": "Strategy A5: Market Microstructure: AVAILABLE for AAVE/USDT",
+    "metadata": {},
+    "_id": "3072a9f3-04c3-4635-9ab9-478a47a50eec",
+    "timestamp": "2026-02-27 00:15:28.493367",
+    "expires_at": "2026-03-29 00:15:28.493367"
+  },
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "74b8a48f-b69f-4d45-9100-b2bfb657debf",
+    "timestamp": "2026-02-27 00:15:28.896763",
+    "expires_at": "2026-03-29 00:15:28.896763"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "d4e30adf-040e-4d6b-b6b5-150ec6b82a93",
+    "timestamp": "2026-02-27 00:15:28.914882",
+    "expires_at": "2026-03-29 00:15:28.914882"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "3ea14be2-f81f-4930-a616-e7da068f65bb",
+    "timestamp": "2026-02-27 00:15:28.934046",
+    "expires_at": "2026-03-29 00:15:28.934046"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "5d1308da-e313-4636-844a-838a6ec2854b",
+    "timestamp": "2026-02-27 00:15:28.954309",
+    "expires_at": "2026-03-29 00:15:28.954309"
+  },
+  {
+    "message": "[A5] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "2b0122ae-84d9-48b8-b1f8-e1903b108415",
+    "timestamp": "2026-02-27 00:15:28.979951",
+    "expires_at": "2026-03-29 00:15:28.979951"
+  },
+  {
+    "message": "[A1: EMA+MACD] AVAX/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "414f7679-a320-4568-a811-84e52d42f397",
+    "timestamp": "2026-02-27 00:15:28.981587",
+    "expires_at": "2026-03-29 00:15:28.981587"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] AVAX/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "da74ce7b-e1ab-41a3-ad52-907e746eca0c",
+    "timestamp": "2026-02-27 00:15:28.983159",
+    "expires_at": "2026-03-29 00:15:28.983159"
+  },
+  {
+    "message": "[A3: Momentum Scalp] AVAX/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "dc3ddbbe-754d-47de-a6a9-861fb28f7bf3",
+    "timestamp": "2026-02-27 00:15:28.985393",
+    "expires_at": "2026-03-29 00:15:28.985393"
+  },
+  {
+    "message": "[A4: Trend Following] AVAX/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "43926e1e-b41a-44b7-98ae-9ca3bc008183",
+    "timestamp": "2026-02-27 00:15:28.988421",
+    "expires_at": "2026-03-29 00:15:28.988421"
+  },
+  {
+    "message": "[A5: Market Microstructure] AVAX/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "7cbf398b-ff38-4940-8531-776b042762b2",
+    "timestamp": "2026-02-27 00:15:28.990448",
+    "expires_at": "2026-03-29 00:15:28.990448"
+  },
+  {
+    "message": "Strategy A1: EMA+MACD: AVAILABLE for AVAX/USDT",
+    "metadata": {},
+    "_id": "58571f52-adc5-4f45-b8e2-05fe344125c0",
+    "timestamp": "2026-02-27 00:15:28.998301",
+    "expires_at": "2026-03-29 00:15:28.998301"
+  },
+  {
+    "message": "Strategy A2: EMA+RSI Momentum: AVAILABLE for AVAX/USDT",
+    "metadata": {},
+    "_id": "a6f53149-ed68-48cd-a0c3-3a5fae6eec93",
+    "timestamp": "2026-02-27 00:15:28.999996",
+    "expires_at": "2026-03-29 00:15:28.999996"
+  },
+  {
+    "message": "Strategy A3: Momentum Scalp: AVAILABLE for AVAX/USDT",
+    "metadata": {},
+    "_id": "ebf2dde5-5725-43e4-8196-fcb73ff72451",
+    "timestamp": "2026-02-27 00:15:29.002307",
+    "expires_at": "2026-03-29 00:15:29.002307"
+  },
+  {
+    "message": "Strategy A4: Trend Following: AVAILABLE for AVAX/USDT",
+    "metadata": {},
+    "_id": "8dc68f81-9ef9-46dc-82a3-44059f5b9725",
+    "timestamp": "2026-02-27 00:15:29.016772",
+    "expires_at": "2026-03-29 00:15:29.016772"
+  },
+  {
+    "message": "Strategy A5: Market Microstructure: AVAILABLE for AVAX/USDT",
+    "metadata": {},
+    "_id": "3ef19e3b-3910-48e6-b37b-30c4b43e9fee",
+    "timestamp": "2026-02-27 00:15:29.075172",
+    "expires_at": "2026-03-29 00:15:29.075172"
+  },
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "abcdb360-8e1e-4939-9e51-d38aade172fe",
+    "timestamp": "2026-02-27 00:15:29.449725",
+    "expires_at": "2026-03-29 00:15:29.449725"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "1ced38cd-ed60-4eb5-b3a8-052dc8d95385",
+    "timestamp": "2026-02-27 00:15:29.469604",
+    "expires_at": "2026-03-29 00:15:29.469604"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "c1e6730a-6146-420e-ba5a-4351f5a6d058",
+    "timestamp": "2026-02-27 00:15:29.489938",
+    "expires_at": "2026-03-29 00:15:29.489938"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "5afff84b-fc22-4a34-a4cc-471e4bc6993e",
+    "timestamp": "2026-02-27 00:15:29.512608",
+    "expires_at": "2026-03-29 00:15:29.512608"
+  },
+  {
+    "message": "[A5] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "fa50d92e-7792-47c2-aa44-fa3047cde9bf",
+    "timestamp": "2026-02-27 00:15:29.545322",
+    "expires_at": "2026-03-29 00:15:29.545322"
+  },
+  {
+    "message": "[A1: EMA+MACD] LINK/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "75cff9f1-9e82-44a3-9421-e68ff3d0ddd7",
+    "timestamp": "2026-02-27 00:15:29.547407",
+    "expires_at": "2026-03-29 00:15:29.547407"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] LINK/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "39f0d0b5-7bc0-469d-8b5e-8f4cef308ed0",
+    "timestamp": "2026-02-27 00:15:29.549374",
+    "expires_at": "2026-03-29 00:15:29.549374"
+  },
+  {
+    "message": "[A3: Momentum Scalp] LINK/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "a119f6e7-d689-4467-8e7d-bd77d9734477",
+    "timestamp": "2026-02-27 00:15:29.551476",
+    "expires_at": "2026-03-29 00:15:29.551476"
+  },
+  {
+    "message": "[A4: Trend Following] LINK/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "f283cf30-3b28-410b-9d09-8e4632a5ea48",
+    "timestamp": "2026-02-27 00:15:29.553548",
+    "expires_at": "2026-03-29 00:15:29.553548"
+  },
+  {
+    "message": "[A5: Market Microstructure] LINK/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "bbb53720-8f00-4f6c-8169-4f27f3d08b70",
+    "timestamp": "2026-02-27 00:15:29.555562",
+    "expires_at": "2026-03-29 00:15:29.555562"
+  },
+  {
+    "message": "Strategy A1: EMA+MACD: AVAILABLE for LINK/USDT",
+    "metadata": {},
+    "_id": "9e06422e-a144-45c8-b334-c7b7031b0dec",
+    "timestamp": "2026-02-27 00:15:29.563175",
+    "expires_at": "2026-03-29 00:15:29.563175"
+  },
+  {
+    "message": "Strategy A2: EMA+RSI Momentum: AVAILABLE for LINK/USDT",
+    "metadata": {},
+    "_id": "42ebb3d5-7f02-4f14-9707-2c88d791947f",
+    "timestamp": "2026-02-27 00:15:29.564897",
+    "expires_at": "2026-03-29 00:15:29.564897"
+  },
+  {
+    "message": "Strategy A3: Momentum Scalp: AVAILABLE for LINK/USDT",
+    "metadata": {},
+    "_id": "5678ae44-b99d-4c2b-b0f2-0027e247b603",
+    "timestamp": "2026-02-27 00:15:29.566717",
+    "expires_at": "2026-03-29 00:15:29.566717"
+  },
+  {
+    "message": "Strategy A4: Trend Following: AVAILABLE for LINK/USDT",
+    "metadata": {},
+    "_id": "4ff18ce7-ba83-40b6-b925-20d2acde1655",
+    "timestamp": "2026-02-27 00:15:29.568457",
+    "expires_at": "2026-03-29 00:15:29.568457"
+  },
+  {
+    "message": "Strategy A5: Market Microstructure: AVAILABLE for LINK/USDT",
+    "metadata": {},
+    "_id": "9fe9334e-4583-4a5a-8973-4dee26fd6e94",
+    "timestamp": "2026-02-27 00:15:29.570265",
+    "expires_at": "2026-03-29 00:15:29.570265"
+  },
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "44b78cca-51f2-4a8e-95b3-1b94758948a6",
+    "timestamp": "2026-02-27 00:15:29.952283",
+    "expires_at": "2026-03-29 00:15:29.952283"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "61b92f56-26bc-45ba-ba76-53178533f94f",
+    "timestamp": "2026-02-27 00:15:29.973370",
+    "expires_at": "2026-03-29 00:15:29.973370"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "1c25d1e6-b981-4d79-88b6-387d3a241374",
+    "timestamp": "2026-02-27 00:15:29.995727",
+    "expires_at": "2026-03-29 00:15:29.995727"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "2823c3bb-3fdc-4c12-a6bb-d57d7c2f1b57",
+    "timestamp": "2026-02-27 00:15:30.019327",
+    "expires_at": "2026-03-29 00:15:30.019327"
+  },
+  {
+    "message": "[A5] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "e6ab80b4-32b4-4433-aa15-06ee8b5e14eb",
+    "timestamp": "2026-02-27 00:15:30.052022",
+    "expires_at": "2026-03-29 00:15:30.052022"
+  },
+  {
+    "message": "[A1: EMA+MACD] HYPE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "3e64ba64-1f00-47e1-8ac9-de608906b960",
+    "timestamp": "2026-02-27 00:15:30.054353",
+    "expires_at": "2026-03-29 00:15:30.054353"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] HYPE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "3b1af9b9-296f-4d87-a389-ad399155d97e",
+    "timestamp": "2026-02-27 00:15:30.056417",
+    "expires_at": "2026-03-29 00:15:30.056417"
+  },
+  {
+    "message": "[A3: Momentum Scalp] HYPE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "a9e044c3-18d0-4593-9b56-df1c78049625",
+    "timestamp": "2026-02-27 00:15:30.058649",
+    "expires_at": "2026-03-29 00:15:30.058649"
+  },
+  {
+    "message": "[A4: Trend Following] HYPE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "4c5d9e14-20f2-45c9-ba76-15ae4a13f686",
+    "timestamp": "2026-02-27 00:15:30.060752",
+    "expires_at": "2026-03-29 00:15:30.060752"
+  },
+  {
+    "message": "[A5: Market Microstructure] HYPE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "0bad7d01-d9a6-43f0-8f49-f7f8d65175dd",
+    "timestamp": "2026-02-27 00:15:30.063017",
+    "expires_at": "2026-03-29 00:15:30.063017"
+  },
+  {
+    "message": "Strategy A1: EMA+MACD: AVAILABLE for HYPE/USDT",
+    "metadata": {},
+    "_id": "f0bd627a-cf78-46da-9de8-db6b2e0111df",
+    "timestamp": "2026-02-27 00:15:30.070802",
+    "expires_at": "2026-03-29 00:15:30.070802"
+  },
+  {
+    "message": "Strategy A2: EMA+RSI Momentum: AVAILABLE for HYPE/USDT",
+    "metadata": {},
+    "_id": "0d5b2ab6-b820-4dfe-bdc1-f3eae1ced3b0",
+    "timestamp": "2026-02-27 00:15:30.072779",
+    "expires_at": "2026-03-29 00:15:30.072779"
+  },
+  {
+    "message": "Strategy A3: Momentum Scalp: AVAILABLE for HYPE/USDT",
+    "metadata": {},
+    "_id": "98f87eb9-26f9-458f-b467-082da24178d5",
+    "timestamp": "2026-02-27 00:15:30.074624",
+    "expires_at": "2026-03-29 00:15:30.074624"
+  },
+  {
+    "message": "Strategy A4: Trend Following: AVAILABLE for HYPE/USDT",
+    "metadata": {},
+    "_id": "d994274e-01f6-4c3e-9fd3-77d6fcbe8535",
+    "timestamp": "2026-02-27 00:15:30.076805",
+    "expires_at": "2026-03-29 00:15:30.076805"
+  },
+  {
+    "message": "Strategy A5: Market Microstructure: AVAILABLE for HYPE/USDT",
+    "metadata": {},
+    "_id": "4530aac2-401c-4ba7-9ae2-db6705e68c3a",
+    "timestamp": "2026-02-27 00:15:30.078663",
+    "expires_at": "2026-03-29 00:15:30.078663"
+  },
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "8c88df1c-f207-4549-9518-ebe5b9a55045",
+    "timestamp": "2026-02-27 00:15:30.474037",
+    "expires_at": "2026-03-29 00:15:30.474037"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "3ebabc4a-5f44-4187-96f5-b72e54d5c040",
+    "timestamp": "2026-02-27 00:15:30.496562",
+    "expires_at": "2026-03-29 00:15:30.496562"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "59e96312-de36-4c6d-8cc8-01d486dc6d8b",
+    "timestamp": "2026-02-27 00:15:30.518760",
+    "expires_at": "2026-03-29 00:15:30.518760"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "eeb93942-bb12-45b2-a4e4-c0ec97e4c0f5",
+    "timestamp": "2026-02-27 00:15:30.542754",
+    "expires_at": "2026-03-29 00:15:30.542754"
+  },
+  {
+    "message": "[A5] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "0e3e605b-f09c-42ae-8448-50ea2df4f245",
+    "timestamp": "2026-02-27 00:15:30.571598",
+    "expires_at": "2026-03-29 00:15:30.571598"
+  },
+  {
+    "message": "[A1: EMA+MACD] USDC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "ea7cf99d-db11-4650-8d69-071fcaa53dee",
+    "timestamp": "2026-02-27 00:15:30.573971",
+    "expires_at": "2026-03-29 00:15:30.573971"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] USDC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "bcdf12da-050c-48c2-a781-261c4566056c",
+    "timestamp": "2026-02-27 00:15:30.576320",
+    "expires_at": "2026-03-29 00:15:30.576320"
+  },
+  {
+    "message": "[A3: Momentum Scalp] USDC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "43d32c2b-59da-48b1-9ab3-45660faf23f7",
+    "timestamp": "2026-02-27 00:15:30.578716",
+    "expires_at": "2026-03-29 00:15:30.578716"
+  },
+  {
+    "message": "[A4: Trend Following] USDC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "8d595eb9-4a12-432e-8d5d-cb5a66c92e8c",
+    "timestamp": "2026-02-27 00:15:30.580879",
+    "expires_at": "2026-03-29 00:15:30.580879"
+  },
+  {
+    "message": "[A5: Market Microstructure] USDC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "fab8e380-38e1-481d-a7ee-151e3a51bc07",
+    "timestamp": "2026-02-27 00:15:30.583137",
+    "expires_at": "2026-03-29 00:15:30.583137"
+  },
+  {
+    "message": "Strategy A1: EMA+MACD: AVAILABLE for USDC/USDT",
+    "metadata": {},
+    "_id": "ac35d8c4-35ed-44b2-b282-83f9672b3a58",
+    "timestamp": "2026-02-27 00:15:30.591350",
+    "expires_at": "2026-03-29 00:15:30.591350"
+  },
+  {
+    "message": "Strategy A2: EMA+RSI Momentum: AVAILABLE for USDC/USDT",
+    "metadata": {},
+    "_id": "20625685-2620-4a4f-b7ff-e9045da63b9d",
+    "timestamp": "2026-02-27 00:15:30.593567",
+    "expires_at": "2026-03-29 00:15:30.593567"
+  },
+  {
+    "message": "Strategy A3: Momentum Scalp: AVAILABLE for USDC/USDT",
+    "metadata": {},
+    "_id": "b8cf4300-71d2-46d3-97f9-116fe2fd1be0",
+    "timestamp": "2026-02-27 00:15:30.595671",
+    "expires_at": "2026-03-29 00:15:30.595671"
+  },
+  {
+    "message": "Strategy A4: Trend Following: AVAILABLE for USDC/USDT",
+    "metadata": {},
+    "_id": "aef4a16d-9b96-4b3c-a2b7-f2904172ceb9",
+    "timestamp": "2026-02-27 00:15:30.597764",
+    "expires_at": "2026-03-29 00:15:30.597764"
+  },
+  {
+    "message": "Strategy A5: Market Microstructure: AVAILABLE for USDC/USDT",
+    "metadata": {},
+    "_id": "283faa48-d6f6-43ff-bfbc-c3ee2f6ee3c1",
+    "timestamp": "2026-02-27 00:15:30.599745",
+    "expires_at": "2026-03-29 00:15:30.599745"
+  },
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "a79d89ee-2b74-4b2f-9756-02c9c11a6680",
+    "timestamp": "2026-02-27 00:15:30.998408",
+    "expires_at": "2026-03-29 00:15:30.998408"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "53cc9007-9f58-4fb9-a08d-388ef7d7bc84",
+    "timestamp": "2026-02-27 00:15:31.019249",
+    "expires_at": "2026-03-29 00:15:31.019249"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "6f871832-d1ef-4139-aa42-77cfd61633ab",
+    "timestamp": "2026-02-27 00:15:31.042653",
+    "expires_at": "2026-03-29 00:15:31.042653"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "05b01fb1-2581-4c48-850b-6de3e4935026",
+    "timestamp": "2026-02-27 00:15:31.064713",
+    "expires_at": "2026-03-29 00:15:31.064713"
+  },
+  {
+    "message": "[A5] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "6efb2b69-d32f-48fc-8aa6-26bd1f2a40fb",
+    "timestamp": "2026-02-27 00:15:31.094422",
+    "expires_at": "2026-03-29 00:15:31.094422"
+  },
+  {
+    "message": "[A1: EMA+MACD] ZEC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "21e7619c-93f4-4631-bc96-820d1486d33c",
+    "timestamp": "2026-02-27 00:15:31.096890",
+    "expires_at": "2026-03-29 00:15:31.096890"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] ZEC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "9ddc86f0-7e50-4007-acbb-2efa1d5931cd",
+    "timestamp": "2026-02-27 00:15:31.099193",
+    "expires_at": "2026-03-29 00:15:31.099193"
+  },
+  {
+    "message": "[A3: Momentum Scalp] ZEC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "e5589dfa-b642-45cd-9256-5cfe493098bf",
+    "timestamp": "2026-02-27 00:15:31.101743",
+    "expires_at": "2026-03-29 00:15:31.101743"
+  },
+  {
+    "message": "[A4: Trend Following] ZEC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "1edf5770-7971-425d-a2ca-003b93243a69",
+    "timestamp": "2026-02-27 00:15:31.104392",
+    "expires_at": "2026-03-29 00:15:31.104392"
+  },
+  {
+    "message": "[A5: Market Microstructure] ZEC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "7bde933f-d8af-4351-be79-b921e1b0a9c7",
+    "timestamp": "2026-02-27 00:15:31.107116",
+    "expires_at": "2026-03-29 00:15:31.107116"
+  },
+  {
+    "message": "Strategy A1: EMA+MACD: AVAILABLE for ZEC/USDT",
+    "metadata": {},
+    "_id": "b6bc0d9c-5339-4763-90e2-12f202b64fa9",
+    "timestamp": "2026-02-27 00:15:31.115423",
+    "expires_at": "2026-03-29 00:15:31.115423"
+  },
+  {
+    "message": "Strategy A2: EMA+RSI Momentum: AVAILABLE for ZEC/USDT",
+    "metadata": {},
+    "_id": "56194d77-2527-4f8f-bae9-aac5993628fe",
+    "timestamp": "2026-02-27 00:15:31.117532",
+    "expires_at": "2026-03-29 00:15:31.117532"
+  },
+  {
+    "message": "Strategy A3: Momentum Scalp: AVAILABLE for ZEC/USDT",
+    "metadata": {},
+    "_id": "9f3e2627-3576-4294-8b02-fb53b99dd3e0",
+    "timestamp": "2026-02-27 00:15:31.119762",
+    "expires_at": "2026-03-29 00:15:31.119762"
+  },
+  {
+    "message": "Strategy A4: Trend Following: AVAILABLE for ZEC/USDT",
+    "metadata": {},
+    "_id": "387a9e74-e696-429d-8a29-c2b043dd0391",
+    "timestamp": "2026-02-27 00:15:31.122045",
+    "expires_at": "2026-03-29 00:15:31.122045"
+  },
+  {
+    "message": "Strategy A5: Market Microstructure: AVAILABLE for ZEC/USDT",
+    "metadata": {},
+    "_id": "d29bfd99-b768-4dc3-8abe-dd2ebeb1c416",
+    "timestamp": "2026-02-27 00:15:31.124195",
+    "expires_at": "2026-03-29 00:15:31.124195"
+  },
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "107946fb-a515-4536-9665-2e096e7942b6",
+    "timestamp": "2026-02-27 00:15:31.529155",
+    "expires_at": "2026-03-29 00:15:31.529155"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "5ae774dc-996d-4708-88ef-35fec6a1a563",
+    "timestamp": "2026-02-27 00:15:31.553039",
+    "expires_at": "2026-03-29 00:15:31.553039"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "3ff75732-81fd-4635-b54f-3499fca9c73d",
+    "timestamp": "2026-02-27 00:15:31.575924",
+    "expires_at": "2026-03-29 00:15:31.575924"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "2b9a3420-a695-438e-81d5-b998fa9b8518",
+    "timestamp": "2026-02-27 00:15:31.598089",
+    "expires_at": "2026-03-29 00:15:31.598089"
+  },
+  {
+    "message": "[A5] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "d9db9373-3fd4-44f1-a3ad-d97138cbf89b",
+    "timestamp": "2026-02-27 00:15:31.627542",
+    "expires_at": "2026-03-29 00:15:31.627542"
+  },
+  {
+    "message": "[A1: EMA+MACD] BNKR/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "ff23a5ad-090f-4f8e-a02e-fc6d42d1ea8b",
+    "timestamp": "2026-02-27 00:15:31.630178",
+    "expires_at": "2026-03-29 00:15:31.630178"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BNKR/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "06d840ac-502f-4ee0-b48a-9c2b4697e0ee",
+    "timestamp": "2026-02-27 00:15:31.632697",
+    "expires_at": "2026-03-29 00:15:31.632697"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BNKR/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "2f334533-dd1d-4401-be36-07534ffbe837",
+    "timestamp": "2026-02-27 00:15:31.635234",
+    "expires_at": "2026-03-29 00:15:31.635234"
+  },
+  {
+    "message": "[A4: Trend Following] BNKR/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "1968bc93-3c07-413e-88ac-a1bd5a7c1976",
+    "timestamp": "2026-02-27 00:15:31.638023",
+    "expires_at": "2026-03-29 00:15:31.638023"
+  },
+  {
+    "message": "[A5: Market Microstructure] BNKR/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "d9673233-c08f-428d-b4ae-94aa9e2298a2",
+    "timestamp": "2026-02-27 00:15:31.640593",
+    "expires_at": "2026-03-29 00:15:31.640593"
+  },
+  {
+    "message": "Strategy A1: EMA+MACD: AVAILABLE for BNKR/USDT",
+    "metadata": {},
+    "_id": "d3ae01a8-a829-4234-abb4-cd3c21cbe335",
+    "timestamp": "2026-02-27 00:15:31.649564",
+    "expires_at": "2026-03-29 00:15:31.649564"
+  },
+  {
+    "message": "Strategy A2: EMA+RSI Momentum: AVAILABLE for BNKR/USDT",
+    "metadata": {},
+    "_id": "cca6a81a-9d04-4055-839b-057ed122b4fe",
+    "timestamp": "2026-02-27 00:15:31.651830",
+    "expires_at": "2026-03-29 00:15:31.651830"
+  },
+  {
+    "message": "Strategy A3: Momentum Scalp: AVAILABLE for BNKR/USDT",
+    "metadata": {},
+    "_id": "d4ddfbc3-75d8-4339-a55e-7e577b4f52d5",
+    "timestamp": "2026-02-27 00:15:31.654088",
+    "expires_at": "2026-03-29 00:15:31.654088"
+  },
+  {
+    "message": "Strategy A4: Trend Following: AVAILABLE for BNKR/USDT",
+    "metadata": {},
+    "_id": "076f3747-f6b5-4d98-a74e-113a576eb9f1",
+    "timestamp": "2026-02-27 00:15:31.656343",
+    "expires_at": "2026-03-29 00:15:31.656343"
+  },
+  {
+    "message": "Strategy A5: Market Microstructure: AVAILABLE for BNKR/USDT",
+    "metadata": {},
+    "_id": "7346699f-8d01-4e5c-8a16-0418ca072bc4",
+    "timestamp": "2026-02-27 00:15:31.658599",
+    "expires_at": "2026-03-29 00:15:31.658599"
+  },
+  {
+    "message": "[A1: EMA+MACD] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "88730162-4575-4876-bde6-88f750a33a74",
+    "timestamp": "2026-02-27 00:15:32.050650",
+    "expires_at": "2026-03-29 00:15:32.050650"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "069dc07f-630d-4e9d-aca3-e817582ffecd",
+    "timestamp": "2026-02-27 00:15:32.076359",
+    "expires_at": "2026-03-29 00:15:32.076359"
+  },
+  {
+    "message": "[A3: Momentum Scalp] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "ae4a457c-b365-4d2b-a176-3c5495ec6704",
+    "timestamp": "2026-02-27 00:15:32.101080",
+    "expires_at": "2026-03-29 00:15:32.101080"
+  },
+  {
+    "message": "[A4: Trend Following] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "24588d23-dfca-41f2-adc4-862771878693",
+    "timestamp": "2026-02-27 00:15:32.127093",
+    "expires_at": "2026-03-29 00:15:32.127093"
+  },
+  {
+    "message": "[A5] BTC/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "89f21d45-e5f8-4b79-aa02-07ca7aa4ba52",
+    "timestamp": "2026-02-27 00:15:32.158470",
+    "expires_at": "2026-03-29 00:15:32.158470"
+  },
+  {
+    "message": "[A1: EMA+MACD] DOGE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "7a614563-3a30-4061-995e-e920ef9a01bc",
+    "timestamp": "2026-02-27 00:15:32.161293",
+    "expires_at": "2026-03-29 00:15:32.161293"
+  },
+  {
+    "message": "[A2: EMA+RSI Momentum] DOGE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "22753ec8-e06a-4968-8a64-777241d419e9",
+    "timestamp": "2026-02-27 00:15:32.163966",
+    "expires_at": "2026-03-29 00:15:32.163966"
+  },
+  {
+    "message": "[A3: Momentum Scalp] DOGE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "9faa4cfe-122b-4ad0-8378-6d18dc521e91",
+    "timestamp": "2026-02-27 00:15:32.166631",
+    "expires_at": "2026-03-29 00:15:32.166631"
+  },
+  {
+    "message": "[A4: Trend Following] DOGE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "fecf4feb-ec6c-449b-a300-c25720ddf512",
+    "timestamp": "2026-02-27 00:15:32.169393",
+    "expires_at": "2026-03-29 00:15:32.169393"
+  },
+  {
+    "message": "[A5: Market Microstructure] DOGE/USDT FILTERED: Volume < 0.1x average",
+    "metadata": {},
+    "_id": "d9675faa-de89-4afe-ae17-d1e829c83bd4",
+    "timestamp": "2026-02-27 00:15:32.172239",
+    "expires_at": "2026-03-29 00:15:32.172239"
+  },
+  {
+    "message": "Strategy A1: EMA+MACD: AVAILABLE for DOGE/USDT",
+    "metadata": {},
+    "_id": "bf08b216-e324-437f-be26-136bc20e2f97",
+    "timestamp": "2026-02-27 00:15:32.181112",
+    "expires_at": "2026-03-29 00:15:32.181112"
+  },
+  {
+    "message": "Strategy A2: EMA+RSI Momentum: AVAILABLE for DOGE/USDT",
+    "metadata": {},
+    "_id": "88af10c6-f44c-473d-994e-9aba7bdf61d9",
+    "timestamp": "2026-02-27 00:15:32.183524",
+    "expires_at": "2026-03-29 00:15:32.183524"
+  },
+  {
+    "message": "Strategy A3: Momentum Scalp: AVAILABLE for DOGE/USDT",
+    "metadata": {},
+    "_id": "213f416c-95c3-4887-b934-22d9fa08be41",
+    "timestamp": "2026-02-27 00:15:32.186017",
+    "expires_at": "2026-03-29 00:15:32.186017"
+  },
+  {
+    "message": "Strategy A4: Trend Following: AVAILABLE for DOGE/USDT",
+    "metadata": {},
+    "_id": "72990ce9-9022-4400-94b5-db50f44da340",
+    "timestamp": "2026-02-27 00:15:32.188711",
+    "expires_at": "2026-03-29 00:15:32.188711"
+  },
+  {
+    "message": "Strategy A5: Market Microstructure: AVAILABLE for DOGE/USDT",
+    "metadata": {},
+    "_id": "508379c0-291d-4cbb-b8ea-9b607e7701cd",
+    "timestamp": "2026-02-27 00:15:32.191128",
+    "expires_at": "2026-03-29 00:15:32.191128"
+  }
+]

@@ -1,0 +1,128 @@
+[
+  {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "total_analyses": 5,
+    "timestamp": "2026-02-27 00:15:25.491559",
+    "_id": "ecc40002-ea43-41be-a1e2-2614a6957ae6",
+    "expires_at": "2026-03-29 00:15:25.491619"
+  },
+  {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "total_analyses": 5,
+    "timestamp": "2026-02-27 00:15:25.931411",
+    "_id": "a43289da-5366-4405-aefc-7e77d0ccf64e",
+    "expires_at": "2026-03-29 00:15:25.931552"
+  },
+  {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "total_analyses": 5,
+    "timestamp": "2026-02-27 00:15:26.373384",
+    "_id": "b30fd0ba-119b-4d6a-919c-f33575174ff0",
+    "expires_at": "2026-03-29 00:15:26.373535"
+  },
+  {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "total_analyses": 5,
+    "timestamp": "2026-02-27 00:15:26.906855",
+    "_id": "92bc5d36-0462-47ac-9375-17a5ae923159",
+    "expires_at": "2026-03-29 00:15:26.906977"
+  },
+  {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "total_analyses": 5,
+    "timestamp": "2026-02-27 00:15:27.417607",
+    "_id": "91a41218-1803-4eca-9495-2dfb9085fb91",
+    "expires_at": "2026-03-29 00:15:27.417744"
+  },
+  {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "total_analyses": 5,
+    "timestamp": "2026-02-27 00:15:27.953651",
+    "_id": "84deed80-bdd5-4026-ba25-017466c38fc4",
+    "expires_at": "2026-03-29 00:15:27.953800"
+  },
+  {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "total_analyses": 5,
+    "timestamp": "2026-02-27 00:15:28.481008",
+    "_id": "ba9ccf46-9d71-4fee-aa96-57075ad60758",
+    "expires_at": "2026-03-29 00:15:28.481163"
+  },
+  {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "total_analyses": 5,
+    "timestamp": "2026-02-27 00:15:28.993292",
+    "_id": "9599050d-d0df-43b9-8ada-80f6bba04b16",
+    "expires_at": "2026-03-29 00:15:28.993468"
+  },
+  {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "total_analyses": 5,
+    "timestamp": "2026-02-27 00:15:29.558613",
+    "_id": "bb4241fd-9ed1-4b13-8b97-70770f2f3a2a",
+    "expires_at": "2026-03-29 00:15:29.558767"
+  },
+  {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "total_analyses": 5,
+    "timestamp": "2026-02-27 00:15:30.066146",
+    "_id": "6a16c2db-f132-4c69-8b7c-7cddc65d2599",
+    "expires_at": "2026-03-29 00:15:30.066308"
+  },
+  {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "total_analyses": 5,
+    "timestamp": "2026-02-27 00:15:30.586436",
+    "_id": "4243f34d-4375-4e32-be32-e6a911fdd378",
+    "expires_at": "2026-03-29 00:15:30.586604"
+  },
+  {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "total_analyses": 5,
+    "timestamp": "2026-02-27 00:15:31.110586",
+    "_id": "64d88bc4-ed70-4325-ae03-98296caf06de",
+    "expires_at": "2026-03-29 00:15:31.110786"
+  },
+  {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "total_analyses": 5,
+    "timestamp": "2026-02-27 00:15:31.644469",
+    "_id": "15afbf59-c093-4a6b-a100-0353791e1d7b",
+    "expires_at": "2026-03-29 00:15:31.644638"
+  },
+  {
+    "date": "2026-02-27",
+    "hour": "03:00",
+    "trading_type": "futures",
+    "total_analyses": 5,
+    "timestamp": "2026-02-27 00:15:32.175892",
+    "_id": "ac923ec6-cb56-4318-8bb2-7122c07fb3cf",
+    "expires_at": "2026-03-29 00:15:32.176050"
+  }
+]
