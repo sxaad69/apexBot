@@ -1,6 +1,9 @@
 """
 Layer 2: Leverage Control
-Enforces maximum leverage limits and adjusts based on market conditions
+Hybrid dynamic leverage: ATR-based maximum + Confidence scaling
+- Step 1: Calculate max safe leverage from ATR (market volatility)
+- Step 2: Scale within that max based on signal confidence
+- Step 3: Never exceed MAX_LEVERAGE_ABSOLUTE (default 20x)
 """
 
 from typing import Dict, Any, Optional
@@ -8,50 +11,80 @@ from typing import Dict, Any, Optional
 
 class LeverageControlLayer:
     """
-    Layer 2: Leverage Control
-    Prevents excessive leverage and adjusts based on account drawdown
+    Layer 2: Hybrid Dynamic Leverage Control
+
+    Formula:
+      ATR_Safe_Max  = EQUITY_RISK_PCT / ATR_PCT        (volatility ceiling)
+      Conf_Scale    = lerp(0.3, 1.0, confidence)       (quality scaling)
+      Final_Leverage = min(ATR_Safe_Max * Conf_Scale, MAX_ABSOLUTE, drawdown_adjusted_max)
     """
-    
+
     def __init__(self, config, logger):
         self.config = config
         self.logger = logger
-    
+
+    def _get_drawdown_adjusted_max(self, drawdown_pct: float) -> int:
+        """Reduce maximum allowed leverage as drawdown increases."""
+        base_max = getattr(self.config, 'MAX_LEVERAGE_ABSOLUTE', 20)
+        if drawdown_pct < 5:
+            return base_max           # Full range available
+        elif drawdown_pct < 10:
+            return min(base_max, 10)  # Cap at 10x in moderate drawdown
+        elif drawdown_pct < 15:
+            return min(base_max, 5)   # Cap at 5x in heavy drawdown
+        else:
+            return 1                  # Preservation mode only
+
     def evaluate(self, trade_params: Dict[str, Any], account_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Evaluate and adjust leverage with Dynamic Scaling
+        Evaluate and set dynamic leverage using ATR + Confidence hybrid model.
         """
+        equity_risk_pct  = getattr(self.config, 'MAX_EQUITY_RISK_PERCENT', 3.0)
+        abs_max_leverage = getattr(self.config, 'MAX_LEVERAGE_ABSOLUTE', 20)
+        min_atr_pct      = getattr(self.config, 'MIN_ATR_PERCENT', 0.1)
+        confidence       = trade_params.get('confidence', 0.5)
         current_drawdown = account_state.get('drawdown_percent', 0)
-        confidence = trade_params.get('confidence', 0.5)
-        
-        # 1. Get adjusted maximum leverage based on drawdown (Layer 2)
-        max_leverage = self.config.get_drawdown_adjusted_leverage(current_drawdown)
-        
-        # 2. Dynamic Leverage scaling based on confidence (Layer 8 integration)
-        # Confidence 0.5 = 50% leverage, Confidence 1.0 = 100% leverage
-        confidence_scaling = min(max(confidence, 0.1), 1.0)
-        dynamic_max = max(1, int(max_leverage * confidence_scaling))
-        
-        requested_leverage = trade_params.get('leverage', self.config.MAX_LEVERAGE)
-        
-        if requested_leverage > dynamic_max:
-            if dynamic_max == 0:
-                self.logger.position_rejected(
-                    symbol=trade_params.get('symbol', 'UNKNOWN'),
-                    reason='Leverage not allowed',
-                    layer='LeverageControl',
-                    drawdown=f'{current_drawdown:.2f}%'
-                )
-                return None
-            
-            self.logger.info(
-                f"[{trade_params.get('strategy', 'Risk')}] Leverage scaled from {requested_leverage}x to {dynamic_max}x (Confidence: {confidence:.2f})"
-            )
-            trade_params['leverage'] = dynamic_max
+        symbol           = trade_params.get('symbol', 'UNKNOWN')
+        strategy         = trade_params.get('strategy', 'Unknown')
+
+        # --- Step 1: ATR-based maximum safe leverage ---
+        atr = trade_params.get('atr', None)
+        entry_price = trade_params.get('entry_price', 0)
+        if atr and entry_price and entry_price > 0:
+            atr_pct = (atr / entry_price) * 100
+            atr_pct = max(atr_pct, min_atr_pct)  # Floor to avoid div/0
+            atr_safe_max = equity_risk_pct / atr_pct
         else:
-            trade_params['leverage'] = min(requested_leverage, dynamic_max)
-        
+            # No ATR available — use conservative fallback
+            atr_safe_max = 5.0
+            self.logger.debug(f"[{strategy}] No ATR data for {symbol}, using conservative 5x ATR max")
+
+        # --- Step 2: Scale within ATR max by confidence ---
+        # Confidence 0.60 -> 30% of ATR max, Confidence 1.0 -> 100% of ATR max
+        conf_clamped = max(min(confidence, 1.0), 0.0)
+        conf_scale = 0.3 + (0.7 * conf_clamped)  # Range: 0.30 -> 1.00
+        leverage_from_conf = atr_safe_max * conf_scale
+
+        # --- Step 3: Apply all caps ---
+        drawdown_max = self._get_drawdown_adjusted_max(current_drawdown)
+        final_leverage = int(min(leverage_from_conf, abs_max_leverage, drawdown_max))
+        final_leverage = max(final_leverage, 1)  # Always at least 1x
+
+        # Log the full calculation for transparency
+        atr_pct_display = (atr / entry_price * 100) if atr and entry_price else 0
         self.logger.debug(
-            f"Leverage control approved: {trade_params['leverage']}x (max: {dynamic_max}x, conf: {confidence:.2f})"
+            f"[{strategy}] {symbol} Dynamic Leverage -> "
+            f"ATR: {atr_pct_display:.2f}% | ATR-Safe Max: {atr_safe_max:.1f}x | "
+            f"Conf: {confidence:.2f} (scale: {conf_scale:.2f}) | "
+            f"Drawdown Cap: {drawdown_max}x | Final: {final_leverage}x"
         )
-        
+
+        trade_params['leverage'] = final_leverage
+        trade_params['leverage_breakdown'] = {
+            'atr_safe_max': round(atr_safe_max, 2),
+            'confidence_scale': round(conf_scale, 2),
+            'drawdown_cap': drawdown_max,
+            'final': final_leverage
+        }
+
         return trade_params

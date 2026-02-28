@@ -46,6 +46,8 @@ class SQLiteManager:
                 status TEXT DEFAULT 'OPEN',
                 stop_loss REAL,
                 take_profit REAL,
+                highest_price REAL,
+                trailing_stop_price REAL,
                 metadata TEXT
             )
         ''')

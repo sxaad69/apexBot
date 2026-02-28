@@ -20,6 +20,7 @@ from notifications import TelegramNotificationManager
 from risk import RiskManager
 from core.spot_logger import SpotLogger
 from core.spot_trading_engine import SpotTradingEngine
+from risk.layers.trailing_stop import TrailingStopLayer
 
 
 class PaperTradingEngine:
@@ -563,26 +564,57 @@ class PaperTradingEngine:
 
         # Entry
         if signal and position_key not in self.positions:
-            # Calculate dynamic leverage
+            # --- Confidence-Based Position Sizing ---
+            # Higher conviction signals deserve proportionally more capital
             confidence = signal.get('confidence', 0.5)
-            leverage = self.calculate_dynamic_leverage(strategy_name, confidence)
+            if confidence >= 0.90:
+                base_size_pct = 0.15  # 15% — Elite conviction
+            elif confidence >= 0.80:
+                base_size_pct = 0.12  # 12% — High conviction
+            elif confidence >= 0.70:
+                base_size_pct = 0.10  # 10% — Standard
+            else:
+                base_size_pct = 0.07  # 7% — Low conviction, cautious
 
-            # Check reserve capital (30% must remain untouched)
-            max_exposure = self.capital[strategy_name] * 0.7  # 70% max exposure
+            total_capital = self.capital[strategy_name]
+
+            # --- Opportunity Reserve System ---
+            # 20% of capital is always held in reserve ("Opportunity Reserve")
+            # This reserve is ONLY unlocked for signals with confidence >= 0.90
+            OPPORTUNITY_RESERVE_PCT  = 0.20   # 20% always held as reserve
+            OPPORTUNITY_THRESHOLD   = 0.90   # Confidence needed to tap reserve
+
+            if confidence >= OPPORTUNITY_THRESHOLD:
+                # Elite signal: can use up to 80% total exposure (full + reserve access)
+                max_exposure = total_capital * 0.80
+            else:
+                # Normal signal: only 60% exposure (leaves 20% reserve + 20% safety)
+                max_exposure = total_capital * 0.60
+
             current_exposure = sum(p['size'] for p in self.positions.values() if p['strategy'] == strategy_name)
             available_for_new_trade = max_exposure - current_exposure
 
-            if available_for_new_trade < self.capital[strategy_name] * 0.05:  # Minimum 5% available
-                self.logger.warning(f"[{strategy_name}] INSUFFICIENT RESERVE CAPITAL - Max exposure reached")
+            if available_for_new_trade < total_capital * 0.03:  # Min 3% must be free
+                if confidence >= OPPORTUNITY_THRESHOLD:
+                    self.logger.warning(f"[{strategy_name}] {symbol} HIGH-CONFIDENCE SIGNAL SKIPPED - Even reserve is exhausted")
+                else:
+                    self.logger.warning(f"[{strategy_name}] {symbol} INSUFFICIENT RESERVE CAPITAL - Max exposure reached")
                 return
 
-            # Limit position size to available reserve
+            # Limit position size to available capital, respecting confidence tier
             max_position_size = min(
-                self.capital[strategy_name] * 0.1,  # Normal 10%
-                available_for_new_trade            # Available reserve
+                total_capital * base_size_pct,
+                available_for_new_trade
+            )
+
+            self.logger.debug(
+                f"[{strategy_name}] Position sizing: Conf {confidence:.2f} → "
+                f"{base_size_pct*100:.0f}% size (${max_position_size:.2f}) | "
+                f"Reserve mode: {'OPPORTUNITY' if confidence >= OPPORTUNITY_THRESHOLD else 'NORMAL'}"
             )
 
             # Prepare trade parameters for risk evaluation
+            indicators = signal.get('indicators', {})
             trade_params = {
                 'symbol': symbol,
                 'side': signal['side'],
@@ -592,7 +624,8 @@ class PaperTradingEngine:
                 'stop_loss': signal['stop_loss'],
                 'take_profit': signal['take_profit'],
                 'strategy': strategy_name,
-                'confidence': signal.get('confidence', 0.5)
+                'confidence': signal.get('confidence', 0.5),
+                'atr': indicators.get('atr', None),  # Pass ATR for dynamic leverage
             }
 
             # Prepare account state for risk evaluation
@@ -1445,6 +1478,17 @@ class ApexHunterBot:
             print("   Use --mode paper for now")
             sys.exit(1)
 
+        # Initialize Bot-Side Trailing Stop Engine
+        if hasattr(self, 'engine'):
+            self.trailing_stop_engine = TrailingStopLayer(
+                self.config,
+                self.logger,
+                self.logger.db,
+                self.engine.exchange
+            )
+        else:
+            self.trailing_stop_engine = None
+            
         # Send startup message
         if self.telegram:
             self.telegram.send_startup_message()
@@ -1550,12 +1594,55 @@ class ApexHunterBot:
         else:
             print(f"✅ Database cleanup completed ({cleaned_count} files)")
     
+    def _sync_open_trades(self):
+        """Startup Reconciliation Phase to catch 'Ghost Trades' that closed while bot was down."""
+        try:
+            conn = self.logger.db._get_connection(self.logger.db.main_db)
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT * FROM trades WHERE status = 'OPEN'")
+            open_trades = cursor.fetchall()
+            
+            if not open_trades:
+                conn.close()
+                return
+                
+            self.logger.info(f"🔄 Reconciling {len(open_trades)} OPEN trades with Exchange...")
+            
+            for trade in open_trades:
+                symbol = trade['symbol']
+                trade_id = trade['trade_id']
+                
+                # Check actual exchange positions
+                try:
+                    positions = self.engine.exchange.get_positions(symbol)
+                    active_pos = next((p for p in positions if float(p.get('contracts', 0)) > 0), None)
+                    
+                    if not active_pos:
+                        self.logger.warning(f"👻 Ghost Trade detected! {symbol} closed while bot was offline.")
+                        # Close out in SQLite
+                        exit_time = __import__('datetime').datetime.utcnow().isoformat()
+                        cursor.execute("UPDATE trades SET status = 'CLOSED', exit_time = ?, reason = 'exchange_closed_offline' WHERE trade_id = ?",
+                                     (exit_time, trade_id))
+                        self.logger.info(f"✅ Synced {symbol} as CLOSED.")
+                except Exception as exchange_e:
+                    self.logger.error(f"Failed to fetch exchange positions for {symbol} during sync: {exchange_e}")
+                    
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            self.logger.error(f"Failed to run Startup Reconciliation: {e}")
+
     def run(self, interval=60):
         """Run the bot"""
         self.running = True
 
         # Setup signal handler for graceful shutdown
         signal.signal(signal.SIGINT, self.signal_handler)
+
+        # Run Startup Reconciliation Phase to handle ghost trades
+        if hasattr(self, 'engine'):
+            self._sync_open_trades()
 
         try:
             while self.running:
@@ -1602,6 +1689,11 @@ class ApexHunterBot:
                         if not self.running:
                             break
                         self._run_spot_cycle(symbol)
+
+                # Process Bot-Side Trailing Stops if enabled
+                if getattr(self.config, 'TRAILING_TP_ENABLED', True) and getattr(self, 'trailing_stop_engine', None):
+                    # For performance, only pass prices of top pairs we're currently monitoring
+                    self.trailing_stop_engine.process_open_trades(self.engine.current_prices)
 
                 # Wait before next cycle
                 if self.running:

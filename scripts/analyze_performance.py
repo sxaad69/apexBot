@@ -10,11 +10,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from config.config import Config
-    from database.mongo_manager import MongoManager
-    from database.json_manager import JSONManager
+    from database.sqlite_manager import SQLiteManager
 except ImportError as e:
     print(f"❌ Error: Could not import bot modules: {e}")
-    print("💡 Tip: Ensure you have installed requirements: pip install -r requirements.txt")
     sys.exit(1)
 
 def format_currency(amount: float) -> str:
@@ -23,106 +21,113 @@ def format_currency(amount: float) -> str:
     return f"{color}${amount:+.2f}{reset}"
 
 def get_day_key(dt_obj):
+    if dt_obj is None: return "Unknown"
     if isinstance(dt_obj, str):
         try:
-            # Handle ISO format strings
-            dt_obj = datetime.fromisoformat(dt_obj.replace('Z', '+00:00'))
+            # Handle ISO format strings or YYYY-MM-DD
+            if 'T' in dt_obj:
+                dt_obj = datetime.fromisoformat(dt_obj.split('+')[0].split('.')[0])
+            else:
+                dt_obj = datetime.strptime(dt_obj, "%Y-%m-%d")
         except:
-            return "Unknown"
+            return dt_obj[:10] if len(dt_obj) >= 10 else "Unknown"
     return dt_obj.strftime("%Y-%m-%d")
+
+def fetch_trades_from_sqlite(config):
+    """Fetch all trades from main SQLite DB (The Sole Source)"""
+    trades = []
+    try:
+        sqlite_mgr = SQLiteManager(config)
+        import sqlite3
+        conn = sqlite3.connect(sqlite_mgr.main_db)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Fetch all trades to allow for future filtering/processing
+        cursor.execute("SELECT * FROM trades")
+        for row in cursor.fetchall():
+            trades.append(dict(row))
+            
+        conn.close()
+    except Exception as e:
+        print(f"⚠️ SQLite Trade Fetch Error: {e}")
+    return trades
+
+def fetch_rejections_from_sqlite(config):
+    """Fetch all rejections from activity_log DB (The Sole Source)"""
+    rejections = []
+    try:
+        sqlite_mgr = SQLiteManager(config)
+        import sqlite3
+        conn = sqlite3.connect(sqlite_mgr.log_db)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # In unified schema, rejections are in activity_log where type is 'position_rejections'
+        cursor.execute("SELECT * FROM activity_log WHERE type = 'position_rejections'")
+        for row in cursor.fetchall():
+            try:
+                import json
+                meta = json.loads(row['metadata']) if row['metadata'] else {}
+                rejections.append({
+                    'timestamp': row['timestamp'],
+                    'layer_name': meta.get('layer', 'Unknown'),
+                    'symbol': row['symbol']
+                })
+            except: pass
+            
+        conn.close()
+    except Exception as e:
+        print(f"⚠️ SQLite Rejection Fetch Error: {e}")
+    return rejections
 
 def main():
     START_DATE = "2026-02-20"
     
     print("=" * 60)
-    print("      🚀 APEX HUNTER V14 - DEEP DIVE PERFORMANCE 🚀")
+    print("      🚀 APEX HUNTER V14 - PURE SQLITE PERFORMANCE 🚀")
     print(f"      (Analyzing data from {START_DATE} onwards)")
     print("=" * 60)
 
     from dotenv import load_dotenv
     load_dotenv()
     
-    config = Config.__new__(Config)
-    config._load_configuration()
+    config = Config()
     
-    # Check for forced JSON mode or MongoDB connection
-    force_json = os.getenv('FORCE_JSON_ANALYSIS', 'false').lower() == 'true'
-    mongo = None
-    db_manager = None
+    print("\n📦 Fetching data from Unified SQLite Storage...")
     
-    if not force_json:
-        try:
-            mongo = MongoManager(config)
-            if mongo.is_connected:
-                db_manager = mongo
-                print("✅ Connected to MongoDB Atlas")
-        except Exception:
-            pass
-
-    if db_manager is None:
-        # Check if we have an export folder 'db' with data
-        db_path = Path("db")
-        if db_path.exists() and any(db_path.glob("*.json")):
-            print("📦 Using Exported MongoDB Data (db/ folder)")
-            db_manager = JSONManager(config, data_dir="db")
-        else:
-            print("📁 Using Local JSON Fallback (data/ folder)")
-            db_manager = JSONManager(config)
-
-    # Fetch all data
-    raw_futures = db_manager.find_documents('futures_trades', limit=5000)
-    raw_spot_signals = db_manager.find_documents('spot_signals', query={'executed': True}, limit=2000)
+    all_trades = fetch_trades_from_sqlite(config)
+    risk_rejections = fetch_rejections_from_sqlite(config)
     
-    # Categorize and Filter
-    futures_trades = []
-    spot_trades = []
+    print(f"   ✅ Trades: {len(all_trades)}")
+    print(f"   ✅ Rejections: {len(risk_rejections)}")
     
-    # Process futures
-    for t in raw_futures:
-        day = get_day_key(t['timestamp'])
-        if day < START_DATE: continue
-        
-        # Check if it's actually spot leaked into futures
-        strat = t.get('strategy', 'Unknown')
-        if t.get('market_type') == 'spot' or strat == 'SpotLogger':
-            spot_trades.append(t)
-        else:
-            futures_trades.append(t)
-            
-    # Process spot
-    for t in raw_spot_signals:
-        day = get_day_key(t['timestamp'])
-        if day < START_DATE: continue
-        spot_trades.append(t)
-
-    # --- 1. DAILY COMBINED PERFORMANCE ---
-    print("\n📅 DAILY PERFORMANCE BREAKDOWN (Futures & Spot)")
-    print("-" * 80)
-    print(f"{'Date':<12} | {'F.Trades':<8} | {'F.P&L':<12} | {'S.Trades':<8} | {'S.P&L':<12} | {'Total P&L'}")
-    print("-" * 80)
-
+    # --- PROCESSING ---
     daily_report = defaultdict(lambda: {
         'f_count': 0, 'f_pnl': 0.0, 's_count': 0, 's_pnl': 0.0
     })
 
-    # Aggregate Futures
-    for t in futures_trades:
-        if 'pnl_amount' not in t: continue
-        day = get_day_key(t['timestamp'])
-        daily_report[day]['f_count'] += 1
-        daily_report[day]['f_pnl'] += t['pnl_amount']
+    for t in all_trades:
+        # Status filter - only for closed trades calculate P&L
+        if t.get('status') != 'CLOSED': continue
+        day = get_day_key(t.get('entry_time') or t.get('exit_time'))
+        if day < START_DATE: continue
+        
+        pnl = t.get('pnl_amount') or 0.0
+        m_type = t.get('market_type', 'futures').lower()
+        
+        if m_type == 'spot':
+            daily_report[day]['s_count'] += 1
+            daily_report[day]['s_pnl'] += pnl
+        else:
+            daily_report[day]['f_count'] += 1
+            daily_report[day]['f_pnl'] += pnl
 
-    # Aggregate Spot (Exits only)
-    for t in spot_trades:
-        # Check if it's an exit record (has pnl or pnl_amount)
-        pnl = t.get('pnl_amount') or t.get('pnl') or t.get('pnl_usdt')
-        if pnl is None and t.get('type') != 'exit':
-            continue
-            
-        pnl = pnl or 0.0
-        day = get_day_key(t['timestamp'])
-        daily_report[day]['s_count'] += 1
-        daily_report[day]['s_pnl'] += pnl
+    # --- DISPLAY ---
+    print("\n📅 DAILY PERFORMANCE BREAKDOWN")
+    print("-" * 80)
+    print(f"{'Date':<12} | {'F.Trades':<8} | {'F.P&L':<12} | {'S.Trades':<8} | {'S.P&L':<12} | {'Total P&L'}")
+    print("-" * 80)
 
     total_f_pnl = 0.0
     total_s_pnl = 0.0
@@ -130,6 +135,7 @@ def main():
     total_s_trades = 0
 
     for day in sorted(daily_report.keys(), reverse=True):
+        if day == "Unknown": continue
         d = daily_report[day]
         total = d['f_pnl'] + d['s_pnl']
         print(f"{day:<12} | {d['f_count']:<8} | {format_currency(d['f_pnl']):<12} | {d['s_count']:<8} | {format_currency(d['s_pnl']):<12} | {format_currency(total)}")
@@ -140,34 +146,25 @@ def main():
         total_s_trades += d['s_count']
 
     # --- 2. RISK FRICTION ANALYSIS ---
-    print("\n🛡️ RISK REJECTION AUDIT (Bottleneck Detection)")
+    print("\n🛡️ RISK REJECTION AUDIT")
     print("-" * 60)
-    rejections = db_manager.find_documents('risk_rejections', limit=1000)
     layer_stats = defaultdict(int)
-    for r in rejections:
-        day = get_day_key(r['timestamp'])
-        if day < START_DATE: continue
+    for r in risk_rejections:
         layer_stats[r.get('layer_name', 'Unknown')] += 1
 
     if not layer_stats:
-        print("✅ No trade rejections found. Risk layers are smooth.")
+        print("✅ No trade rejections found.")
     else:
         for layer, count in sorted(layer_stats.items(), key=lambda x: x[1], reverse=True):
             print(f" - {layer:25}: {count} rejections")
 
     # --- 3. OVERALL SUMMARY ---
-    print("\n💰 PERFORMANCE SUMMARY (Feb 20th - Present)")
+    print("\n💰 PERFORMANCE SUMMARY")
     print("-" * 60)
     print(f"Total Futures P&L:      {format_currency(total_f_pnl)} ({total_f_trades} trades)")
     print(f"Total Spot P&L:         {format_currency(total_s_pnl)} ({total_s_trades} trades)")
     print(f"Combined Net P&L:       {format_currency(total_f_pnl + total_s_pnl)}")
     
-    # Fee Estimation
-    total_volume = sum(t.get('position_size', 0) * t.get('leverage', 1) for t in futures_trades)
-    est_fees = total_volume * 0.0004 * 2
-    print(f"Est. Exchange Fees:     {format_currency(-est_fees)}")
-    print(f"Final Adjusted P&L:     {format_currency(total_f_pnl + total_s_pnl - est_fees)}")
-
     print("\n" + "=" * 60)
     print("📜 ANALYSIS COMPLETE")
     print("=" * 60)

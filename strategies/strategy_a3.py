@@ -34,9 +34,9 @@ class StrategyA3(BaseStrategy):
         # Volume spike threshold
         self.volume_spike_mult = 1.5
 
-        # Balanced stops for scalping (1:2.3+ R:R)
-        self.atr_sl_mult = 1.5   # Wider stop for safety
-        self.atr_tp_mult = 3.5   # Higher reward target
+        # Balanced stops for scalping (tighter for higher win rate)
+        self.atr_sl_mult = 1.2   # Tighter stop for cleaner entries
+        self.atr_tp_mult = 2.5   # Faster profit lock-in (more wins)
 
         # Universal filters
         self.filters = get_strategy_filters(config)
@@ -133,6 +133,12 @@ class StrategyA3(BaseStrategy):
         should_trade, reason = self.filters.should_trade_symbol(df, symbol, self.name)
         if not should_trade:
             self.logger.debug(f"[{self.name}] {symbol} FILTERED: {reason}")
+            return None
+
+        # Strict ADX filter — only trade in high-velocity conditions
+        adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
+        if adx_val < 30:
+            self.logger.debug(f"[{self.name}] {symbol} REJECTED: ADX {adx_val:.1f} < 30 (Low Momentum)")
             return None
 
         current = df.iloc[-1]

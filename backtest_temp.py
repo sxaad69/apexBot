@@ -329,7 +329,7 @@ def main():
     if args.portfolio:
         symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT', 
                    'ADA/USDT', 'AVAX/USDT', 'DOGE/USDT', 'LINK/USDT', 'MATIC/USDT']
-        timeframes = ['3m', '5m', '15m', '30m', '1h']
+        timeframes = ['15m', '1h']
     else:
         symbols = [args.symbol]
         timeframes = ['15m']

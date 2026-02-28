@@ -304,6 +304,7 @@ class TelegramNotificationManager:
         message = f"""
 🎯 <b>FUTURES TRADE ENTRY</b>
 
+<b>Trade ID:</b> <code>{trade.get('trade_id', 'N/A')}</code>
 <b>Symbol:</b> {trade.get('symbol')}
 <b>Side:</b> {trade.get('side', '').upper()}
 <b>Entry Price:</b> ${trade.get('entry_price', 0):,.2f}
@@ -332,6 +333,7 @@ class TelegramNotificationManager:
         message = f"""
 {pnl_emoji} <b>FUTURES TRADE EXIT</b>
 
+<b>Trade ID:</b> <code>{trade.get('trade_id', 'N/A')}</code>
 <b>Symbol:</b> {trade.get('symbol')}
 <b>Entry Price:</b> ${trade.get('entry_price', 0):,.2f}
 <b>Exit Price:</b> ${trade.get('exit_price', 0):,.2f}
@@ -544,6 +546,7 @@ Sharpe Ratio: {summary.get('sharpe_ratio', 0):.2f}
         message = f"""
 🟢 <b>SPOT TRADE ENTRY</b>
 
+<b>Trade ID:</b> <code>{trade.get('trade_id', 'N/A')}</code>
 <b>Symbol:</b> {trade.get('symbol')}
 <b>Side:</b> {trade.get('side', '').upper()}
 <b>Entry Price:</b> ${trade.get('entry_price', 0):,.2f}
@@ -575,6 +578,7 @@ Sharpe Ratio: {summary.get('sharpe_ratio', 0):.2f}
         message = f"""
 {emoji} <b>SPOT TRADE EXIT - {result}</b>
 
+<b>Trade ID:</b> <code>{trade.get('trade_id', 'N/A')}</code>
 <b>Symbol:</b> {trade.get('symbol')}
 <b>Side:</b> {trade.get('side', '').upper()}
 

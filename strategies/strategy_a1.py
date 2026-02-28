@@ -41,6 +41,7 @@ class StrategyA1(BaseStrategy):
         df = df.copy()
         df['ema_fast'] = df['close'].ewm(span=self.ema_fast, adjust=False).mean()
         df['ema_slow'] = df['close'].ewm(span=self.ema_slow, adjust=False).mean()
+        df['ema_major'] = df['close'].ewm(span=200, adjust=False).mean()
         df = self.calculate_macd(df)
         df = self.calculate_atr(df)
         return df
@@ -83,7 +84,7 @@ class StrategyA1(BaseStrategy):
             self.logger.debug(f"[{self.name}] {symbol} REJECTED: ADX {adx_val:.1f} < 25 (Choppy Market)")
             return None
 
-        # Check for EMA crossover
+        # 3. Check for EMA crossover (must happen before trend guard — we need 'side')
         bullish_crossover = current['ema_fast'] > current['ema_slow'] and previous['ema_fast'] <= previous['ema_slow']
         bearish_crossover = current['ema_fast'] < current['ema_slow'] and previous['ema_fast'] >= previous['ema_slow']
 
@@ -92,6 +93,15 @@ class StrategyA1(BaseStrategy):
 
         # Determine signal direction
         side = 'buy' if bullish_crossover else 'sell'
+
+        # 4. Global Trend Guard (Major Trend Filter)
+        # Longs only allowed when price > 200 EMA, Shorts only when price < 200 EMA
+        if side == 'buy' and current['close'] < current['ema_major']:
+            self.logger.debug(f"[{self.name}] {symbol} REJECTED: Buy signal below 200 EMA")
+            return None
+        if side == 'sell' and current['close'] > current['ema_major']:
+            self.logger.debug(f"[{self.name}] {symbol} REJECTED: Sell signal above 200 EMA")
+            return None
 
         # MACD confirmation - must agree with crossover direction
         if not self.get_macd_confirmation(df, side):

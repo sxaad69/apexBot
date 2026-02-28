@@ -3,12 +3,9 @@ MongoDB Logger
 Extends the base logger to include MongoDB logging capabilities
 """
 
-import asyncio
-import json
-from typing import Dict, Any, Optional
 from datetime import datetime
+from typing import Optional, Dict, Any
 from .logger import Logger, LogCategory
-from database.json_manager import JSONManager
 from database.sqlite_manager import SQLiteManager
 from config.config import Config
 
@@ -23,49 +20,18 @@ class MongoLogger(Logger):
         self.config = config
         super().__init__(config)
 
-        # 1. Initialize SQLite FIRST (Robustness Priority)
-        self.sqlite_enabled = getattr(config, 'SQLITE_ENABLED', True)
-        self.db = None
-        if self.sqlite_enabled:
-            try:
-                self.db = SQLiteManager(config)
-                print("🏦 SQLite Storage active (Robust Trade Tracking)")
-            except Exception as e:
-                print(f"⚠️ SQLite initialization error: {e}")
-                self.sqlite_enabled = False
-
-        # 2. Determine MongoDB storage manager
-        self.mongo_manager = None
-        use_mongo_db = getattr(config, 'MONGODB_ENABLED', False)
-                
-        if use_mongo_db:
-            try:
-                from database.mongo_manager import MongoManager
-                print("🍃 Attempting to connect to MongoDB Atlas...")
-                self.mongo_manager = MongoManager(config)
-                
-                if not self.mongo_manager.is_connected:
-                    self.system("⚠️ MongoDB connection failed, falling back to JSON storage")
-                    self.mongo_manager = JSONManager(config)
-                else:
-                    self.system(f"🍃 MongoDB Atlas connected: {config.MONGODB_DATABASE}")
-            except ImportError:
-                self.system("⚠️ MongoDB drivers (pymongo/motor) not found, using JSON storage")
-                self.mongo_manager = JSONManager(config)
-            except Exception as e:
-                self.system(f"⚠️ MongoDB initialization error: {e}")
-                self.mongo_manager = JSONManager(config)
-        
-        # If no manager was set, use JSON
-        if self.mongo_manager is None:
-            self.mongo_manager = JSONManager(config)
-            self.system("📂 Using local JSON storage (MongoDB Atlas disabled)")
+        # 1. Initialize SQLite (Sole Data Source)
+        self.sqlite_enabled = True # Always enabled for unified storage
+        try:
+            self.db = SQLiteManager(config)
+            print("🏦 SQLite Unified Storage active (EXCLUISVE MODE)")
+        except Exception as e:
+            print(f"❌ CRITICAL: SQLite initialization error: {e}")
+            self.sqlite_enabled = False
+            # We don't fallback to JSON/Mongo anymore as requested
 
         # 3. Logging flags
-        self.async_queue = asyncio.Queue()
         self.async_logging_enabled = False
-        if self.mongo_manager.is_connected:
-            self.async_logging_enabled = True
 
         self.log_to_db = False
         if hasattr(config, 'LOG_OUTPUT'):
@@ -95,25 +61,10 @@ class MongoLogger(Logger):
                 'metadata': kwargs or {}
             }
             
-            # 1. Log to SQLite activity_log (Always if enabled)
+            # 1. Log to SQLite activity_log
             if self.sqlite_enabled:
                 symbol = kwargs.get('symbol', 'SYSTEM')
                 self.db.log_activity(category, symbol, message, document)
-
-            # 2. Log to MongoDB/JSON fallback (Legacy/Secondary)
-            if self.mongo_manager and self.mongo_manager.is_connected:
-                collection_map = {
-                    'api_calls': 'system_logs',
-                    'position_rejections': 'risk_rejections',
-                    'token_metrics': 'system_logs',
-                    'risk_management': 'system_logs',
-                    'trade_execution': 'system_logs',
-                    'performance': 'system_logs',
-                    'system_events': 'system_logs',
-                    'error_traces': 'system_logs'
-                }
-                collection = collection_map.get(category, 'system_logs')
-                self.mongo_manager.insert_document(collection, document)
 
         except Exception as e:
             # Avoid recursive errors
@@ -194,6 +145,8 @@ class MongoLogger(Logger):
                 'leverage': leverage,
                 'stop_loss': kwargs.get('stop_loss'),
                 'take_profit': kwargs.get('take_profit'),
+                'highest_price': price,
+                'trailing_stop_price': kwargs.get('stop_loss'),
                 'strategy': kwargs.get('strategy'),
                 'timestamp': datetime.utcnow().isoformat(),
                 'metadata': kwargs
@@ -348,59 +301,26 @@ class MongoLogger(Logger):
             return False
 
     def log_arbitrage_opportunity(self, opportunity: Dict[str, Any]):
-        """Log arbitrage opportunity to MongoDB"""
-        document = {
-            'type': opportunity.get('type'),
-            'symbols': opportunity.get('symbols', []),
-            'exchanges': opportunity.get('exchanges', []),
-            'buy_price': opportunity.get('buy_price'),
-            'sell_price': opportunity.get('sell_price'),
-            'spread_percent': opportunity.get('spread_percent'),
-            'profit_amount': opportunity.get('profit_amount'),
-            'profit_percent': opportunity.get('profit_percent'),
-            'executed': opportunity.get('executed', False),
-            'fees': opportunity.get('fees'),
-            'net_profit': opportunity.get('net_profit'),
-            'metadata': opportunity
-        }
-
-        self.mongo_manager.insert_document('arbitrage_opportunities', document)
+        """Arbitrage logging disabled in unified SQLite for now"""
+        pass
 
     def save_market_analysis(self, date: str, hour: str, analysis_data: Dict[str, Any]) -> bool:
-        """Save market analysis data to SQLite (New) or MongoDB/JSON (Legacy)"""
+        """Save market analysis data to SQLite (Exclusive)"""
         try:
-            # 1. Prefer SQLite (Consolidated)
             if self.sqlite_enabled:
-                # We save summary stats but we could also save individual pair data if needed
                 symbol = analysis_data.get('trading_type', 'futures')
                 price = 0.0 # Not applicable to summary
                 self.db.save_analysis(symbol, price, analysis_data)
-
-            # 2. Try MongoDB
-            if self.mongo_manager.is_connected:
-                document = {
-                    'date': date,
-                    'hour': hour,
-                    'trading_type': analysis_data.get('trading_type', 'futures'),
-                    'total_analyses': analysis_data.get('total_analyses', 0),
-                    'timestamp': datetime.utcnow()
-                }
-                self.mongo_manager.insert_document('market_analyses', document)
                 return True
-            else:
-                # 3. Fallback to JSON
-                return self._save_market_analysis_json(date, analysis_data)
-
+            return False
         except Exception as e:
-            print(f"⚠️ Market analysis logging failed: {e}")
+            print(f"❌ SQLite analysis logging failed: {e}")
             return False
 
     def save_strategy_signals(self, date: str, hour: str, strategy_data: Dict[str, Any]) -> bool:
-        """Save strategy signals data to SQLite (New) or MongoDB/JSON (Legacy)"""
+        """Save strategy signals data to SQLite (Exclusive)"""
         try:
-            # 1. Prefer SQLite (Consolidated)
             if self.sqlite_enabled:
-                # Loop through pairs in strategy data
                 for symbol, data in strategy_data.items():
                     if isinstance(data, dict) and 'action' in data:
                         self.db.save_signal(
@@ -410,32 +330,16 @@ class MongoLogger(Logger):
                             data.get('confidence', 0.0), 
                             data
                         )
-
-            # 2. Try MongoDB
-            if self.mongo_manager.is_connected:
-                document = {
-                    'date': date,
-                    'hour': hour,
-                    'trading_type': strategy_data.get('trading_type', 'futures'),
-                    **{k: v for k, v in strategy_data.items() if k not in ['date', 'hour', 'trading_type']},
-                    'timestamp': datetime.utcnow()
-                }
-                self.mongo_manager.insert_document('strategy_signals', document)
                 return True
-            else:
-                # 3. Fallback to JSON
-                return self._save_strategy_signals_json(date, strategy_data)
-
+            return False
         except Exception as e:
-            print(f"⚠️ Strategy signals logging failed: {e}")
+            print(f"❌ SQLite signals logging failed: {e}")
             return False
 
     def save_hourly_metrics(self, date: str, hour: str, metrics_data: Dict[str, Any]) -> bool:
-        """Save hourly trading metrics using UPSERT to SQLite or MongoDB"""
+        """Save hourly trading metrics to SQLite (Exclusive)"""
         try:
             trading_type = metrics_data.get('trading_type', 'futures')
-            
-            # 1. Prefer SQLite for metrics (Robust)
             if self.sqlite_enabled:
                 inc_vars = {
                     'signals_generated': metrics_data.get('signals_generated', 0),
@@ -443,138 +347,15 @@ class MongoLogger(Logger):
                     'total_rejections': metrics_data.get('total_rejections', 0)
                 }
                 self.db.upsert_metrics(date, hour, trading_type, inc_vars)
-            
-            # 2. Try MongoDB (Legacy/Secondary)
-            if hasattr(self.mongo_manager, 'upsert_document') and self.mongo_manager.is_connected:
-                filter_query = {'date': date, 'hour': hour, 'type': trading_type}
-                update_data = {
-                    '$set': {
-                        'timestamp': datetime.utcnow(),
-                        'conversion_rate': metrics_data.get('conversion_rate', 0.0)
-                    },
-                    '$inc': {
-                        'signals_generated': metrics_data.get('signals_generated', 0),
-                        'trades_executed': metrics_data.get('trades_executed', 0),
-                        'volume_rejections': metrics_data.get('volume_rejections', 0),
-                        'adx_rejections': metrics_data.get('adx_rejections', 0),
-                        'volatility_rejections': metrics_data.get('volatility_rejections', 0),
-                        'other_rejections': metrics_data.get('other_rejections', 0),
-                        'total_rejections': metrics_data.get('total_rejections', 0)
-                    }
-                }
-                self.mongo_manager.upsert_document('metrics_summary', filter_query, update_data)
                 return True
-            else:
-                # 3. Fallback to JSON file
-                return self._save_hourly_metrics_json(date, metrics_data)
-
-        except Exception as e:
-            print(f"⚠️ Metrics summary update failed: {e}")
             return False
-
-    def _save_market_analysis_json(self, date: str, analysis_data: Dict[str, Any]) -> bool:
-        """Save market analysis data to JSON file (MongoDB fallback)"""
-        try:
-            filename = f"market_analyses_{date.replace('-', '')}.json"
-            filepath = self.mongo_manager.data_dir / filename
-
-            # Load existing data or create new
-            existing_data = {}
-            if filepath.exists():
-                try:
-                    with open(filepath, 'r') as f:
-                        existing_data = json.load(f)
-                except:
-                    existing_data = {}
-
-            # Add new analysis data
-            hour_key = analysis_data.get('hour', '00:00')
-            existing_data[hour_key] = analysis_data
-
-            # Save back to file
-            with open(filepath, 'w') as f:
-                json.dump(existing_data, f, indent=2, default=str)
-
-            return True
-
         except Exception as e:
-            print(f"⚠️ JSON market analysis save failed: {e}")
-            return False
-
-    def _save_strategy_signals_json(self, date: str, strategy_data: Dict[str, Any]) -> bool:
-        """Save strategy signals data to JSON file (MongoDB fallback)"""
-        try:
-            filename = f"strategy_signals_{date.replace('-', '')}.json"
-            filepath = self.mongo_manager.data_dir / filename
-
-            # Load existing data or create new
-            existing_data = {}
-            if filepath.exists():
-                try:
-                    with open(filepath, 'r') as f:
-                        existing_data = json.load(f)
-                except:
-                    existing_data = {}
-
-            # Add new strategy data
-            hour_key = strategy_data.get('hour', '00:00')
-            existing_data[hour_key] = strategy_data
-
-            # Save back to file
-            with open(filepath, 'w') as f:
-                json.dump(existing_data, f, indent=2, default=str)
-
-            return True
-
-        except Exception as e:
-            print(f"⚠️ JSON strategy signals save failed: {e}")
-            return False
-
-    def _save_hourly_metrics_json(self, date: str, metrics_data: Dict[str, Any]) -> bool:
-        """Save hourly metrics data to JSON file (MongoDB fallback)"""
-        try:
-            filename = f"hourly_metrics_{date.replace('-', '')}.json"
-            filepath = self.mongo_manager.data_dir / filename
-
-            # Load existing data or create new
-            existing_data = {}
-            if filepath.exists():
-                try:
-                    with open(filepath, 'r') as f:
-                        existing_data = json.load(f)
-                except:
-                    existing_data = {}
-
-            # Add new metrics data
-            hour_key = metrics_data.get('hour', '00:00')
-            existing_data[hour_key] = metrics_data
-
-            # Save back to file
-            with open(filepath, 'w') as f:
-                json.dump(existing_data, f, indent=2, default=str)
-
-            return True
-
-        except Exception as e:
-            print(f"⚠️ JSON hourly metrics save failed: {e}")
+            print(f"❌ SQLite metrics logging failed: {e}")
             return False
 
     def debug(self, message: str, **kwargs):
-        """Log debug message to dedicated debug_logs.json file"""
-        # Always call parent debug method (for console/file logging based on config)
+        """Log debug message to console/file (DB debug logging removed)"""
         super().debug(message, **kwargs)
-
-        # Additionally log to debug_logs.json if LOG_OUTPUT includes db
-        if self.log_to_db:
-            try:
-                document = {
-                    'message': message,
-                    'metadata': kwargs or {}
-                }
-                self.mongo_manager.insert_document('debug_logs', document)
-            except Exception as e:
-                # Don't let debug logging failures break the application
-                print(f"⚠️ Debug logging to DB failed: {e}")
 
     def _get_layer_number(self, layer_name: str) -> int:
         """Get risk layer number from name"""
@@ -596,19 +377,20 @@ class MongoLogger(Logger):
     # ===== Cleanup and maintenance =====
 
     def cleanup_old_logs(self):
-        """Clean up expired log entries based on retention policy"""
-        if self.mongo_manager.is_connected:
-            self.mongo_manager.cleanup_expired_documents()
+        """Clean up expired log entries in SQLite"""
+        if self.sqlite_enabled:
+            count = self.db.purge_old_activity(days=7)
+            if count > 0:
+                print(f"🧹 SQLite Cleanup: Purged {count} old entries")
 
     def get_mongodb_status(self) -> Dict[str, Any]:
-        """Get MongoDB connection status"""
+        """Get storage status (SQLite only)"""
         return {
-            'connected': self.mongo_manager.is_connected,
-            'database': self.config.MONGODB_DATABASE if hasattr(self.config, 'MONGODB_DATABASE') else None,
-            'async_logging': self.async_logging_enabled
+            'connected': self.sqlite_enabled,
+            'type': 'SQLite (Unified)',
+            'async_logging': False
         }
 
     def close(self):
-        """Close MongoDB connections"""
-        if hasattr(self, 'mongo_manager'):
-            self.mongo_manager.close()
+        """SQLite close not explicitly required for standard operations"""
+        pass

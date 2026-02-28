@@ -85,6 +85,9 @@ class Config:
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float(os.getenv('FUTURES_MAX_DAILY_LOSS_PERCENT', '5'))
         self.FUTURES_MAX_DRAWDOWN_PERCENT = float(os.getenv('FUTURES_MAX_DRAWDOWN_PERCENT', '15'))
         self.FUTURES_MAX_OPEN_POSITIONS = int(os.getenv('FUTURES_MAX_OPEN_POSITIONS', '5'))
+        self.MAX_EQUITY_RISK_PERCENT = float(os.getenv('MAX_EQUITY_RISK_PERCENT', '3.0'))
+        self.MAX_LEVERAGE_ABSOLUTE = int(os.getenv('MAX_LEVERAGE_ABSOLUTE', '20'))
+        self.MIN_ATR_PERCENT = float(os.getenv('MIN_ATR_PERCENT', '0.1'))  # Min ATR to prevent noise-based SL
         futures_pairs_str = os.getenv('FUTURES_PAIRS', 'BTC/USDT,ETH/USDT,SOL/USDT')
         # Support 'auto' mode or comma-separated list
         if futures_pairs_str.lower() == 'auto':
@@ -144,6 +147,13 @@ class Config:
         self.MIN_POSITION_SIZE = float(os.getenv('MIN_POSITION_SIZE', '1'))
         self.MAX_POSITION_SIZE = float(os.getenv('MAX_POSITION_SIZE', '1000'))
         self.MAX_OPEN_POSITIONS = int(os.getenv('MAX_OPEN_POSITIONS', '5'))
+        
+        # ===== Strategy Selection Configuration =====
+        self.STRATEGY_A1_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A1_ENABLED', 'true'))
+        self.STRATEGY_A2_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A2_ENABLED', 'false'))
+        self.STRATEGY_A3_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A3_ENABLED', 'true'))
+        self.STRATEGY_A4_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A4_ENABLED', 'true'))
+        self.STRATEGY_A5_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A5_ENABLED', 'false'))
         
         # ===== Fee Configuration (Simulation) =====
         self.FUTURES_FEE_PERCENT = float(os.getenv('FUTURES_FEE_PERCENT', '0.04'))

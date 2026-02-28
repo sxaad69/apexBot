@@ -110,7 +110,8 @@ class StrategyA4(BaseStrategy):
         1. EMA crossover (9 crosses 21)
         2. EMAs aligned (9 > 21 > 50 for longs, opposite for shorts)
         3. MACD momentum confirmation
-        4. ADX > 25 (strong trend)
+        4. ADX > 30 (strong trend only)
+        5. Trend Strength must be 'strong' (above 200 EMA)
 
         This is the most selective strategy - quality over quantity.
         """
@@ -126,6 +127,12 @@ class StrategyA4(BaseStrategy):
         should_trade, reason = self.filters.should_trade_symbol(df, symbol, self.name)
         if not should_trade:
             self.logger.debug(f"[{self.name}] {symbol} FILTERED: {reason}")
+            return None
+
+        # Strict ADX filter — only enter high-strength trends
+        adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
+        if adx_val < 30:
+            self.logger.debug(f"[{self.name}] {symbol} REJECTED: ADX {adx_val:.1f} < 30 (Trend too weak)")
             return None
 
         current = df.iloc[-1]
@@ -145,8 +152,10 @@ class StrategyA4(BaseStrategy):
         # Check trend alignment
         is_aligned, trend_direction, trend_strength = self.check_trend_alignment(df)
 
-        if not is_aligned:
-            self.logger.debug(f"[{self.name}] {symbol}: Crossover but EMAs not aligned")
+        # Only accept strong trend alignment (not moderate)
+        # This prevents entering on weak, uncertain moves
+        if not is_aligned or trend_strength != 'strong':
+            self.logger.debug(f"[{self.name}] {symbol}: Requires 'strong' trend alignment (got: {trend_strength})")
             return None
 
         if cross_direction != trend_direction:
