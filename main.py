@@ -170,15 +170,16 @@ class PaperTradingEngine:
 
             # Filter and sort by volume
             usdt_pairs = []
+            for symbol, ticker in tickers.items():
                 # Only USDT pairs (support varied CCXT futures formats)
                 if ':USDT' not in symbol and not symbol.endswith('/USDT'):
                     continue
-
 
                 # Skip if no volume data
                 quote_volume = ticker.get('quoteVolume', 0)
                 if not quote_volume or quote_volume < min_volume_usdt:
                     continue
+
 
                 usdt_pairs.append({
                     'symbol': symbol,
