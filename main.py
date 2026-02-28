@@ -26,12 +26,14 @@ from risk.layers.trailing_stop import TrailingStopLayer
 class PaperTradingEngine:
     """
     Paper Trading Engine - Simulates trading with live market data
+    Supports both Paper (Virtual) and Live (API) capital modes
     """
 
-    def __init__(self, config, logger, telegram):
+    def __init__(self, config, logger, telegram, mode='paper'):
         self.config = config
         self.logger = logger
         self.telegram = telegram
+        self.mode = mode
 
         # Initialize exchange for market data
         self.exchange = CCXTExchangeClient(config, logger, config.FUTURES_EXCHANGE)
@@ -79,12 +81,28 @@ class PaperTradingEngine:
         # Virtual positions (key: "strategy_name:symbol" -> position_data)
         self.positions = {}
 
-        # Virtual capital per strategy (shared across all symbols)
-        initial_capital = getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
-        self.capital = {s.name: initial_capital for s in self.strategies}
+        # Capital Initialization logic (Shared Pool)
+        if self.mode == 'live':
+            self.logger.info("Fetching REAL balance from exchange...")
+            try:
+                full_balance = self.exchange.get_balance()
+                # Unified access for USDT balance across major exchanges
+                self.total_capital = float(full_balance.get('USDT', {}).get('free', 0))
+                
+                if self.total_capital <= 0:
+                    self.logger.warning("Real USDT balance is 0 or could not be fetched. Falling back to virtual.")
+                    self.total_capital = getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
+                else:
+                    self.logger.info(f"💰 LIVE BALANCE SYNCED: ${self.total_capital:.2f} USDT")
+            except Exception as e:
+                self.logger.error(f"Failed to fetch real balance: {e}")
+                self.total_capital = getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
+        else:
+            self.total_capital = getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
 
-        # Initialize peak balance for each strategy (for drawdown tracking)
-        self.peak_balance = {s.name: initial_capital for s in self.strategies}
+        self.peak_balance = self.total_capital
+
+
 
         # Performance tracking
         self.trades = []
@@ -118,7 +136,7 @@ class PaperTradingEngine:
         }
 
         self.logger.info(f"Paper trading initialized with {len(self.strategies)} strategies")
-        self.logger.info(f"Initial capital: ${initial_capital} per strategy")
+        self.logger.info(f"Initial capital: ${self.total_capital} per strategy")
         self.logger.info(f"Risk management: 11 layers active")
 
         # Deduplication for Telegram notifications
@@ -152,10 +170,10 @@ class PaperTradingEngine:
 
             # Filter and sort by volume
             usdt_pairs = []
-            for symbol, ticker in tickers.items():
-                # Only USDT pairs (or configured quote currency)
-                if not symbol.endswith('/USDT'):
+                # Only USDT pairs (support varied CCXT futures formats)
+                if ':USDT' not in symbol and not symbol.endswith('/USDT'):
                     continue
+
 
                 # Skip if no volume data
                 quote_volume = ticker.get('quoteVolume', 0)
@@ -338,7 +356,7 @@ class PaperTradingEngine:
                                     'current_price': current_price,
                                     'strategy': strategy_name,
                                     'profit_percent': profit_percent * 100,
-                                    'highest_price': position['lowest_price'],  # For shorts, this is the lowest price
+                                    'highest_price': position['lowest_price'],
                                     'old_stop_loss': old_stop,
                                     'new_stop_loss': new_stop
                                 })
@@ -353,20 +371,7 @@ class PaperTradingEngine:
                                 )
 
     def update_trailing_take_profit(self, symbol, current_price):
-        """
-        Update trailing take profit for all positions on a symbol.
-
-        Trailing TP works opposite to trailing SL:
-        - Activates when profit exceeds threshold
-        - Moves TP CLOSER to current price as trade becomes more profitable
-        - Locks in more profit on extended runs
-
-        Example for LONG:
-        - Entry: $100, Initial TP: $106 (6%)
-        - Price hits $105 (5% profit), trailing TP activates
-        - New TP = $105 * (1 - 1.5%) = $103.43 (locks in 3.43% profit)
-        - Price continues to $110, new TP = $110 * (1 - 1.5%) = $108.35
-        """
+        """Update trailing take profit for all positions on a symbol."""
         if not getattr(self.config, 'TRAILING_TP_ENABLED', True):
             return
 
@@ -375,139 +380,59 @@ class PaperTradingEngine:
                 continue
 
             strategy_name = position['strategy']
-
-            # Get trailing TP settings
-            tp_activation_threshold = getattr(self.config, 'TRAILING_TP_ACTIVATION', 3) / 100
+            tp_activation_threshold = getattr(self.config, 'TRAILING_TP_ACTIVATION', 3.0) / 100
             tp_trailing_distance = getattr(self.config, 'TRAILING_TP_DISTANCE', 1.5) / 100
 
             if position['side'] == 'buy':
-                # For LONG: TP moves DOWN (closer to price) as price rises
                 profit_percent = (current_price - position['entry_price']) / position['entry_price']
-
-                # Initialize trailing TP tracking if needed
                 if 'trailing_tp_active' not in position:
                     position['trailing_tp_active'] = False
                     position['trailing_tp_peak_price'] = None
 
-                # Track peak price for trailing TP
                 if position['trailing_tp_peak_price'] is None or current_price > position['trailing_tp_peak_price']:
                     position['trailing_tp_peak_price'] = current_price
 
-                    # Check if trailing TP should activate
                     if profit_percent >= tp_activation_threshold and not position['trailing_tp_active']:
                         position['trailing_tp_active'] = True
                         position['trailing_tp_activation_price'] = current_price
                         old_tp = position['take_profit']
-                        # New TP = peak price minus trailing distance (locks in profit)
                         new_tp = current_price * (1 - tp_trailing_distance)
-
-                        # Only update if new TP is LOWER than original (closer to current price)
-                        # This locks in profit earlier
                         if new_tp < old_tp and new_tp > position['entry_price']:
                             position['take_profit'] = new_tp
-                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP ACTIVATED @ ${current_price:.2f} "
-                                           f"(Profit: {profit_percent*100:.1f}%) | Take Profit: ${old_tp:.2f} → ${new_tp:.2f}")
+                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP ACTIVATED @ ${current_price:.2f} (Profit: {profit_percent*100:.1f}%) | TP: ${old_tp:.2f} → ${new_tp:.2f}")
 
-                            # Send Telegram notification
-                            if self.telegram:
-                                self.telegram.send_futures_trailing_tp_update({
-                                    'type': 'activated',
-                                    'symbol': symbol,
-                                    'current_price': current_price,
-                                    'strategy': strategy_name,
-                                    'profit_percent': profit_percent * 100,
-                                    'peak_price': position['trailing_tp_peak_price'],
-                                    'old_take_profit': old_tp,
-                                    'new_take_profit': new_tp
-                                })
-
-                    # Update trailing TP if already active
                     elif position['trailing_tp_active']:
                         new_tp = position['trailing_tp_peak_price'] * (1 - tp_trailing_distance)
-
-                        # Only update if new TP locks in MORE profit (lower TP, but still above entry)
-                        if new_tp < position['take_profit'] and new_tp > position['entry_price']:
+                        if new_tp < position['take_profit'] and new_tp > position['entry_price']: # Move TP LOWER for Long
                             old_tp = position['take_profit']
                             position['take_profit'] = new_tp
-                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP UPDATED @ ${current_price:.2f} "
-                                           f"(Peak: ${position['trailing_tp_peak_price']:.2f}) | Take Profit: ${old_tp:.2f} → ${new_tp:.2f}")
-
-                            # Send Telegram notification
-                            if self.telegram:
-                                self.telegram.send_futures_trailing_tp_update({
-                                    'type': 'update',
-                                    'symbol': symbol,
-                                    'current_price': current_price,
-                                    'strategy': strategy_name,
-                                    'profit_percent': profit_percent * 100,
-                                    'peak_price': position['trailing_tp_peak_price'],
-                                    'old_take_profit': old_tp,
-                                    'new_take_profit': new_tp
-                                })
+                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP UPDATED @ ${current_price:.2f} | TP: ${old_tp:.2f} → ${new_tp:.2f}")
 
             else:  # sell position
-                # For SHORT: TP moves UP (closer to price) as price falls
                 profit_percent = (position['entry_price'] - current_price) / position['entry_price']
-
-                # Initialize trailing TP tracking if needed
                 if 'trailing_tp_active' not in position:
                     position['trailing_tp_active'] = False
                     position['trailing_tp_trough_price'] = None
 
-                # Track trough (lowest) price for trailing TP on shorts
                 if position['trailing_tp_trough_price'] is None or current_price < position['trailing_tp_trough_price']:
                     position['trailing_tp_trough_price'] = current_price
 
-                    # Check if trailing TP should activate
                     if profit_percent >= tp_activation_threshold and not position['trailing_tp_active']:
                         position['trailing_tp_active'] = True
                         position['trailing_tp_activation_price'] = current_price
                         old_tp = position['take_profit']
-                        # New TP = trough price plus trailing distance (locks in profit)
                         new_tp = current_price * (1 + tp_trailing_distance)
-
-                        # Only update if new TP is HIGHER than original (closer to current price)
                         if new_tp > old_tp and new_tp < position['entry_price']:
                             position['take_profit'] = new_tp
-                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP ACTIVATED @ ${current_price:.2f} "
-                                           f"(Profit: {profit_percent*100:.1f}%) | Take Profit: ${old_tp:.2f} → ${new_tp:.2f}")
+                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP ACTIVATED @ ${current_price:.2f} (Profit: {profit_percent*100:.1f}%) | TP: ${old_tp:.2f} → ${new_tp:.2f}")
 
-                            # Send Telegram notification
-                            if self.telegram:
-                                self.telegram.send_futures_trailing_tp_update({
-                                    'type': 'activated',
-                                    'symbol': symbol,
-                                    'current_price': current_price,
-                                    'strategy': strategy_name,
-                                    'profit_percent': profit_percent * 100,
-                                    'trough_price': position['trailing_tp_trough_price'],
-                                    'old_take_profit': old_tp,
-                                    'new_take_profit': new_tp
-                                })
-
-                    # Update trailing TP if already active
                     elif position['trailing_tp_active']:
                         new_tp = position['trailing_tp_trough_price'] * (1 + tp_trailing_distance)
-
-                        # Only update if new TP locks in MORE profit (higher TP, but still below entry)
-                        if new_tp > position['take_profit'] and new_tp < position['entry_price']:
+                        if new_tp > position['take_profit'] and new_tp < position['entry_price']: # Move TP HIGHER for Short
                             old_tp = position['take_profit']
                             position['take_profit'] = new_tp
-                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP UPDATED @ ${current_price:.2f} "
-                                           f"(Trough: ${position['trailing_tp_trough_price']:.2f}) | Take Profit: ${old_tp:.2f} → ${new_tp:.2f}")
+                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP UPDATED @ ${current_price:.2f} | TP: ${old_tp:.2f} → ${new_tp:.2f}")
 
-                            # Send Telegram notification
-                            if self.telegram:
-                                self.telegram.send_futures_trailing_tp_update({
-                                    'type': 'update',
-                                    'symbol': symbol,
-                                    'current_price': current_price,
-                                    'strategy': strategy_name,
-                                    'profit_percent': profit_percent * 100,
-                                    'trough_price': position['trailing_tp_trough_price'],
-                                    'old_take_profit': old_tp,
-                                    'new_take_profit': new_tp
-                                })
 
     def check_position_exit(self, position, current_price):
         """Check if position should be exited"""
@@ -539,7 +464,7 @@ class PaperTradingEngine:
 
         # Calculate current drawdown
         initial_capital = getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
-        current_capital = self.capital[strategy_name]
+        current_capital = self.total_capital
 
         if current_capital < initial_capital:
             drawdown_percent = ((initial_capital - current_capital) / initial_capital) * 100
@@ -579,7 +504,7 @@ class PaperTradingEngine:
             else:
                 base_size_pct = 0.07  # 7% — Low conviction, cautious
 
-            total_capital = self.capital[strategy_name]
+            total_capital = self.total_capital
 
             # --- Opportunity Reserve System ---
             # 20% of capital is always held in reserve ("Opportunity Reserve")
@@ -631,10 +556,9 @@ class PaperTradingEngine:
                 'atr': indicators.get('atr', None),  # Pass ATR for dynamic leverage
             }
 
-            # Prepare account state for risk evaluation
-            # Calculate current drawdown percentage
-            current_capital = self.capital[strategy_name]
-            peak_capital = self.peak_balance[strategy_name]
+            # Unified drawdown tracking for the shared pool
+            current_capital = self.total_capital
+            peak_capital = self.peak_balance
             drawdown_percent = 0
             if current_capital < peak_capital:
                 drawdown_percent = ((peak_capital - current_capital) / peak_capital) * 100
@@ -644,7 +568,7 @@ class PaperTradingEngine:
                 'available_balance': current_capital,  # For paper trading, all capital is available
                 'drawdown_percent': drawdown_percent,
                 'peak_balance': peak_capital,  # Keep for compatibility
-                'open_positions': [p for k, p in self.positions.items() if p['strategy'] == strategy_name],
+                'open_positions': [p for p in self.positions.values() if p['strategy'] == strategy_name],
                 'recent_trades': [t for t in self.trades if t['strategy'] == strategy_name][-20:],  # Last 20 trades
                 'current_time': datetime.now()
             }
@@ -674,9 +598,8 @@ class PaperTradingEngine:
             fee_percent = getattr(self.config, 'FUTURES_FEE_PERCENT', 0.04) / 100
             entry_fee = size * fee_percent
             
-            # Deduct capital immediately (Size + Fee)
-            # Size is the margin used for the position
-            self.capital[strategy_name] -= (size + entry_fee)
+            # Deduct from shared pool
+            self.total_capital -= (size + entry_fee)
             
             trade_id = f"FUT-{uuid.uuid4().hex[:8].upper()}"
             
@@ -769,15 +692,15 @@ class PaperTradingEngine:
                 total_fees = position.get('entry_fee', 0) + exit_fee
                 net_pnl_amount = gross_pnl_amount - exit_fee # subtract exit fee from pnl
                 
-                # Return margin + net PnL to capital
-                self.capital[strategy_name] += (position['size'] + net_pnl_amount)
+                # Return margin and P&L to shared pool
+                self.total_capital += (position['size'] + net_pnl_amount)
                 
                 pnl_amount = net_pnl_amount # Use net for logging
 
                 # Update peak balance (for drawdown tracking)
-                if self.capital[strategy_name] > self.peak_balance[strategy_name]:
-                    self.peak_balance[strategy_name] = self.capital[strategy_name]
-                    self.risk_manager.update_peak_balance(self.capital[strategy_name])
+                if self.total_capital > self.peak_balance:
+                    self.peak_balance = self.total_capital
+                    self.risk_manager.update_peak_balance(self.total_capital)
 
                 # Record trade result with risk manager
                 is_win = pnl_amount > 0
@@ -796,7 +719,7 @@ class PaperTradingEngine:
                     'pnl': pnl_amount,
                     'pnl_percent': leveraged_pnl_percent * 100,
                     'reason': reason,
-                    'capital_after': self.capital[strategy_name]
+                    'capital_after': self.total_capital
                 }
 
                 self.trades.append(trade)
@@ -902,8 +825,7 @@ class PaperTradingEngine:
         self.logger.save_active_positions(self.positions, self.current_prices)
 
         # Log status with more details
-        total_pnl = sum(self.capital[s.name] - getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
-                       for s in self.strategies)
+        total_pnl = self.total_capital - getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
         
         self.logger.info(f"{symbol} | Price: ${current_price:.2f} | "
                         f"Open: {len(self.positions)} | Total P&L: ${total_pnl:+.2f}")
@@ -1409,8 +1331,8 @@ APEX HUNTER V14 🤖
                 print(f"    Trades: {len(strategy_trades)}")
                 print(f"    Wins: {len(wins)} ({win_rate:.1f}%)")
                 print(f"    Avg Leverage: {avg_leverage:.1f}x")
-                print(f"    Final Capital: ${self.capital[strategy.name]:.2f}")
-                print(f"    Total P&L: ${total_pnl:+.2f} ({total_pnl/initial_capital*100:+.2f}%)")
+                print(f"    Final Shared Capital: ${self.total_capital:.2f}")
+                print(f"    Total Strategy P&L: ${total_pnl:+.2f}")
 
                 # Show breakdown by symbol
                 symbols = set(t['symbol'] for t in strategy_trades)
@@ -1451,35 +1373,17 @@ class ApexHunterBot:
         # Initialize trading engine
         if self.mode == 'paper':
             print("🎮 Initializing PAPER TRADING mode...")
-            self.engine = PaperTradingEngine(self.config, self.logger, self.telegram)
-            pairs_config = getattr(self.config, 'FUTURES_PAIRS', ['BTC/USDT'])
-
-            print(f"✅ Paper trading ready with {len(self.engine.strategies)} strategies")
-
-            if isinstance(pairs_config, str) and pairs_config.lower() == 'auto':
-                top_n = getattr(self.config, 'FUTURES_AUTO_TOP_N', 30)
-                min_vol = getattr(self.config, 'FUTURES_AUTO_MIN_VOLUME', 1000000)
-                print(f"   Mode: AUTO-DISCOVERY (Top {top_n} pairs, min ${min_vol:,.0f} volume)")
-            else:
-                pairs = pairs_config if isinstance(pairs_config, list) else [p.strip() for p in pairs_config.split(',')]
-                print(f"   Monitoring: {', '.join(pairs)}")
-
-            # Initialize Spot Trading Engine for spot trading simulation
-            if getattr(self.config, 'ENABLE_SPOT_TRADING', False):
-                print("📊 Initializing SPOT TRADING ENGINE...")
-                self.spot_engine = SpotTradingEngine(self.config, self.logger, self.telegram, self.engine.risk_manager, self.engine.exchange)
-                print("✅ Spot trading engine ready")
-
-            # Initialize Spot Logger for spot signal logging (if enabled separately)
-            if getattr(self.config, 'ENABLE_SPOT_LOGGER', False) and not getattr(self.config, 'ENABLE_SPOT_TRADING', False):
-                print("📊 Initializing SPOT LOGGER...")
-                spot_exchange = CCXTExchangeClient(self.config, self.logger, self.config.SPOT_EXCHANGE)
-                self.spot_logger = SpotLogger(self.config, self.logger, spot_exchange, self.engine.risk_manager, self.telegram)
-                print("✅ Spot logger ready")
         else:
-            print("⚠️  LIVE TRADING mode not implemented yet!")
-            print("   Use --mode paper for now")
-            sys.exit(1)
+            print("🚀 Initializing LIVE TRADING mode...")
+
+        self.engine = PaperTradingEngine(self.config, self.logger, self.telegram, mode=self.mode)
+        pairs_config = getattr(self.config, 'FUTURES_PAIRS', ['BTC/USDT'])
+ 
+        if self.mode == 'live':
+            print(f"💰 LIVE TRADING ACTIVE (Shared Pool Sync)")
+        else:
+            print(f"🧪 PAPER TRADING ACTIVE (Virtual Capital: ${self.engine.total_capital:.2f})")
+
 
         # Initialize Bot-Side Trailing Stop Engine
         if hasattr(self, 'engine'):
