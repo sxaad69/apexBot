@@ -34,7 +34,7 @@ class SpotTradingEngine:
         self.trades = []
 
         # Import strategies for signal generation
-        from strategies import StrategyA1, StrategyA2, StrategyA3, StrategyA4, StrategyA5
+        from strategies import StrategyA1, StrategyA2, StrategyA3, StrategyA4, StrategyA5, StrategyA6
         from strategies.filters import get_strategy_filters
 
         # Initialize strategies with universal filters
@@ -51,15 +51,18 @@ class SpotTradingEngine:
             self.strategies.append(StrategyA4(config, logger))
         if hasattr(config, 'STRATEGY_A5_ENABLED') and config.STRATEGY_A5_ENABLED:
             self.strategies.append(StrategyA5(config, logger))
+        if hasattr(config, 'STRATEGY_A6_ENABLED') and config.STRATEGY_A6_ENABLED:
+            self.strategies.append(StrategyA6(config, logger))
 
-        # Fallback to all strategies including A5
+        # Fallback to all strategies including A6
         if not self.strategies:
             self.strategies = [
                 StrategyA1(config, logger),
                 StrategyA2(config, logger),
                 StrategyA3(config, logger),
                 StrategyA4(config, logger),
-                StrategyA5(config, logger)
+                StrategyA5(config, logger),
+                StrategyA6(config, logger)
             ]
         
         # Inject exchange client into strategies

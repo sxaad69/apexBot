@@ -15,7 +15,7 @@ import pandas as pd
 from config import Config
 from bot_logging.mongo_logger import MongoLogger
 from exchange import CCXTExchangeClient
-from strategies import StrategyA1, StrategyA2, StrategyA3, StrategyA4, StrategyA5
+from strategies import StrategyA1, StrategyA2, StrategyA3, StrategyA4, StrategyA5, StrategyA6
 from notifications import TelegramNotificationManager
 from risk import RiskManager
 from core.spot_logger import SpotLogger
@@ -58,15 +58,18 @@ class PaperTradingEngine:
             self.strategies.append(StrategyA4(config, logger))
         if hasattr(config, 'STRATEGY_A5_ENABLED') and config.STRATEGY_A5_ENABLED:
             self.strategies.append(StrategyA5(config, logger))
+        if hasattr(config, 'STRATEGY_A6_ENABLED') and config.STRATEGY_A6_ENABLED:
+            self.strategies.append(StrategyA6(config, logger))
 
-        # If no strategies explicitly enabled, enable all including A5
+        # If no strategies explicitly enabled, enable all including A6
         if not self.strategies:
             self.strategies = [
                 StrategyA1(config, logger),
                 StrategyA2(config, logger),
                 StrategyA3(config, logger),
                 StrategyA4(config, logger),
-                StrategyA5(config, logger)
+                StrategyA5(config, logger),
+                StrategyA6(config, logger)
             ]
         
         # Inject exchange client into strategies for microstructure analysis (A5)

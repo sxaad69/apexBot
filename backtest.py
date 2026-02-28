@@ -20,7 +20,7 @@ import pandas as pd
 import ccxt
 from config import Config
 from bot_logging import Logger
-from strategies import StrategyA1, StrategyA2, StrategyA3, StrategyA4
+from strategies import StrategyA1, StrategyA2, StrategyA3, StrategyA4, StrategyA6Backtester
 
 
 from risk.layers.leverage_control import LeverageControlLayer
@@ -135,37 +135,73 @@ class Backtester:
                         'take_profit': trade_params['take_profit'],
                         'margin': trade_params['size'],
                         'leverage': trade_params.get('leverage', 1),
-                        'fee_pct': fee_pct
+                        'fee_pct': fee_pct,
+                        'highest_price': trade_params['entry_price']
                     }
                     self.logger.debug(f"Entry: {position['side']} @ {position['entry_price']:.2f}")
             
             # Exit logic
+            # Exit logic
             elif position:
-                current_price = df.iloc[i]['close']
+                current_close = df.iloc[i]['close']
+                current_high = df.iloc[i]['high']
+                current_low = df.iloc[i]['low']
+                
+                # 1. Update Highest Watermark Price
+                if position['side'] == 'buy' and current_high > position['highest_price']:
+                    position['highest_price'] = current_high
+                elif position['side'] == 'sell' and current_low < position['highest_price']:
+                    position['highest_price'] = current_low
+                
+                # 2. Ratchet Engine (Trailing Stop)
+                if getattr(self.config, 'TRAILING_TP_ENABLED', True):
+                    activation_pct = getattr(self.config, 'TRAILING_TP_ACTIVATION', 3.0)
+                    trail_pct = getattr(self.config, 'TRAILING_TP_DISTANCE', 1.5)
+                    
+                    if position['side'] == 'buy':
+                        profit_pct = ((position['highest_price'] - position['entry_price']) / position['entry_price']) * 100
+                        if profit_pct >= activation_pct:
+                            new_stop = position['highest_price'] * (1 - (trail_pct / 100.0))
+                            if new_stop > position['stop_loss']:
+                                position['stop_loss'] = new_stop
+                    else:
+                        profit_pct = ((position['entry_price'] - position['highest_price']) / position['entry_price']) * 100
+                        if profit_pct >= activation_pct:
+                            new_stop = position['highest_price'] * (1 + (trail_pct / 100.0))
+                            if new_stop < position['stop_loss']:
+                                position['stop_loss'] = new_stop
+
                 exit_triggered = False
                 exit_reason = None
+                exit_price = current_close
                 
+                # 3. Trigger Physics
                 if position['side'] == 'buy':
-                    if current_price <= position['stop_loss']:
+                    if current_low <= position['stop_loss']:
                         exit_triggered = True
-                        exit_reason = 'stop_loss'
-                    elif current_price >= position['take_profit']:
+                        # If stopped out above entry, it was a trailing stop mathematically
+                        exit_reason = 'trailing_stop' if position['stop_loss'] > position['entry_price'] else 'stop_loss'
+                        exit_price = position['stop_loss']
+                    elif current_high >= position['take_profit']:
                         exit_triggered = True
                         exit_reason = 'take_profit'
+                        exit_price = position['take_profit']
                 else:  # sell
-                    if current_price >= position['stop_loss']:
+                    if current_high >= position['stop_loss']:
                         exit_triggered = True
-                        exit_reason = 'stop_loss'
-                    elif current_price <= position['take_profit']:
+                        exit_reason = 'trailing_stop' if position['stop_loss'] < position['entry_price'] else 'stop_loss'
+                        exit_price = position['stop_loss']
+                    elif current_low <= position['take_profit']:
                         exit_triggered = True
                         exit_reason = 'take_profit'
+                        exit_price = position['take_profit']
                 
                 if exit_triggered:
                     # Leverage and fee adjusted P&L
                     if position['side'] == 'buy':
-                        price_move = (current_price - position['entry_price']) / position['entry_price']
+                        price_move = (exit_price - position['entry_price']) / position['entry_price']
                     else:
-                        price_move = (position['entry_price'] - current_price) / position['entry_price']
+                        price_move = (position['entry_price'] - exit_price) / position['entry_price']
                     
                     pnl_raw_percent = price_move * position['leverage']
                     fee_cost_percent = (position['fee_pct'] * 2) * position['leverage']
@@ -181,7 +217,7 @@ class Backtester:
                         'exit_time': df.index[i],
                         'side': position['side'],
                         'entry_price': position['entry_price'],
-                        'exit_price': current_price,
+                        'exit_price': exit_price,
                         'pnl': pnl_amount,
                         'pnl_percent': net_pnl_percent * 100,
                         'reason': exit_reason,
@@ -191,7 +227,7 @@ class Backtester:
                     }
                     
                     trades.append(trade)
-                    self.logger.debug(f"Exit: {exit_reason} @ {current_price:.2f}, P&L: {pnl_amount:+.2f}")
+                    self.logger.debug(f"Exit: {exit_reason} @ {exit_price:.2f}, P&L: {pnl_amount:+.2f}")
                     position = None
         
         # Calculate metrics
@@ -277,7 +313,7 @@ def print_results(results):
 
 def main():
     parser = argparse.ArgumentParser(description='Backtest trading strategies')
-    parser.add_argument('--strategy', type=str, choices=['A1', 'A2', 'A3', 'A4', 'all'], default='all',
+    parser.add_argument('--strategy', type=str, choices=['A1', 'A2', 'A3', 'A4', 'A6', 'all'], default='all',
                         help='Strategy to test (default: all)')
     parser.add_argument('--symbol', type=str, default='BTC/USDT',
                         help='Trading pair (default: BTC/USDT)')
@@ -354,6 +390,7 @@ def main():
             if args.strategy in ['all', 'A2']: strategies.append(StrategyA2(config, logger))
             if args.strategy in ['all', 'A3']: strategies.append(StrategyA3(config, logger))
             if args.strategy in ['all', 'A4']: strategies.append(StrategyA4(config, logger))
+            if args.strategy in ['all', 'A6']: strategies.append(StrategyA6Backtester(config, logger))
 
             print(f"\n⏳ Testing {sym} [{tf}] ({len(df)} candles) ...")
             
