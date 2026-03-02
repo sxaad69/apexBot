@@ -48,9 +48,23 @@ class SQLiteManager:
                 take_profit REAL,
                 highest_price REAL,
                 trailing_stop_price REAL,
+                reason TEXT,
                 metadata TEXT
             )
         ''')
+        
+        # --- MIGRATIONS ---
+        try:
+            # Check if reason column exists (for backward compatibility)
+            cursor.execute("PRAGMA table_info(trades)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if 'reason' not in columns:
+                print("🔧 Migrating database: Adding 'reason' column to 'trades' table...")
+                cursor.execute("ALTER TABLE trades ADD COLUMN reason TEXT")
+                conn.commit()
+        except Exception as e:
+            print(f"⚠️  Database migration warning: {e}")
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS metrics (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

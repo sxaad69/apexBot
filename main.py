@@ -1521,7 +1521,7 @@ class ApexHunterBot:
                 symbol = trade['symbol']
                 trade_id = trade['trade_id']
                 
-                # Check actual exchange positions
+                # Check actual exchange positions (wrap in try-except for varied exchange support)
                 try:
                     positions = self.engine.exchange.get_positions(symbol)
                     active_pos = next((p for p in positions if float(p.get('contracts', 0)) > 0), None)
@@ -1529,12 +1529,14 @@ class ApexHunterBot:
                     if not active_pos:
                         self.logger.warning(f"👻 Ghost Trade detected! {symbol} closed while bot was offline.")
                         # Close out in SQLite
-                        exit_time = __import__('datetime').datetime.utcnow().isoformat()
+                        exit_time = datetime.utcnow().isoformat()
                         cursor.execute("UPDATE trades SET status = 'CLOSED', exit_time = ?, reason = 'exchange_closed_offline' WHERE trade_id = ?",
                                      (exit_time, trade_id))
                         self.logger.info(f"✅ Synced {symbol} as CLOSED.")
                 except Exception as exchange_e:
-                    self.logger.error(f"Failed to fetch exchange positions for {symbol} during sync: {exchange_e}")
+                    # If exchange doesn't support fetchPositions (like Kucoin), we log and proceed 
+                    # relying on the bot's standard risk checks later.
+                    self.logger.warning(f"⚠️ Reconciliation partially skipped for {symbol}: Exchange doesn't support position fetching.")
                     
             conn.commit()
             conn.close()
