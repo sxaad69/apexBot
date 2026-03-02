@@ -49,6 +49,8 @@ class PositionSizingLayer:
         # Calculate position size
         adjusted_percent = base_position_percent * drawdown_multiplier
         position_size = (available_capital * adjusted_percent / 100)
+
+
         
         # Apply min/max limits
         if position_size < self.config.MIN_POSITION_SIZE:

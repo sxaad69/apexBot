@@ -20,9 +20,14 @@ class SQLiteManager:
 
     def _get_connection(self, db_path: Path):
         """Get a thread-safe connection to a specific database"""
-        conn = sqlite3.connect(db_path, timeout=30)
+        conn = sqlite3.connect(db_path, timeout=60)
         conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+        except:
+            pass
         return conn
+
 
     def _init_db(self):
         """Initialize both database schemas"""
@@ -171,16 +176,18 @@ class SQLiteManager:
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE trades 
-                SET exit_price = ?, exit_time = ?, pnl_amount = ?, pnl_percent = ?, status = 'CLOSED', metadata = ?
+                SET exit_price = ?, exit_time = ?, pnl_amount = ?, pnl_percent = ?, reason = ?, status = 'CLOSED', metadata = ?
                 WHERE trade_id = ?
             ''', (
                 exit_data.get('exit_price'),
                 exit_data.get('timestamp', datetime.utcnow().isoformat()),
                 exit_data.get('pnl_amount'),
                 exit_data.get('pnl_percent'),
+                exit_data.get('reason', 'manual'),
                 json.dumps(exit_data.get('metadata', {})),
                 trade_id
             ))
+
             success = cursor.rowcount > 0
             conn.commit()
             conn.close()

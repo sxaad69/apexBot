@@ -153,12 +153,13 @@ class MongoLogger(Logger):
             }
             self.db.open_trade(trade_data)
 
-        # 2. Route to correct collection
-        if market_type == 'spot':
-            document['executed'] = True
-            self.mongo_manager.insert_document('spot_signals', document)
-        else:
-            self.mongo_manager.insert_document('futures_trades', document)
+        # 2. Route to correct collection (Only if Mongo is actually enabled)
+        if hasattr(self, 'mongo_manager') and self.mongo_manager:
+            if market_type == 'spot':
+                document['executed'] = True
+                self.mongo_manager.insert_document('spot_signals', document)
+            else:
+                self.mongo_manager.insert_document('futures_trades', document)
 
     def trade_exit(self, symbol: str, pnl: float, pnl_percent: float, duration: str, market_type: str = 'futures', **kwargs):
         """Log trade exit to both file and MongoDB"""
@@ -191,17 +192,20 @@ class MongoLogger(Logger):
                 'exit_price': kwargs.get('exit_price'),
                 'pnl_amount': pnl,
                 'pnl_percent': pnl_percent,
+                'reason': kwargs.get('reason', 'manual'),
                 'timestamp': datetime.utcnow().isoformat(),
                 'metadata': kwargs
+
             }
             self.db.close_trade(kwargs.get('trade_id'), exit_data)
 
         # 2. Route to correct collection (Legacy Fallback)
-        if market_type == 'spot':
-            document['executed'] = True
-            self.mongo_manager.insert_document('spot_signals', document)
-        else:
-            self.mongo_manager.insert_document('futures_trades', document)
+        if hasattr(self, 'mongo_manager') and self.mongo_manager:
+            if market_type == 'spot':
+                document['executed'] = True
+                self.mongo_manager.insert_document('spot_signals', document)
+            else:
+                self.mongo_manager.insert_document('futures_trades', document)
 
     def performance_update(self, total_pnl: float, win_rate: float, total_trades: int, **kwargs):
         """Log performance metrics to both file and MongoDB"""
@@ -256,7 +260,8 @@ class MongoLogger(Logger):
             'metadata': kwargs
         }
 
-        self.mongo_manager.insert_document('activity_log', document)
+        if hasattr(self, 'mongo_manager') and self.mongo_manager:
+            self.mongo_manager.insert_document('activity_log', document)
 
     def log_spot_signal(self, signal: Dict[str, Any]):
         """Log spot trading signal to MongoDB"""
@@ -274,7 +279,8 @@ class MongoLogger(Logger):
             'metadata': signal
         }
 
-        self.mongo_manager.insert_document('spot_signals', document)
+        if hasattr(self, 'mongo_manager') and self.mongo_manager:
+            self.mongo_manager.insert_document('spot_signals', document)
 
     def save_active_positions(self, positions: Dict[str, Any], current_prices: Dict[str, float] = None):
         """Save/Update active positions in SQLite (Unified Storage)"""

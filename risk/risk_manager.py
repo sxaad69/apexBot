@@ -53,7 +53,6 @@ class RiskManager:
 
         for layer in self.layers:
             layer_name = layer.__class__.__name__
-            self.logger.debug(f"Risk evaluation: {layer_name} evaluating {symbol}")
 
             result = layer.evaluate(approved_params, account_state)
 
@@ -61,6 +60,7 @@ class RiskManager:
                 # Trade rejected by this layer
                 self.logger.warning(f"Risk evaluation: {layer_name} rejected {symbol} - trade blocked")
                 return None
+
             else:
                 self.logger.debug(f"Risk evaluation: {layer_name} approved {symbol}")
                 approved_params = result

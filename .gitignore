@@ -121,6 +121,8 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
+tests/
+test_data/
 
 # ============================================================================
 # TEMPORARY FILES

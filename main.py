@@ -233,143 +233,63 @@ class PaperTradingEngine:
             trailing_distance = self.config.TRAILING_STOP_DISTANCE / 100  # Convert to decimal
 
             if position['side'] == 'buy':
-                # Track highest price for long positions
-                if position['highest_price'] is None or current_price > position['highest_price']:
+                # Track highest price since entry
+                if current_price > position['highest_price']:
                     position['highest_price'] = current_price
-
-                    # Check if trailing stop should activate
-                    profit_percent = (current_price - position['entry_price']) / position['entry_price']
-                    if profit_percent >= activation_threshold and not position['trailing_stop_active']:
-                        # Activate trailing stop
-                        position['trailing_stop_active'] = True
-                        position['trailing_activation_price'] = current_price
+                
+                # Check for activation
+                profit_percent = (current_price - position['entry_price']) / position['entry_price']
+                if not position['trailing_stop_active'] and profit_percent >= activation_threshold:
+                    position['trailing_stop_active'] = True
+                    position['trailing_activation_price'] = current_price
+                    # Activation moves SL relative to peak
+                    new_stop = position['highest_price'] * (1 - trailing_distance)
+                    if new_stop > position['stop_loss']:
                         old_stop = position['stop_loss']
-                        new_stop = current_price * (1 - trailing_distance)
+                        position['stop_loss'] = new_stop
+                        self.logger.info(f"[{strategy_name}] {symbol} TRAILING ACTIVATED @ ${current_price:.2f} | SL: ${old_stop:.2f} -> ${new_stop:.2f}")
 
-                        # Only move stop loss upward (never downward for safety)
-                        if new_stop > position['stop_loss']:
-                            position['stop_loss'] = new_stop
-                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING STOP ACTIVATED @ ${current_price:.2f} "
-                                           f"(Profit: {profit_percent*100:.1f}%) | Stop Loss: ${old_stop:.2f} → ${new_stop:.2f}")
-
-                            # Send Telegram notification
-                            if self.telegram:
-                                self.telegram.send_futures_trailing_stop_update({
-                                    'type': 'activated',
-                                    'symbol': symbol,
-                                    'current_price': current_price,
-                                    'strategy': strategy_name,
-                                    'profit_percent': profit_percent * 100,
-                                    'highest_price': position['highest_price'],
-                                    'old_stop_loss': old_stop,
-                                    'new_stop_loss': new_stop
-                                })
-
-                            # Log to MongoDB
-                            if hasattr(self.logger, 'log_trailing_stop'):
-                                self.logger.log_trailing_stop(
-                                    'activated', symbol, strategy_name,
-                                    current_price, profit_percent * 100,
-                                    old_stop, new_stop,
-                                    highest_price=position['highest_price']
-                                )
-
-                    # Update trailing stop if active
-                    elif position['trailing_stop_active']:
-                        new_stop = position['highest_price'] * (1 - trailing_distance)
-                        if new_stop > position['stop_loss']:
-                            old_stop = position['stop_loss']
-                            position['stop_loss'] = new_stop
-                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING STOP UPDATED @ ${current_price:.2f} "
-                                           f"(Highest: ${position['highest_price']:.2f}) | Stop Loss: ${old_stop:.2f} → ${new_stop:.2f}")
-
-                            # Send Telegram notification
-                            if self.telegram:
-                                profit_percent = (current_price - position['entry_price']) / position['entry_price']
-                                self.telegram.send_futures_trailing_stop_update({
-                                    'type': 'update',
-                                    'symbol': symbol,
-                                    'current_price': current_price,
-                                    'strategy': strategy_name,
-                                    'profit_percent': profit_percent * 100,
-                                    'highest_price': position['highest_price'],
-                                    'old_stop_loss': old_stop,
-                                    'new_stop_loss': new_stop
-                                })
-
-                            # Log to MongoDB
-                            if hasattr(self.logger, 'log_trailing_stop'):
-                                self.logger.log_trailing_stop(
-                                    'update', symbol, strategy_name,
-                                    current_price, profit_percent * 100,
-                                    old_stop, new_stop,
-                                    highest_price=position['highest_price']
-                                )
+                # Ratchet logic: move SL up if current highest_price justifies it
+                if position['trailing_stop_active']:
+                    new_stop = position['highest_price'] * (1 - trailing_distance)
+                    if new_stop > position['stop_loss']:
+                        old_stop = position['stop_loss']
+                        position['stop_loss'] = new_stop
+                        self.logger.info(f"[{strategy_name}] {symbol} TRAILING RATCHET @ ${current_price:.2f} | Peak: ${position['highest_price']:.2f} | SL: ${old_stop:.2f} -> ${new_stop:.2f}")
 
             else:  # sell position
-                # Track lowest price for short positions
-                if position['lowest_price'] is None or current_price < position['lowest_price']:
+                # Track lowest price since entry
+                if current_price < position['lowest_price']:
                     position['lowest_price'] = current_price
 
-                    # Check if trailing stop should activate
-                    profit_percent = (position['entry_price'] - current_price) / position['entry_price']
-                    if profit_percent >= activation_threshold and not position['trailing_stop_active']:
-                        # Activate trailing stop
-                        position['trailing_stop_active'] = True
-                        position['trailing_activation_price'] = current_price
+                # Check for activation
+                profit_percent = (position['entry_price'] - current_price) / position['entry_price']
+                if not position['trailing_stop_active'] and profit_percent >= activation_threshold:
+                    position['trailing_stop_active'] = True
+                    position['trailing_activation_price'] = current_price
+                    # Activation moves SL relative to peak
+                    new_stop = position['lowest_price'] * (1 + trailing_distance)
+                    if new_stop < position['stop_loss']:
                         old_stop = position['stop_loss']
-                        new_stop = current_price * (1 + trailing_distance)
+                        position['stop_loss'] = new_stop
+                        self.logger.info(f"[{strategy_name}] {symbol} TRAILING ACTIVATED @ ${current_price:.2f} | SL: ${old_stop:.2f} -> ${new_stop:.2f}")
 
-                        # Only move stop loss downward (never upward for safety)
-                        if new_stop < position['stop_loss']:
-                            position['stop_loss'] = new_stop
-                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING STOP ACTIVATED @ ${current_price:.2f} "
-                                           f"(Profit: {profit_percent*100:.1f}%) | Stop Loss: ${old_stop:.2f} → ${new_stop:.2f}")
+                # Ratchet logic: move SL down if current lowest_price justifies it
+                if position['trailing_stop_active']:
+                    new_stop = position['lowest_price'] * (1 + trailing_distance)
+                    if new_stop < position['stop_loss']:
+                        old_stop = position['stop_loss']
+                        position['stop_loss'] = new_stop
+                        self.logger.info(f"[{strategy_name}] {symbol} TRAILING RATCHET @ ${current_price:.2f} | Peak: ${position['lowest_price']:.2f} | SL: ${old_stop:.2f} -> ${new_stop:.2f}")
 
-                            # Send Telegram notification
-                            if self.telegram:
-                                self.telegram.send_futures_trailing_stop_update({
-                                    'type': 'activated',
-                                    'symbol': symbol,
-                                    'current_price': current_price,
-                                    'strategy': strategy_name,
-                                    'profit_percent': profit_percent * 100,
-                                    'highest_price': position['lowest_price'],  # For shorts, this is the lowest price
-                                    'old_stop_loss': old_stop,
-                                    'new_stop_loss': new_stop
-                                })
 
-                    # Update trailing stop if active
-                    elif position['trailing_stop_active']:
-                        new_stop = position['lowest_price'] * (1 + trailing_distance)
-                        if new_stop < position['stop_loss']:
-                            old_stop = position['stop_loss']
-                            position['stop_loss'] = new_stop
-                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING STOP UPDATED @ ${current_price:.2f} "
-                                           f"(Lowest: ${position['lowest_price']:.2f}) | Stop Loss: ${old_stop:.2f} → ${new_stop:.2f}")
 
-                            # Send Telegram notification
-                            if self.telegram:
-                                profit_percent = (position['entry_price'] - current_price) / position['entry_price']
-                                self.telegram.send_futures_trailing_stop_update({
-                                    'type': 'update',
-                                    'symbol': symbol,
-                                    'current_price': current_price,
-                                    'strategy': strategy_name,
-                                    'profit_percent': profit_percent * 100,
-                                    'highest_price': position['lowest_price'],
-                                    'old_stop_loss': old_stop,
-                                    'new_stop_loss': new_stop
-                                })
 
-                            # Log to MongoDB
-                            if hasattr(self.logger, 'log_trailing_stop'):
-                                self.logger.log_trailing_stop(
-                                    'update', symbol, strategy_name,
-                                    current_price, profit_percent * 100,
-                                    old_stop, new_stop,
-                                    lowest_price=position['lowest_price']
-                                )
+
+
+
+
+
 
     def update_trailing_take_profit(self, symbol, current_price):
         """Update trailing take profit for all positions on a symbol."""
@@ -439,12 +359,12 @@ class PaperTradingEngine:
         """Check if position should be exited"""
         if position['side'] == 'buy':
             if current_price <= position['stop_loss']:
-                return True, 'stop_loss'
+                return True, 'trailing_stop' if position.get('trailing_stop_active') else 'stop_loss'
             elif current_price >= position['take_profit']:
                 return True, 'take_profit'
         else:  # sell
             if current_price >= position['stop_loss']:
-                return True, 'stop_loss'
+                return True, 'trailing_stop' if position.get('trailing_stop_active') else 'stop_loss'
             elif current_price <= position['take_profit']:
                 return True, 'take_profit'
 
@@ -543,8 +463,10 @@ class PaperTradingEngine:
             )
 
             # Prepare trade parameters for risk evaluation
+            leverage = self.calculate_dynamic_leverage(strategy_name, confidence)
             indicators = signal.get('indicators', {})
             trade_params = {
+
                 'symbol': symbol,
                 'side': signal['side'],
                 'entry_price': signal['entry_price'],
@@ -570,8 +492,10 @@ class PaperTradingEngine:
                 'drawdown_percent': drawdown_percent,
                 'peak_balance': peak_capital,  # Keep for compatibility
                 'open_positions': [p for p in self.positions.values() if p['strategy'] == strategy_name],
+                'open_positions_count': len(self.positions),
                 'recent_trades': [t for t in self.trades if t['strategy'] == strategy_name][-20:],  # Last 20 trades
                 'current_time': datetime.now()
+
             }
             
             # Debug: Log account state for visibility
@@ -618,8 +542,9 @@ class PaperTradingEngine:
                 'symbol': symbol,
                 # Trailing stop initialization
                 'trailing_stop_active': False,
-                'highest_price': entry_price if approved_params['side'] == 'buy' else None,
-                'lowest_price': entry_price if approved_params['side'] == 'sell' else None,
+                'highest_price': entry_price,
+                'lowest_price': entry_price,
+
                 'trailing_activation_price': None,
                 'original_stop_loss': approved_params['stop_loss']
             }
