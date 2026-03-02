@@ -265,33 +265,60 @@ def main():
     print(f"    🚀 {CYAN}ULTIMATE FORENSIC AUDITOR - TOTAL SYSTEM PACKAGE{RESET}")
     print("=" * 80)
 
-    target_date = sys.argv[1] if len(sys.argv) > 1 else (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
-    
-    # Defaults to $10,000 for "What If" audit, or provided capital
-    # Force $100 as default to match your actual expectation
+    # Format: python scripts/winner_replay_simulator.py [DATE or 'week'] [CAPITAL]
+    arg1 = sys.argv[1] if len(sys.argv) > 1 else 'yesterday'
     capital = float(sys.argv[2]) if len(sys.argv) > 2 else 100.0
     
+    if arg1 == 'week':
+        lookback_days = 7
+        start_date = (datetime.utcnow() - timedelta(days=7))
+    elif arg1 == 'yesterday' or not arg1:
+        lookback_days = 1
+        start_date = (datetime.utcnow() - timedelta(days=1))
+    else:
+        # Specific date
+        lookback_days = 1
+        start_date = datetime.strptime(arg1, "%Y-%m-%d")
+
     config = Config()
     logger = Logger(config)
     exchange = CCXTExchangeClient(config, logger)
     
+    all_weekly_narratives = []
     start_time = time.time()
-    
-    gainers, losers = discover_elite_movers(exchange, target_date)
-    narratives = run_precision_replay(config, logger, exchange, gainers + losers, target_date, capital)
-    
+
+    for i in range(lookback_days):
+        target_dt = start_date + timedelta(days=i)
+        target_date_str = target_dt.strftime("%Y-%m-%d")
+        
+        print(f"\n📅 {BOLD}AUDITING DATE: {target_date_str}{RESET}")
+        print("-" * 40)
+        
+        try:
+            gainers, losers = discover_elite_movers(exchange, target_date_str)
+            day_narratives = run_precision_replay(config, logger, exchange, gainers + losers, target_date_str, capital)
+            all_weekly_narratives.extend([(target_date_str, n) for n in day_narratives])
+        except Exception as e:
+            print(f"⚠️ Error auditing {target_date_str}: {e}")
+
     end_time = time.time()
     duration = (end_time - start_time) / 60
     
     print("\n" + "=" * 80)
-    print(f"🕵️  {BOLD}THE SUNDAY LAMENT REPORT: {target_date}{RESET}")
+    print(f"🕵️  {BOLD}THE GRAND FORENSIC REPORT: {lookback_days} DAY(S) LOOKBACK{RESET}")
     print("=" * 80)
-    if not narratives:
-        print("   No valid signals found for the top movers today.")
-    for n in narratives:
-        print(f"• [{n['symbol']}] {n['text']}")
     
-    print(f"\n📊 {BOLD}Audit Performance: {duration:.1f} minutes.{RESET} (Goal: < 5 min)")
+    if not all_weekly_narratives:
+        print("   No valid signals found in this period.")
+    else:
+        current_date = ""
+        for date_str, n in all_weekly_narratives:
+            if date_str != current_date:
+                print(f"\n🗓️  {BOLD}{date_str}{RESET}:")
+                current_date = date_str
+            print(f"  • [{n['symbol']}] {n['text']}")
+    
+    print(f"\n📊 {BOLD}Total Audit Duration: {duration:.1f} minutes.{RESET}")
     print("=" * 80)
 
 if __name__ == "__main__":

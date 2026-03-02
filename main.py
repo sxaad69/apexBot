@@ -573,6 +573,7 @@ class PaperTradingEngine:
             # Telegram notification
             if self.telegram and self.telegram.futures_bot:
                 self.telegram.send_futures_trade_entry({
+                    'trade_id': position['trade_id'],
                     'symbol': symbol,
                     'side': signal['side'],
                     'entry_price': signal['entry_price'],
@@ -582,6 +583,7 @@ class PaperTradingEngine:
                     'take_profit': signal['take_profit'],
                     'strategy': strategy_name,
                     'confidence': confidence,
+                    'remaining_capital': self.total_capital,
                     'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 })
     
@@ -681,12 +683,14 @@ class PaperTradingEngine:
                     if current_time_ts - last_notification > 5:  # 5-second cooldown
                         duration = (trade['exit_time'] - trade['entry_time']).seconds // 60
                         self.telegram.send_futures_trade_exit({
+                            'trade_id': position.get('trade_id', 'N/A'),
                             'symbol': symbol,
                             'entry_price': position['entry_price'],
                             'exit_price': current_price,
                             'pnl': pnl_amount,
                             'pnl_percent': leveraged_pnl_percent * 100,
                             'leverage': leverage,
+                            'remaining_capital': self.total_capital,
                             'duration': f"{duration} minutes",
                             'strategy': strategy_name
                         })

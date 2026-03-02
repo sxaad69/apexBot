@@ -232,6 +232,7 @@ class SpotTradingEngine:
         # Telegram notification
         if self.telegram and hasattr(self.telegram, 'send_spot_trade_entry'):
             self.telegram.send_spot_trade_entry({
+                'trade_id': position['trade_id'],
                 'symbol': symbol,
                 'side': signal['side'],
                 'entry_price': signal['entry_price'],
@@ -239,6 +240,7 @@ class SpotTradingEngine:
                 'stop_loss': signal.get('stop_loss'),
                 'take_profit': signal.get('take_profit'),
                 'strategy': strategy_name,
+                'remaining_capital': self.virtual_balance,
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             })
 
@@ -531,11 +533,13 @@ class SpotTradingEngine:
         if self.telegram and hasattr(self.telegram, 'send_spot_trade_exit'):
             duration = (trade['exit_time'] - trade['entry_time']).seconds // 60
             self.telegram.send_spot_trade_exit({
+                'trade_id': position.get('trade_id', 'N/A'),
                 'symbol': symbol,
                 'entry_price': entry_price,
                 'exit_price': exit_price,
                 'pnl_usdt': net_pnl_usdt,
                 'pnl_pct': pnl_pct * 100,
+                'remaining_capital': self.virtual_balance,
                 'duration': duration,
                 'strategy': strategy_name,
                 'reason': reason,

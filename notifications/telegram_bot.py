@@ -301,6 +301,10 @@ class TelegramNotificationManager:
         if not self.futures_bot:
             return False
         
+        leverage = trade.get('leverage', 1)
+        size = trade.get('size', 0)
+        exposure = size * leverage
+        
         message = f"""
 🎯 <b>FUTURES TRADE ENTRY</b>
 
@@ -308,8 +312,12 @@ class TelegramNotificationManager:
 <b>Symbol:</b> {trade.get('symbol')}
 <b>Side:</b> {trade.get('side', '').upper()}
 <b>Entry Price:</b> ${trade.get('entry_price', 0):,.2f}
-<b>Size:</b> ${trade.get('size', 0):,.2f}
-<b>Leverage:</b> {trade.get('leverage', 1)}x
+
+<b>Position Size (Margin):</b> ${size:,.2f}
+<b>Leverage:</b> {leverage}x
+<b>Total Exposure:</b> ${exposure:,.2f}
+
+<b>Remaining Capital:</b> ${trade.get('remaining_capital', 0):,.2f}
 
 <b>Stop Loss:</b> ${trade.get('stop_loss', 0):,.2f}
 <b>Take Profit:</b> ${trade.get('take_profit', 0):,.2f}
@@ -340,8 +348,9 @@ class TelegramNotificationManager:
 <b>Leverage:</b> {leverage}x
 
 <b>P&L:</b> ${pnl:,.2f} ({trade.get('pnl_percent', 0):.2f}%)
-<b>Duration:</b> {trade.get('duration', 'N/A')}
+<b>Remaining Capital:</b> ${trade.get('remaining_capital', 0):,.2f}
 
+<b>Duration:</b> {trade.get('duration', 'N/A')}
 <b>Strategy:</b> {trade.get('strategy', 'Unknown')}
 """
         msg_id = self.futures_bot.send_message(message)
@@ -543,6 +552,8 @@ Sharpe Ratio: {summary.get('sharpe_ratio', 0):.2f}
         if not self.spot_bot:
             return False
 
+        size = trade.get('size', trade.get('size_usdt', 0))
+
         message = f"""
 🟢 <b>SPOT TRADE ENTRY</b>
 
@@ -550,7 +561,9 @@ Sharpe Ratio: {summary.get('sharpe_ratio', 0):.2f}
 <b>Symbol:</b> {trade.get('symbol')}
 <b>Side:</b> {trade.get('side', '').upper()}
 <b>Entry Price:</b> ${trade.get('entry_price', 0):,.2f}
-<b>Size:</b> ${trade.get('size', 0):,.2f}
+
+<b>Position Size:</b> ${size:,.2f}
+<b>Remaining Capital:</b> ${trade.get('remaining_capital', 0):,.2f}
 
 <b>Stop Loss:</b> ${trade.get('stop_loss', 0):,.2f}
 <b>Take Profit:</b> ${trade.get('take_profit', 0):,.2f}
@@ -587,10 +600,10 @@ Sharpe Ratio: {summary.get('sharpe_ratio', 0):.2f}
 <b>Reason:</b> {trade.get('reason', 'Unknown').replace('_', ' ').upper()}
 
 <b>P&L:</b> ${pnl:+,.2f} ({pnl_pct:+.2f}%)
-<b>Duration:</b> {trade.get('duration', 0)} minutes
+<b>Remaining Capital:</b> ${trade.get('remaining_capital', 0):,.2f}
 
+<b>Duration:</b> {trade.get('duration', 0)} minutes
 <b>Strategy:</b> {trade.get('strategy', 'Unknown')}
-<b>Balance:</b> ${trade.get('balance_after', 0):,.2f}
 
 ⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
