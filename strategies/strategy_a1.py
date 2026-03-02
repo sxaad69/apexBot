@@ -74,14 +74,14 @@ class StrategyA1(BaseStrategy):
         # 1. Universal filters (Volume, etc.)
         should_trade, reason = self.filters.should_trade_symbol(df, symbol, self.name)
         if not should_trade:
-            self.logger.debug(f"[{self.name}] {symbol} FILTERED: {reason}")
+            self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{reason.upper()}", {"filter_reason": reason})
             return None
 
         # 2. Strict ADX Trend Filter (Specialized for A1 to reduce chop losses)
         # Even in TESTING_MODE, we require at least ADX 25 for this crossover strategy
         adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
         if adx_val < 25:
-            self.logger.debug(f"[{self.name}] {symbol} REJECTED: ADX {adx_val:.1f} < 25 (Choppy Market)")
+            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
             return None
 
         # 3. Check for EMA crossover (must happen before trend guard — we need 'side')
@@ -97,10 +97,10 @@ class StrategyA1(BaseStrategy):
         # 4. Global Trend Guard (Major Trend Filter)
         # Longs only allowed when price > 200 EMA, Shorts only when price < 200 EMA
         if side == 'buy' and current['close'] < current['ema_major']:
-            self.logger.debug(f"[{self.name}] {symbol} REJECTED: Buy signal below 200 EMA")
+            self.log_strategy_skip(symbol, "EMA200_GUARD_LONG", {"price": current['close'], "ema200": current['ema_major']})
             return None
         if side == 'sell' and current['close'] > current['ema_major']:
-            self.logger.debug(f"[{self.name}] {symbol} REJECTED: Sell signal above 200 EMA")
+            self.log_strategy_skip(symbol, "EMA200_GUARD_SHORT", {"price": current['close'], "ema200": current['ema_major']})
             return None
 
         # MACD confirmation - must agree with crossover direction

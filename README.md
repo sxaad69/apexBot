@@ -102,9 +102,31 @@ sudo systemctl start apex-bot
 # View real-time logs
 journalctl -u apex-bot -f
 
+sudo systemctl restart apex-bot.service
+sudo systemctl status apex-bot.service   # check if it's running ok
 # Check forensic database entries
 sqlite3 data/apex_hunter.db "SELECT * FROM trades LIMIT 10;"
 ```
+
+---
+
+## 🔍 Forensic Alpha Auditor
+The bot includes a dual-mode auditing system to identify "Missed Millions" (Opportunity Cost).
+
+### 1. Unified Signaling Protocol
+Every trade event is categorized and logged in `activity_log.db`:
+- **STRATEGY_SKIP**: Logged when a strategy sees a move but hesitates due to ADX/ATR filters.
+- **RISK_VETO**: Logged when a signal is fired but blocked by one of the 11 risk layers.
+
+### 2. The "Lament" Audit Script
+Run this script this weekend to find high-performing coins the bot missed:
+```bash
+python3 scripts/analyze_missed_alpha.py
+```
+**Output Report**:
+- Identifies the "Winners of the Day" (symbols that went +20%).
+- Cross-references logs to reveal which Risk Layer or Strategy Filter was the bottleneck.
+- Reports "Theoretical ROI Left on Table."
 
 ---
 

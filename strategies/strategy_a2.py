@@ -137,14 +137,14 @@ class StrategyA2(BaseStrategy):
         # 1. Universal filters (Volume, etc.)
         should_trade, reason = self.filters.should_trade_symbol(df, symbol, self.name)
         if not should_trade:
-            self.logger.debug(f"[{self.name}] {symbol} FILTERED: {reason}")
+            self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{reason.upper()}", {"filter_reason": reason})
             return None
 
         # 2. Strict ADX Trend Filter (Specialized for A2 to reduce chop losses)
         # Even in TESTING_MODE, we require at least ADX 25 for this crossover strategy
         adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
         if adx_val < 25:
-            self.logger.debug(f"[{self.name}] {symbol} REJECTED: ADX {adx_val:.1f} < 25 (Choppy Market)")
+            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
             return None
 
         current = df.iloc[-1]

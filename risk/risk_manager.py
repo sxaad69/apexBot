@@ -13,9 +13,10 @@ class RiskManager:
     Evaluates trades through all 11 risk layers sequentially
     """
     
-    def __init__(self, config, logger):
+    def __init__(self, config, logger, db_manager=None):
         self.config = config
         self.logger = logger
+        self.db = db_manager
         
         # Initialize all layers in order
         self.layers = [
@@ -58,7 +59,33 @@ class RiskManager:
 
             if result is None:
                 # Trade rejected by this layer
+                reason = "Blocked by risk component"
+                # Try to get specific reason from logger context if possible (though logger doesn't return info)
+                # For forensics, we'll log the layer name as the primary differentiator
+                
                 self.logger.warning(f"Risk evaluation: {layer_name} rejected {symbol} - trade blocked")
+                
+                # Log to forensic DB
+                if self.db:
+                    rejection_data = {
+                        'symbol': symbol,
+                        'strategy': trade_params.get('strategy', 'Unknown'),
+                        'side': trade_params.get('side', 'buy'),
+                        'entry_price': trade_params.get('entry_price', 0.0),
+                        'reason': f"REJECTED_{layer_name.upper()}",
+                        'layer': layer_name,
+                        'confidence': trade_params.get('confidence', 0.0),
+                        'metadata': {
+                            'account_state': {
+                                'total_balance': account_state.get('total_balance'),
+                                'drawdown_percent': account_state.get('drawdown_percent'),
+                                'open_positions_count': account_state.get('open_positions_count')
+                            },
+                            'trade_params': trade_params
+                        }
+                    }
+                    self.db.log_rejection(rejection_data)
+                
                 return None
 
             else:

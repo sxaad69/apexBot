@@ -132,13 +132,13 @@ class StrategyA3(BaseStrategy):
         # Check universal filters
         should_trade, reason = self.filters.should_trade_symbol(df, symbol, self.name)
         if not should_trade:
-            self.logger.debug(f"[{self.name}] {symbol} FILTERED: {reason}")
+            self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{reason.upper()}", {"filter_reason": reason})
             return None
 
         # Strict ADX filter — only trade in high-velocity conditions
         adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
         if adx_val < 30:
-            self.logger.debug(f"[{self.name}] {symbol} REJECTED: ADX {adx_val:.1f} < 30 (Low Momentum)")
+            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
             return None
 
         current = df.iloc[-1]
@@ -175,6 +175,8 @@ class StrategyA3(BaseStrategy):
 
         # Need at least 2 confirmations
         if confirmations < 2 or signal_direction is None:
+            if confirmations == 1:
+                self.log_strategy_skip(symbol, "CONFIRMATION_INSUFFICIENT", {"confirmations": confirmations, "dir": signal_direction})
             return None
 
         # Calculate tight scalping stops

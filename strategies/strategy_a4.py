@@ -126,13 +126,13 @@ class StrategyA4(BaseStrategy):
         # Check universal filters
         should_trade, reason = self.filters.should_trade_symbol(df, symbol, self.name)
         if not should_trade:
-            self.logger.debug(f"[{self.name}] {symbol} FILTERED: {reason}")
+            self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{reason.upper()}", {"filter_reason": reason})
             return None
 
         # Strict ADX filter — only enter high-strength trends
         adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
         if adx_val < 30:
-            self.logger.debug(f"[{self.name}] {symbol} REJECTED: ADX {adx_val:.1f} < 30 (Trend too weak)")
+            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
             return None
 
         current = df.iloc[-1]
@@ -155,7 +155,7 @@ class StrategyA4(BaseStrategy):
         # Only accept strong trend alignment (not moderate)
         # This prevents entering on weak, uncertain moves
         if not is_aligned or trend_strength != 'strong':
-            self.logger.debug(f"[{self.name}] {symbol}: Requires 'strong' trend alignment (got: {trend_strength})")
+            self.log_strategy_skip(symbol, "TREND_ALIGNMENT_WEAK", {"is_aligned": is_aligned, "strength": trend_strength})
             return None
 
         if cross_direction != trend_direction:

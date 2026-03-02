@@ -39,7 +39,7 @@ class PaperTradingEngine:
         self.exchange = CCXTExchangeClient(config, logger, config.FUTURES_EXCHANGE)
 
         # Initialize risk manager (11 layers)
-        self.risk_manager = RiskManager(config, logger)
+        self.risk_manager = RiskManager(config, logger, db_manager=logger.db if hasattr(logger, 'db') else None)
 
         # Cache for top pairs
         self.top_pairs_cache = []

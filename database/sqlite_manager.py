@@ -131,13 +131,54 @@ class SQLiteManager:
                 data TEXT
             )
         ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS rejections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                symbol TEXT,
+                strategy TEXT,
+                side TEXT,
+                entry_price REAL,
+                reason TEXT,
+                layer TEXT,
+                confidence REAL,
+                metadata TEXT
+            )
+        ''')
         # Indexes for fast querying
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_activity_ts ON activity_log(timestamp)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_analysis_ts ON market_analysis(timestamp)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_signals_ts ON strategy_signals(timestamp)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_rejections_ts ON rejections(timestamp)')
         
         conn.commit()
         conn.close()
+
+    def log_rejection(self, data: Dict[str, Any]) -> bool:
+        """Log a rejected trade signal to the rejections table in log_db"""
+        try:
+            conn = self._get_connection(self.log_db)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO rejections (
+                    symbol, strategy, side, entry_price, reason, layer, confidence, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                data.get('symbol'),
+                data.get('strategy'),
+                data.get('side'),
+                data.get('entry_price'),
+                data.get('reason'),
+                data.get('layer'),
+                data.get('confidence', 0.0),
+                json.dumps(data.get('metadata', {}), default=str)
+            ))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"❌ SQLite log_rejection error: {e}")
+            return False
 
     def open_trade(self, trade_data: Dict[str, Any]) -> bool:
         """Create a new 'OPEN' trade entry in main DB"""

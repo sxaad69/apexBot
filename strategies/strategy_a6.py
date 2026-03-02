@@ -99,7 +99,9 @@ class StrategyA6(BaseStrategy):
         if len(df) < 20: return None
 
         should_trade, reason = self.filters.should_trade_symbol(df, symbol, self.name)
-        if not should_trade: return None
+        if not should_trade:
+            self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{reason.upper()}", {"filter_reason": reason})
+            return None
 
         # Fetch instantly from local RAM (no Binance HTTP Ping needed)
         imbalance = self.fetch_imbalance(symbol)
@@ -112,7 +114,9 @@ class StrategyA6(BaseStrategy):
             side = 'sell'
             self.logger.info(f"[{self.name}] {symbol} MASSIVE ASK WALL DETECTED! Imbalance: {imbalance*100:.1f}%")
             
-        if not side: return None
+        if not side:
+            self.log_strategy_skip(symbol, "IMBALANCE_INSUFFICIENT", {"imbalance": imbalance, "threshold": self.imbalance_threshold})
+            return None
 
         df_atr = self.calculate_atr(df)
         current_price = df_atr['close'].iloc[-1]

@@ -32,6 +32,27 @@ class BaseStrategy(ABC):
         self.wins = 0
         self.losses = 0
         self.total_pnl = 0.0
+        # For strategy skips forensics
+        self.db = None # Will be injected if available
+    
+    def log_strategy_skip(self, symbol: str, reason: str, details: Dict = None):
+        """Log when a strategy sees market action but skips due to filters (ADX/ATR)"""
+        # 1. Standard debug log
+        self.logger.debug(f"[{self.name}] Technical Skip: {symbol} | Reason: {reason} | Details: {details}")
+        
+        # 2. Forensic DB log (if DB is injected)
+        if hasattr(self.logger, 'db') and self.logger.db:
+            skip_payload = {
+                'symbol': symbol,
+                'strategy': self.name,
+                'side': 'all',  # Filter rejections are often direction-agnostic
+                'entry_price': 0.0,
+                'reason': f"STRATEGY_SKIP_{reason.upper()}",
+                'layer': 'StrategyFilter',
+                'confidence': 0.0,
+                'metadata': details or {}
+            }
+            self.logger.db.log_rejection(skip_payload)
     
     @abstractmethod
     def generate_signal(self, df: pd.DataFrame) -> Optional[Dict]:

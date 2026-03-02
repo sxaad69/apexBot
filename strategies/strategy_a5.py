@@ -234,17 +234,19 @@ class StrategyA5(BaseStrategy):
         # 2. Universal filters (ADX, volume, etc.)
         should_trade, filter_reason = self.filters.should_trade_symbol(df, symbol, self.name)
         if not should_trade:
-            self.logger.debug(f"[A5] {symbol} FILTERED: {filter_reason}")
+            self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{filter_reason.upper()}", {"filter_reason": filter_reason})
             return None
 
         # 3. Market regime analysis
         regime = self.get_market_regime(df)
         if regime in ['volatile', 'unknown']:
+            self.log_strategy_skip(symbol, "MARKET_REGIME_UNSUITABLE", {"regime": regime})
             return None  # Skip uncertain conditions
 
         # 4. Order book analysis
         orderbook_imbalance = self.analyze_order_book(symbol, market_type)
         if abs(orderbook_imbalance) < self.min_orderbook_imbalance:
+            self.log_strategy_skip(symbol, "IMBALANCE_INSUFFICIENT", {"imbalance": orderbook_imbalance, "min": self.min_orderbook_imbalance})
             return None  # Not enough market pressure
 
         # 5. Whale detection
@@ -279,6 +281,7 @@ class StrategyA5(BaseStrategy):
 
         # Must meet session-adjusted confidence threshold
         if confidence < confidence_threshold:
+            self.log_strategy_skip(symbol, "CONFIDENCE_LOW", {"confidence": confidence, "threshold": confidence_threshold})
             return None
 
         # 8. Determine signal direction
