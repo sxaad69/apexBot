@@ -149,8 +149,9 @@ def discover_elite_movers(exchange, date_str: str, top_n: int = 5):
 
 # --- SIMULATION ---
 
-def run_precision_replay(config, logger, exchange, movers, date_str: str):
+def run_precision_replay(config, logger, exchange, movers, date_str: str, sim_capital: float = 10000.0):
     print(f"\n🧬 {CYAN}Active Replay (Precision Mode):{RESET} Bot vs Market Reality")
+    print(f"💰 {BOLD}Simulation Capital:{RESET} {sim_capital} USDT")
     
     risk = ForensicRiskManager(config, logger)
     strats = [
@@ -162,7 +163,15 @@ def run_precision_replay(config, logger, exchange, movers, date_str: str):
         StrategyA6(config, logger)  # Synthetic Mode
     ]
     
-    account_state = {'total_balance': 10000, 'drawdown_percent': 0, 'open_positions_count': 0, 'current_positions': []}
+    # Account State (Critical Fix: matches position_sizing.py naming)
+    account_state = {
+        'available_balance': sim_capital, 
+        'total_balance': sim_capital,
+        'drawdown_percent': 0, 
+        'open_positions_count': 0, 
+        'current_positions': []
+    }
+    
     since = int(datetime.strptime(date_str, "%Y-%m-%d").timestamp() * 1000)
     all_narratives = []
 
@@ -228,12 +237,17 @@ def run_precision_replay(config, logger, exchange, movers, date_str: str):
                     df_1m_onwards = df_1m[df_1m['timestamp'] > signal_ts]
                     exit_reason, exit_p, roi = simulate_lifecycle(df_1m_onwards, signal['side'], signal['entry_price'], signal['stop_loss'], signal['take_profit'])
                     
-                    verdict_str = f"{GREEN}APPROVED{RESET}" if v['approved'] else f"{RED}VETOED (Layer {v['layer_id']}: {v['layer_name']}){RESET}"
+                    if v['approved']:
+                        verdict_str = f"{GREEN}APPROVED{RESET}"
+                        layer_info = "Passed All Risk Layers"
+                    else:
+                        verdict_str = f"{RED}VETOED (Layer {v['layer_id']}: {v['layer_name']}){RESET}"
+                        layer_info = f"Risk layer {BOLD}{v['layer_id']} ({v['layer_name']}){RESET}"
                     
                     # Exact user-requested format
                     act = "BUY" if signal['side']=='buy' else "SELL"
                     narrative = f"Strategy {BOLD}{s.name}{RESET} indicates to {BOLD}{act}{RESET} {BOLD}{symbol}{RESET} at {ts_str}. "
-                    narrative += f"Risk layer {BOLD}{v['layer_id']} ({v['layer_name']}){RESET} {verdict_str}. "
+                    narrative += f"{layer_info} {verdict_str}. "
                     narrative += f"ROI would have been {BOLD}{roi:+.2f}%{RESET} with position open at {BOLD}{signal['entry_price']:.4f}{RESET} and exit hit at {BOLD}{exit_reason} ({exit_p:.4f}){RESET}."
                     
                     print(f"   📢 {narrative}")
@@ -252,6 +266,11 @@ def main():
     print("=" * 80)
 
     target_date = sys.argv[1] if len(sys.argv) > 1 else (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    # Defaults to $10,000 for "What If" audit, or provided capital
+    # Force $100 as default to match your actual expectation
+    capital = float(sys.argv[2]) if len(sys.argv) > 2 else 100.0
+    
     config = Config()
     logger = Logger(config)
     exchange = CCXTExchangeClient(config, logger)
@@ -259,7 +278,7 @@ def main():
     start_time = time.time()
     
     gainers, losers = discover_elite_movers(exchange, target_date)
-    narratives = run_precision_replay(config, logger, exchange, gainers + losers, target_date)
+    narratives = run_precision_replay(config, logger, exchange, gainers + losers, target_date, capital)
     
     end_time = time.time()
     duration = (end_time - start_time) / 60
