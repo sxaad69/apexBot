@@ -155,10 +155,10 @@ class PaperTradingEngine:
         """
         from datetime import datetime, timedelta
 
-        # Update cache every 1 hour
+        # Update cache every 15 minutes (faster alpha discovery)
         now = datetime.now()
         if (self.last_pairs_update and
-            now - self.last_pairs_update < timedelta(hours=1) and
+            now - self.last_pairs_update < timedelta(minutes=15) and
             self.top_pairs_cache):
             return self.top_pairs_cache
 
@@ -318,13 +318,13 @@ class PaperTradingEngine:
                         position['trailing_tp_activation_price'] = current_price
                         old_tp = position['take_profit']
                         new_tp = current_price * (1 - tp_trailing_distance)
-                        if new_tp < old_tp and new_tp > position['entry_price']:
+                        if new_tp > old_tp and new_tp > position['entry_price']:
                             position['take_profit'] = new_tp
                             self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP ACTIVATED @ ${current_price:.2f} (Profit: {profit_percent*100:.1f}%) | TP: ${old_tp:.2f} → ${new_tp:.2f}")
 
                     elif position['trailing_tp_active']:
                         new_tp = position['trailing_tp_peak_price'] * (1 - tp_trailing_distance)
-                        if new_tp < position['take_profit'] and new_tp > position['entry_price']: # Move TP LOWER for Long
+                        if new_tp > position['take_profit'] and new_tp > position['entry_price']: # Move TP HIGHER for Long
                             old_tp = position['take_profit']
                             position['take_profit'] = new_tp
                             self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP UPDATED @ ${current_price:.2f} | TP: ${old_tp:.2f} → ${new_tp:.2f}")
@@ -343,13 +343,13 @@ class PaperTradingEngine:
                         position['trailing_tp_activation_price'] = current_price
                         old_tp = position['take_profit']
                         new_tp = current_price * (1 + tp_trailing_distance)
-                        if new_tp > old_tp and new_tp < position['entry_price']:
+                        if new_tp < old_tp and new_tp < position['entry_price']:
                             position['take_profit'] = new_tp
                             self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP ACTIVATED @ ${current_price:.2f} (Profit: {profit_percent*100:.1f}%) | TP: ${old_tp:.2f} → ${new_tp:.2f}")
 
                     elif position['trailing_tp_active']:
                         new_tp = position['trailing_tp_trough_price'] * (1 + tp_trailing_distance)
-                        if new_tp > position['take_profit'] and new_tp < position['entry_price']: # Move TP HIGHER for Short
+                        if new_tp < position['take_profit'] and new_tp < position['entry_price']: # Move TP LOWER for Short
                             old_tp = position['take_profit']
                             position['take_profit'] = new_tp
                             self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP UPDATED @ ${current_price:.2f} | TP: ${old_tp:.2f} → ${new_tp:.2f}")

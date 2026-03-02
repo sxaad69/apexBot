@@ -340,7 +340,7 @@ class SpotTradingEngine:
                         old_tp = position.get('take_profit', float('inf'))
                         new_tp = current_price * (1 - tp_distance)
 
-                        if new_tp < old_tp and new_tp > position['entry_price']:
+                        if new_tp > old_tp and new_tp > position['entry_price']:
                             position['take_profit'] = new_tp
                             self.logger.info(f"SPOT [{strategy_name}] {symbol} TRAILING TP ACTIVATED @ ${new_tp:.2f} "
                                            f"(Profit: {profit_pct*100:.1f}%)")
@@ -361,7 +361,7 @@ class SpotTradingEngine:
                         new_tp = position['trailing_tp_peak'] * (1 - tp_distance)
                         current_tp = position.get('take_profit', float('inf'))
 
-                        if new_tp < current_tp and new_tp > position['entry_price']:
+                        if new_tp > current_tp and new_tp > position['entry_price']:
                             old_tp = current_tp
                             position['take_profit'] = new_tp
                             self.logger.info(f"SPOT [{strategy_name}] {symbol} TRAILING TP UPDATED ${old_tp:.2f} → ${new_tp:.2f}")
@@ -395,7 +395,7 @@ class SpotTradingEngine:
                         old_tp = position.get('take_profit', 0)
                         new_tp = current_price * (1 + tp_distance)
 
-                        if new_tp > old_tp and new_tp < position['entry_price']:
+                        if new_tp < old_tp and new_tp < position['entry_price']:
                             position['take_profit'] = new_tp
                             self.logger.info(f"SPOT [{strategy_name}] {symbol} TRAILING TP ACTIVATED @ ${new_tp:.2f} "
                                            f"(Profit: {profit_pct*100:.1f}%)")
@@ -416,7 +416,7 @@ class SpotTradingEngine:
                         new_tp = position['trailing_tp_trough'] * (1 + tp_distance)
                         current_tp = position.get('take_profit', 0)
 
-                        if new_tp > current_tp and new_tp < position['entry_price']:
+                        if new_tp < current_tp and new_tp < position['entry_price']:
                             old_tp = current_tp
                             position['take_profit'] = new_tp
                             self.logger.info(f"SPOT [{strategy_name}] {symbol} TRAILING TP UPDATED ${old_tp:.2f} → ${new_tp:.2f}")
