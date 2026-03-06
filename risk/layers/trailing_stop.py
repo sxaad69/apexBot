@@ -11,12 +11,12 @@ class TrailingStopLayer:
     3. Issues cancellation/replacement API calls to lock in profit manually.
     """
     
-    def __init__(self, config, logger, sqlite_manager, exchange_client, mode='paper'):
+    def __init__(self, config, logger, sqlite_manager, exchange_client, engine=None):
         self.config = config
         self.logger = logger
         self.db = sqlite_manager
         self.exchange = exchange_client
-        self.mode = mode
+        self.engine = engine
         
         # Configuration - Activation distance and trailing distance
         # e.g. Start trailing once we are 1% in profit, and trail by 0.5%
@@ -84,7 +84,33 @@ class TrailingStopLayer:
             if self.exchange:
                 self.exchange.close_position(symbol)
                 
-            # 2. Update SQLite State
+            # 2. Sync with Trading Engine (Phase 14)
+            if self.engine:
+                position_key = f"{trade['strategy']}:{symbol}"
+                if position_key in self.engine.positions:
+                    pos = self.engine.positions[position_key]
+                    
+                    # Calculate P&L for capital tracking
+                    leveraged_pnl_percent = 0
+                    if trade['entry_price'] > 0:
+                        side_mult = 1 if trade['side'].lower() == 'buy' else -1
+                        pnl_percent = (current_price - trade['entry_price']) / trade['entry_price'] * side_mult
+                        leveraged_pnl_percent = pnl_percent * trade.get('leverage', 1)
+                    
+                    pnl_amount = pos['size'] * leveraged_pnl_percent
+                    
+                    # Return capital to shared pool
+                    self.engine.total_capital += (pos['size'] + pnl_amount)
+                    
+                    # Persist total_capital if in paper mode
+                    if getattr(self.config, 'MODE', 'paper') == 'paper':
+                        self.db.set_setting('paper_total_capital', self.engine.total_capital)
+                    
+                    # Remove from in-memory positions
+                    del self.engine.positions[position_key]
+                    self.logger.info(f"💾 Trailing Stop SYNC: Removed {position_key} from engine memory.")
+
+            # 3. Update SQLite State
             exit_time = __import__('datetime').datetime.utcnow().isoformat()
             cursor.execute("UPDATE trades SET status = 'CLOSED', exit_price = ?, exit_time = ?, reason = 'trailing_stop' WHERE trade_id = ?",
                            (current_price, exit_time, trade_id))

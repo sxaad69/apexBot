@@ -101,7 +101,8 @@ sudo systemctl start apex-bot
 ```bash
 # View real-time logs
 journalctl -u apex-bot -f
-
+sudo systemctl stop apex-bot.service 
+sudo systemctl start apex-bot.service   
 sudo systemctl restart apex-bot.service
 sudo systemctl status apex-bot.service   # check if it's running ok
 # Check forensic database entries

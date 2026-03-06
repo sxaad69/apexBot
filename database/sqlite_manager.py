@@ -42,6 +42,7 @@ class SQLiteManager:
                 strategy TEXT,
                 side TEXT,
                 leverage INTEGER,
+                size REAL,
                 entry_price REAL,
                 entry_time TEXT,
                 exit_price REAL,
@@ -53,6 +54,8 @@ class SQLiteManager:
                 take_profit REAL,
                 highest_price REAL,
                 trailing_stop_price REAL,
+                capital_at_entry REAL,
+                capital_at_exit REAL,
                 reason TEXT,
                 metadata TEXT
             )
@@ -60,15 +63,42 @@ class SQLiteManager:
         
         # --- MIGRATIONS ---
         try:
-            # Check if reason column exists (for backward compatibility)
+            # Check migration for new financial columns
             cursor.execute("PRAGMA table_info(trades)")
             columns = [col[1] for col in cursor.fetchall()]
+            
             if 'reason' not in columns:
-                print("🔧 Migrating database: Adding 'reason' column to 'trades' table...")
+                print("🔧 Migrating database: Adding 'reason' column back...")
                 cursor.execute("ALTER TABLE trades ADD COLUMN reason TEXT")
-                conn.commit()
+                
+            if 'capital_at_entry' not in columns:
+                print("🔧 Migrating database: Adding 'capital_at_entry' column...")
+                cursor.execute("ALTER TABLE trades ADD COLUMN capital_at_entry REAL")
+                
+            if 'capital_at_exit' not in columns:
+                print("🔧 Migrating database: Adding 'capital_at_exit' column...")
+                cursor.execute("ALTER TABLE trades ADD COLUMN capital_at_exit REAL")
+
+            if 'size' not in columns:
+                print("🔧 Migrating database: Adding 'size' column...")
+                cursor.execute("ALTER TABLE trades ADD COLUMN size REAL")
+            
+            conn.commit()
         except Exception as e:
-            print(f"⚠️  Database migration warning: {e}")
+            print(f"⚠️  Database trades migration warning: {e}")
+
+        # --- SETTINGS TABLE (Persistent State) ---
+        try:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    last_updated TEXT
+                )
+            ''')
+            conn.commit()
+        except Exception as e:
+            print(f"⚠️  Database settings table creation error: {e}")
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS metrics (
@@ -179,6 +209,37 @@ class SQLiteManager:
         except Exception as e:
             print(f"❌ SQLite log_rejection error: {e}")
             return False
+            
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        """Get a setting from the persistent settings table"""
+        try:
+            conn = self._get_connection(self.main_db)
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                return row['value']
+            return default
+        except Exception as e:
+            print(f"❌ SQLite get_setting error: {e}")
+            return default
+
+    def set_setting(self, key: str, value: Any) -> bool:
+        """Save a setting to the persistent settings table"""
+        try:
+            conn = self._get_connection(self.main_db)
+            cursor = conn.cursor()
+            cursor.execute('''
+                REPLACE INTO settings (key, value, last_updated)
+                VALUES (?, ?, ?)
+            ''', (key, str(value), datetime.utcnow().isoformat()))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"❌ SQLite set_setting error: {e}")
+            return False
 
     def open_trade(self, trade_data: Dict[str, Any]) -> bool:
         """Create a new 'OPEN' trade entry in main DB"""
@@ -187,9 +248,10 @@ class SQLiteManager:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT INTO trades (
-                    trade_id, symbol, market_type, strategy, side, leverage, 
-                    entry_price, entry_time, stop_loss, take_profit, status, metadata
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)
+                    trade_id, symbol, market_type, strategy, side, leverage, size,
+                    entry_price, entry_time, stop_loss, take_profit, 
+                    capital_at_entry, status, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)
             ''', (
                 trade_data.get('trade_id'),
                 trade_data.get('symbol'),
@@ -197,10 +259,12 @@ class SQLiteManager:
                 trade_data.get('strategy'),
                 trade_data.get('side'),
                 trade_data.get('leverage', 1),
+                trade_data.get('size', 0.0),
                 trade_data.get('entry_price'),
                 trade_data.get('timestamp', datetime.utcnow().isoformat()),
                 trade_data.get('stop_loss'),
                 trade_data.get('take_profit'),
+                trade_data.get('capital_at_entry'),
                 json.dumps(trade_data.get('metadata', {}))
             ))
             conn.commit()
@@ -217,7 +281,8 @@ class SQLiteManager:
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE trades 
-                SET exit_price = ?, exit_time = ?, pnl_amount = ?, pnl_percent = ?, reason = ?, status = 'CLOSED', metadata = ?
+                SET exit_price = ?, exit_time = ?, pnl_amount = ?, pnl_percent = ?, 
+                    reason = ?, capital_at_exit = ?, status = 'CLOSED', metadata = ?
                 WHERE trade_id = ?
             ''', (
                 exit_data.get('exit_price'),
@@ -225,6 +290,7 @@ class SQLiteManager:
                 exit_data.get('pnl_amount'),
                 exit_data.get('pnl_percent'),
                 exit_data.get('reason', 'manual'),
+                exit_data.get('capital_at_exit'),
                 json.dumps(exit_data.get('metadata', {})),
                 trade_id
             ))

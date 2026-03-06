@@ -50,15 +50,26 @@ class StrategyA6(BaseStrategy):
             'enableRateLimit': True,
         })
         
-        # Determine which markets to track from Config
-        pairs = getattr(self.config, 'FUTURES_PAIRS', ['BTC/USDT'])
-        if isinstance(pairs, str) and pairs.lower() == 'auto':
-            pairs = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
-            
         while True:
             try:
-                # We can subscribe to multiple at once, but processing them individually here
-                # is safer for early CCXT.pro implementation
+                # 1. Look at current active monitoring list from the engine
+                # Strategy A6 should track exactly what the core engine is tracking
+                if hasattr(self.logger, 'engine') and self.logger.engine:
+                    pairs = self.logger.engine.top_pairs_cache or []
+                else:
+                    # Fallback to config if engine not accessible (unlikely in prod)
+                    pairs_config = getattr(self.config, 'FUTURES_PAIRS', ['BTC/USDT'])
+                    if isinstance(pairs_config, str) and pairs_config.lower() == 'auto':
+                        pairs = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
+                    elif isinstance(pairs_config, str):
+                        pairs = [p.strip() for p in pairs_config.split(',')]
+                    else:
+                        pairs = pairs_config
+
+                if not pairs:
+                    await asyncio.sleep(10)
+                    continue
+
                 for symbol in pairs:
                     book = await exchange.watch_order_book(symbol, limit=50)
                     self.latest_orderbooks[symbol] = book
@@ -101,6 +112,15 @@ class StrategyA6(BaseStrategy):
         should_trade, reason = self.filters.should_trade_symbol(df, symbol, self.name)
         if not should_trade:
             self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{reason.upper()}", {"filter_reason": reason})
+            return None
+
+        # Calculate ADX for strict filtering
+        if 'adx' not in df.columns:
+            df = self.calculate_adx(df)
+            
+        adx_val = df['adx'].iloc[-1]
+        if adx_val < 30:
+            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
             return None
 
         # Fetch instantly from local RAM (no Binance HTTP Ping needed)

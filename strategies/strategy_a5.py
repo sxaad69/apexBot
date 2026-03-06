@@ -237,7 +237,13 @@ class StrategyA5(BaseStrategy):
             self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{filter_reason.upper()}", {"filter_reason": filter_reason})
             return None
 
-        # 3. Market regime analysis
+        # 3. Strict ADX Filter (Added to match A3/A6 requirements)
+        adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
+        if adx_val < 30:
+            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
+            return None
+
+        # 4. Market regime analysis
         regime = self.get_market_regime(df)
         if regime in ['volatile', 'unknown']:
             self.log_strategy_skip(symbol, "MARKET_REGIME_UNSUITABLE", {"regime": regime})

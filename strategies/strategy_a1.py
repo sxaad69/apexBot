@@ -80,7 +80,7 @@ class StrategyA1(BaseStrategy):
         # 2. Strict ADX Trend Filter (Specialized for A1 to reduce chop losses)
         # Even in TESTING_MODE, we require at least ADX 25 for this crossover strategy
         adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
-        if adx_val < 25:
+        if adx_val < 30:
             self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
             return None
 

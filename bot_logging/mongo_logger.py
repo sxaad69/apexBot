@@ -113,7 +113,7 @@ class MongoLogger(Logger):
             self._log_to_mongodb('risk_management', 'WARNING', f"Risk Layer Triggered: {layer}",
                                layer=layer, reason=reason, action=action, **kwargs)
 
-    def trade_entry(self, symbol: str, side: str, size: float, price: float, leverage: int, market_type: str = 'futures', **kwargs):
+    def trade_entry(self, symbol: str, side: str, size: float, price: float, leverage: int, market_type: str = 'futures', total_capital: float = 0.0, **kwargs):
         """Log trade entry to both file and MongoDB"""
         # Call parent method for file logging
         super().trade_entry(symbol, side, size, price, leverage, market_type, **kwargs)
@@ -148,6 +148,8 @@ class MongoLogger(Logger):
                 'highest_price': price,
                 'trailing_stop_price': kwargs.get('stop_loss'),
                 'strategy': kwargs.get('strategy'),
+                'capital_at_entry': total_capital,
+                'size': size,
                 'timestamp': datetime.utcnow().isoformat(),
                 'metadata': kwargs
             }
@@ -161,7 +163,7 @@ class MongoLogger(Logger):
             else:
                 self.mongo_manager.insert_document('futures_trades', document)
 
-    def trade_exit(self, symbol: str, pnl: float, pnl_percent: float, duration: str, market_type: str = 'futures', **kwargs):
+    def trade_exit(self, symbol: str, pnl: float, pnl_percent: float, duration: str, market_type: str = 'futures', total_capital: float = 0.0, **kwargs):
         """Log trade exit to both file and MongoDB"""
         # Call parent method for file logging
         super().trade_exit(symbol, pnl, pnl_percent, duration, market_type, **kwargs)
@@ -193,6 +195,7 @@ class MongoLogger(Logger):
                 'pnl_amount': pnl,
                 'pnl_percent': pnl_percent,
                 'reason': kwargs.get('reason', 'manual'),
+                'capital_at_exit': total_capital,
                 'timestamp': datetime.utcnow().isoformat(),
                 'metadata': kwargs
 

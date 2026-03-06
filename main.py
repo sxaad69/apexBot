@@ -142,13 +142,13 @@ class PaperTradingEngine:
         # Deduplication for Telegram notifications
         self.recent_exit_notifications = {}
 
-    def get_top_pairs_by_volume(self, top_n=30, min_volume_usdt=1000000):
+    def get_top_pairs_by_volume(self, top_n=None, min_volume_usdt=None):
         """
         Fetch top N trading pairs by 24h volume
 
         Args:
-            top_n: Number of top pairs to return
-            min_volume_usdt: Minimum 24h volume in USDT
+            top_n: Number of top pairs to return (defaults to config if None)
+            min_volume_usdt: Minimum 24h volume in USDT (defaults to config if None)
 
         Returns:
             List of trading pair symbols
@@ -157,6 +157,13 @@ class PaperTradingEngine:
 
         # Update cache every 15 minutes (faster alpha discovery)
         now = datetime.now()
+        
+        # Use provided args or fall back to config
+        if top_n is None:
+            top_n = int(getattr(self.config, 'FUTURES_AUTO_TOP_N', 30))
+        if min_volume_usdt is None:
+            min_volume_usdt = float(getattr(self.config, 'FUTURES_AUTO_MIN_VOLUME', 1000000))
+
         if (self.last_pairs_update and
             now - self.last_pairs_update < timedelta(minutes=15) and
             self.top_pairs_cache):
@@ -409,6 +416,14 @@ class PaperTradingEngine:
 
     def execute_paper_trade(self, signal, strategy_name, symbol):
         """Simulate trade execution with risk validation"""
+        
+        # 1. Global Symbol Guard (Phase 14)
+        # Prevent taking multiple positions on the same coin across different strategies
+        # This protects against over-exposure and "doubling down" on a single asset
+        if any(p['symbol'] == symbol for p in self.positions.values()):
+            self.logger.info(f"[{strategy_name}] {symbol} SIGNAL SKIPPED - Global Symbol Guard active (already in trade)")
+            return
+
         position_key = f"{strategy_name}:{symbol}"
 
         # Entry
@@ -479,30 +494,48 @@ class PaperTradingEngine:
                 'atr': indicators.get('atr', None),  # Pass ATR for dynamic leverage
             }
 
-            # Unified drawdown tracking for the shared pool
+            # Unified drawdown tracking for the shared pool (Equity-Based)
+            # We use Equity (Available Balance + Open Margin + Unrealized P&L) 
+            # so that capital allocation isn't counted as a loss, but market drops are.
             current_capital = self.total_capital
+            
+            # Calculate total value of open positions (Margin + P&L)
+            open_positions_value = 0
+            for pos in self.positions.values():
+                symbol = pos['symbol']
+                current_price = self.current_prices.get(symbol, pos['entry_price'])
+                
+                # Simple leveraged P&L calculation for paper mode
+                price_move = (current_price - pos['entry_price']) / pos['entry_price']
+                if pos['side'].lower() == 'sell':
+                    price_move = -price_move
+                
+                unrealized_pnl = pos['size'] * price_move * pos.get('leverage', 1)
+                open_positions_value += (pos['size'] + unrealized_pnl)
+            
+            current_equity = current_capital + open_positions_value
+            
             peak_capital = self.peak_balance
             drawdown_percent = 0
-            if current_capital < peak_capital:
-                drawdown_percent = ((peak_capital - current_capital) / peak_capital) * 100
+            if current_equity < peak_capital:
+                drawdown_percent = ((peak_capital - current_equity) / peak_capital) * 100
             
             account_state = {
-                'total_balance': current_capital,
-                'available_balance': current_capital,  # For paper trading, all capital is available
+                'total_balance': current_equity, # Pass equity as total balance for risk layers
+                'available_balance': current_capital,
                 'drawdown_percent': drawdown_percent,
-                'peak_balance': peak_capital,  # Keep for compatibility
-                'open_positions': [p for p in self.positions.values() if p['strategy'] == strategy_name],
+                'peak_balance': peak_capital,
+                'open_positions': list(self.positions.values()),
                 'open_positions_count': len(self.positions),
-                'recent_trades': [t for t in self.trades if t['strategy'] == strategy_name][-20:],  # Last 20 trades
+                'recent_trades': self.trades[-20:],
                 'current_time': datetime.now()
-
             }
             
             # Debug: Log account state for visibility
             self.logger.debug(
                 f"[{strategy_name}] Account state: "
                 f"available=${account_state['available_balance']:.2f}, "
-                f"total=${account_state['total_balance']:.2f}, "
+                f"equity=${account_state['total_balance']:.2f}, "
                 f"drawdown={account_state['drawdown_percent']:.2f}%"
             )
 
@@ -525,6 +558,10 @@ class PaperTradingEngine:
             
             # Deduct from shared pool
             self.total_capital -= (size + entry_fee)
+            
+            # Persist total_capital if in paper mode
+            if self.mode == 'paper' and hasattr(self.logger, 'db'):
+                self.logger.db.set_setting('paper_total_capital', self.total_capital)
             
             trade_id = f"FUT-{uuid.uuid4().hex[:8].upper()}"
             
@@ -567,7 +604,8 @@ class PaperTradingEngine:
                 confidence=confidence,
                 stop_loss=signal['stop_loss'],
                 take_profit=signal['take_profit'],
-                trade_id=position['trade_id']
+                trade_id=position['trade_id'],
+                total_capital=self.total_capital
             )
 
             # Telegram notification
@@ -596,11 +634,34 @@ class PaperTradingEngine:
             if position['symbol'] != symbol:
                 continue
 
+            # Check for failed previous exits (PENDING_EXIT)
+            is_pending_retry = position.get('status') == 'PENDING_EXIT'
             should_exit, reason = self.check_position_exit(position, current_price)
 
-            if should_exit:
+            if should_exit or is_pending_retry:
+                if is_pending_retry:
+                    self.logger.info(f"🔄 Retrying failed exit for {symbol}...")
+                
                 strategy_name = position['strategy']
                 leverage = position.get('leverage', 1)
+
+                # --- LIVE EXECUTION (Phase 14) ---
+                if self.mode == 'live':
+                    try:
+                        self.logger.system(f"🚀 [LIVE] Executing Market Close for {symbol} ({reason})")
+                        self.exchange.close_position(symbol)
+                    except Exception as e:
+                        self.logger.error(f"🚨 LIVE EXIT FAILED for {symbol}: {e}")
+                        # Mark as PENDING_EXIT in SQLite for infinite retry
+                        if hasattr(self.logger, 'db'):
+                            conn = self.logger.db._get_connection(self.logger.db.main_db)
+                            cursor = conn.cursor()
+                            cursor.execute("UPDATE trades SET status = 'PENDING_EXIT' WHERE trade_id = ?", (position.get('trade_id'),))
+                            conn.commit()
+                            conn.close()
+                        position['status'] = 'PENDING_EXIT'
+                        self.positions[position_key] = position
+                        continue # Skip capital updates until successfully closed
 
                 # Calculate P&L (price movement percentage)
                 if position['side'] == 'buy':
@@ -629,6 +690,12 @@ class PaperTradingEngine:
                 if self.total_capital > self.peak_balance:
                     self.peak_balance = self.total_capital
                     self.risk_manager.update_peak_balance(self.total_capital)
+                    if hasattr(self.logger, 'db'):
+                        self.logger.db.set_setting('peak_balance', self.total_capital)
+                
+                # Persist total_capital if in paper mode
+                if self.mode == 'paper' and hasattr(self.logger, 'db'):
+                    self.logger.db.set_setting('paper_total_capital', self.total_capital)
 
                 # Record trade result with risk manager
                 is_win = pnl_amount > 0
@@ -670,7 +737,8 @@ class PaperTradingEngine:
                     leverage=leverage,
                     stop_loss=position['stop_loss'],
                     take_profit=position['take_profit'],
-                    trade_id=position.get('trade_id')
+                    trade_id=position.get('trade_id'),
+                    total_capital=self.total_capital
                 )
 
                 # Telegram notification
@@ -1307,6 +1375,27 @@ class ApexHunterBot:
             print("🚀 Initializing LIVE TRADING mode...")
 
         self.engine = PaperTradingEngine(self.config, self.logger, self.telegram, mode=self.mode)
+        
+        # --- PERPETUAL STATE RECOVERY (Phase 14) ---
+        # Recover peak_balance and total_capital from SQLite if they exist
+        if hasattr(self.logger, 'db'):
+            stored_peak = self.logger.db.get_setting('peak_balance')
+            if stored_peak:
+                self.engine.peak_balance = float(stored_peak)
+                self.engine.risk_manager.update_peak_balance(self.engine.peak_balance)
+                print(f"📈 Recovered Peak Balance: ${self.engine.peak_balance:.2f}")
+            
+            # For paper mode, we might want to recover total_capital too to avoid "resetting" on crash
+            if self.mode == 'paper':
+                stored_capital = self.logger.db.get_setting('paper_total_capital')
+                if stored_capital:
+                    self.engine.total_capital = float(stored_capital)
+                    print(f"💰 Recovered Paper Capital: ${self.engine.total_capital:.2f}")
+
+        # --- STATE HYDRATION (Phase 14) ---
+        # Load active positions from SQLite into memory immediately
+        self._sync_open_trades()
+
         pairs_config = getattr(self.config, 'FUTURES_PAIRS', ['BTC/USDT'])
  
         if self.mode == 'live':
@@ -1321,7 +1410,8 @@ class ApexHunterBot:
                 self.config,
                 self.logger,
                 self.logger.db,
-                self.engine.exchange
+                self.engine.exchange,
+                engine=self.engine
             )
         else:
             self.trailing_stop_engine = None
@@ -1432,45 +1522,82 @@ class ApexHunterBot:
             print(f"✅ Database cleanup completed ({cleaned_count} files)")
     
     def _sync_open_trades(self):
-        """Startup Reconciliation Phase to catch 'Ghost Trades' that closed while bot was down."""
+        """
+        Durable Core (Phase 14): Startup Phase.
+        1. Hydrates memory (positions) from SQLite. 
+        2. Reconciles with Exchange to mark 'Ghost Trades' CLOSED if they finished while bot was down.
+        """
         try:
             conn = self.logger.db._get_connection(self.logger.db.main_db)
             cursor = conn.cursor()
             
-            cursor.execute("SELECT * FROM trades WHERE status = 'OPEN'")
-            open_trades = cursor.fetchall()
+            # Fetch both OPEN and PENDING_EXIT trades
+            cursor.execute("SELECT * FROM trades WHERE status IN ('OPEN', 'PENDING_EXIT')")
+            db_trades = cursor.fetchall()
             
-            if not open_trades:
+            if not db_trades:
                 conn.close()
                 return
                 
-            self.logger.info(f"🔄 Reconciling {len(open_trades)} OPEN trades with Exchange...")
+            self.logger.info(f"🔄 Hydrating and Reconciling {len(db_trades)} trades...")
             
-            for trade in open_trades:
-                symbol = trade['symbol']
-                trade_id = trade['trade_id']
+            for db_trade in db_trades:
+                symbol = db_trade['symbol']
+                trade_id = db_trade['trade_id']
+                strategy_name = db_trade['strategy']
+                position_key = f"{strategy_name}:{symbol}"
                 
-                # Check actual exchange positions (wrap in try-except for varied exchange support)
-                try:
-                    positions = self.engine.exchange.get_positions(symbol)
-                    active_pos = next((p for p in positions if float(p.get('contracts', 0)) > 0), None)
+                # Check actual exchange positions for LIVE mode or if specifically requested
+                is_closed_on_exchange = False
+                if self.mode == 'live' or getattr(self.config, 'FUTURES_STRICT_SYNC', False):
+                    try:
+                        ex_positions = self.engine.exchange.get_positions(symbol)
+                        active_ex_pos = next((p for p in ex_positions if float(p.get('contracts', 0)) > 0), None)
+                        if not active_ex_pos:
+                            is_closed_on_exchange = True
+                    except Exception as exchange_e:
+                        self.logger.warning(f"⚠️ Reconciliation partially skipped for {symbol}: {exchange_e}")
+
+                if is_closed_on_exchange:
+                    self.logger.warning(f"👻 Ghost Trade detected! {symbol} ({strategy_name}) closed while bot was offline.")
+                    exit_time = datetime.utcnow().isoformat()
+                    cursor.execute("UPDATE trades SET status = 'CLOSED', exit_time = ?, reason = 'exchange_closed_offline' WHERE trade_id = ?",
+                                 (exit_time, trade_id))
+                    self.logger.info(f"✅ Synced {symbol} as CLOSED.")
+                else:
+                    # HYDRATE into engine memory
+                    import json
+                    from datetime import datetime as dt
                     
-                    if not active_pos:
-                        self.logger.warning(f"👻 Ghost Trade detected! {symbol} closed while bot was offline.")
-                        # Close out in SQLite
-                        exit_time = datetime.utcnow().isoformat()
-                        cursor.execute("UPDATE trades SET status = 'CLOSED', exit_time = ?, reason = 'exchange_closed_offline' WHERE trade_id = ?",
-                                     (exit_time, trade_id))
-                        self.logger.info(f"✅ Synced {symbol} as CLOSED.")
-                except Exception as exchange_e:
-                    # If exchange doesn't support fetchPositions (like Kucoin), we log and proceed 
-                    # relying on the bot's standard risk checks later.
-                    self.logger.warning(f"⚠️ Reconciliation partially skipped for {symbol}: Exchange doesn't support position fetching.")
+                    # Convert SQLite Row to dict and prepare for engine
+                    metadata = {}
+                    try:
+                        if db_trade['metadata']:
+                            metadata = json.loads(db_trade['metadata'])
+                    except: pass
+                    
+                    position = {
+                        'trade_id': db_trade['trade_id'],
+                        'symbol': db_trade['symbol'],
+                        'side': db_trade['side'],
+                        'entry_price': db_trade['entry_price'],
+                        'entry_time': dt.fromisoformat(db_trade['entry_time']) if db_trade['entry_time'] else dt.now(),
+                        'leverage': db_trade['leverage'],
+                        'stop_loss': db_trade['stop_loss'],
+                        'take_profit': db_trade['take_profit'],
+                        'strategy': db_trade['strategy'],
+                        'size': db_trade['size'] if 'size' in db_trade.keys() else metadata.get('size', 0), 
+                        'status': db_trade['status']
+                    }
+                    
+                    # Add back to active memory
+                    self.engine.positions[position_key] = position
+                    self.logger.info(f"🔌 HYDRATED position: {position_key} (ID: {trade_id[:8]}...)")
                     
             conn.commit()
             conn.close()
         except Exception as e:
-            self.logger.error(f"Failed to run Startup Reconciliation: {e}")
+            self.logger.error(f"Failed to run Startup Hydration/Reconciliation: {e}")
 
     def run(self, interval=60):
         """Run the bot"""
@@ -1479,9 +1606,7 @@ class ApexHunterBot:
         # Setup signal handler for graceful shutdown
         signal.signal(signal.SIGINT, self.signal_handler)
 
-        # Run Startup Reconciliation Phase to handle ghost trades
-        if hasattr(self, 'engine'):
-            self._sync_open_trades()
+        # Startup reconciliation handled in __init__ (Phase 14)
 
         try:
             while self.running:
@@ -1492,7 +1617,7 @@ class ApexHunterBot:
                 if isinstance(pairs_config, str) and pairs_config.lower() == 'auto':
                     top_n = int(getattr(self.config, 'FUTURES_AUTO_TOP_N', 30))
                     min_volume = float(getattr(self.config, 'FUTURES_AUTO_MIN_VOLUME', 1000000))
-                    pairs = self.engine.get_top_pairs_by_volume(top_n, min_volume)
+                    pairs = self.engine.get_top_pairs_by_volume(top_n=top_n, min_volume_usdt=min_volume)
                 elif isinstance(pairs_config, str):
                     # Parse comma-separated string
                     pairs = [p.strip() for p in pairs_config.split(',')]
