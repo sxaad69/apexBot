@@ -169,89 +169,97 @@ class PaperTradingEngine:
             self.top_pairs_cache):
             return self.top_pairs_cache
 
-        try:
-            self.logger.info("Fetching top trading pairs by volume...")
+    try:
+        self.logger.info("Fetching top trading pairs by volume...")
 
-            # Fetch all tickers
-            tickers = self.exchange.exchange.fetch_tickers()
+        # Fetch all tickers
+        tickers = self.exchange.exchange.fetch_tickers()
+        
+        # Filter and sort by volume
+        usdt_pairs = []
+        markets = self.exchange.exchange.markets
+        
+        for symbol, ticker in tickers.items():
+            clean_symbol = symbol.upper()
+            if 'USDT' not in clean_symbol:
+                continue
+
+            # PHASE 16: Ensure symbol exists in the Futures market (skip spot-only leakage)
+            if markets and symbol in markets:
+                market_info = markets[symbol]
+                # Filter for linear futures (USDT settled)
+                is_futures = market_info.get('future', False) or market_info.get('swap', False)
+                if not is_futures:
+                    continue
+
+            # Skip specific non-trading symbols if necessary
+            if any(x in clean_symbol for x in ['BUSD', 'EUR', 'GBP', 'AUD']):
+                continue
+
+            # Standard CCXT quoteVolume is preferred
+            quote_volume = ticker.get('quoteVolume', 0)
             
-            # DEBUG AUDIT: Log first 5 ticker formats if needed
-            ticker_items = list(tickers.items())
-            if len(ticker_items) > 0 and getattr(self.config, 'LOG_LEVEL', 'INFO') == 'DEBUG':
-                self.logger.debug(f"Ticker format audit (Sample of 3): {ticker_items[:3]}")
+            if not quote_volume and 'info' in ticker:
+                info = ticker['info']
+                for vol_key in ['quoteVolume', 'volume', 'vol', '24hVolume', 'quote_volume']:
+                    if vol_key in info:
+                        try:
+                            quote_volume = float(info[vol_key])
+                            if quote_volume > 0: break
+                        except: continue
 
-            # Filter and sort by volume
-            usdt_pairs = []
-            for symbol, ticker in tickers.items():
-                # Robust USDT check (covers /USDT, :USDT, SHIBUSDT, SYMBOL/USDT:USDT, etc.)
-                clean_symbol = symbol.upper()
-                if 'USDT' not in clean_symbol:
-                    continue
+            if not quote_volume or quote_volume < min_volume_usdt:
+                continue
 
-                # Skip specific non-trading symbols if necessary
-                if any(x in clean_symbol for x in ['BUSD', 'EUR', 'GBP', 'AUD']):
-                    continue
+            usdt_pairs.append({
+                'symbol': symbol,
+                'volume': quote_volume
+            })
 
-                # Skip if no volume data
-                # Standard CCXT quoteVolume is preferred, but fallback to baseVolume or info dict
-                quote_volume = ticker.get('quoteVolume', 0)
-                
-                # If quoteVolume is zero/none/NaN, check the info dict (exchange specific)
-                if not quote_volume and 'info' in ticker:
-                    info = ticker['info']
-                    # Common exchange volume keys
-                    for vol_key in ['quoteVolume', 'volume', 'vol', '24hVolume', 'quote_volume']:
-                        if vol_key in info:
-                            try:
-                                # Handle both string and float
-                                quote_volume = float(info[vol_key])
-                                if quote_volume > 0: break
-                            except: continue
+        # Sort by volume (descending)
+        usdt_pairs.sort(key=lambda x: x['volume'], reverse=True)
 
-                if not quote_volume or quote_volume < min_volume_usdt:
-                    continue
+        # Get top N
+        top_pairs = [p['symbol'] for p in usdt_pairs[:top_n]]
 
-                usdt_pairs.append({
-                    'symbol': symbol,
-                    'volume': quote_volume
-                })
+        # Update cache
+        self.top_pairs_cache = top_pairs
+        self.last_pairs_update = now
 
-            # Sort by volume (descending)
-            usdt_pairs.sort(key=lambda x: x['volume'], reverse=True)
+        if len(top_pairs) == 0:
+            self.logger.warning(f"⚠️  MARKET DISCOVERY FAILED: Found 0 pairs matching 'USDT' with volume > ${min_volume_usdt:,.0f}.")
+        else:
+            self.logger.info(f"Found {len(top_pairs)} top pairs (min volume: ${min_volume_usdt:,.0f})")
+            self.logger.info(f"Top 10: {', '.join(top_pairs[:10])}")
 
-            # Get top N
-            top_pairs = [p['symbol'] for p in usdt_pairs[:top_n]]
+        return top_pairs
 
-            # Update cache
-            self.top_pairs_cache = top_pairs
-            self.last_pairs_update = now
-
-            if len(top_pairs) == 0:
-                self.logger.warning(f"⚠️  MARKET DISCOVERY FAILED: Found 0 pairs matching 'USDT' with volume > ${min_volume_usdt:,.0f}.")
-                self.logger.warning(f"Likely causes: High volume threshold or strict symbol filtering.")
-            else:
-                self.logger.info(f"Found {len(top_pairs)} top pairs (min volume: ${min_volume_usdt:,.0f})")
-                self.logger.info(f"Top 10: {', '.join(top_pairs[:10])}")
-
-            return top_pairs
-
-        except Exception as e:
-            self.logger.error(f"Error fetching top pairs: {e}")
-            # Fallback to configured pairs
-            return getattr(self.config, 'FUTURES_PAIRS', ['BTC/USDT', 'ETH/USDT', 'SOL/USDT'])
+    except Exception as e:
+        self.logger.error(f"Error fetching top pairs: {e}")
+        return getattr(self.config, 'FUTURES_PAIRS', ['BTC/USDT', 'ETH/USDT'])
 
     def fetch_market_data(self, symbol='BTC/USDT', timeframe=None, limit=300):
-        """Fetch spot market data using CCXT (exchange-agnostic)"""
+        """Fetch market data using CCXT (exchange-agnostic)"""
         if timeframe is None:
             timeframe = self.config.TIMEFRAME
+        
+        # Normalize symbol for exchange specificity (e.g. ADA/USDT -> ADA/USDT:USDT if needed)
         try:
-            ohlcv = self.exchange.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+            exchange = self.exchange.exchange
+            if symbol not in exchange.markets:
+                # Try to find the actual symbol in the loaded markets (robust matching)
+                for market_symbol in exchange.markets:
+                    if market_symbol.split(':')[0] == symbol:
+                        symbol = market_symbol
+                        break
+            
+            ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)
             return df
         except Exception as e:
-            self.logger.error(f"Error fetching market data: {e}")
+            self.logger.error(f"Error fetching market data for {symbol}: {e}")
             return None
     
     def update_trailing_stops(self, symbol, current_price):
