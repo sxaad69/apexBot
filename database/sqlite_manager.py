@@ -75,6 +75,7 @@ class SQLiteManager:
                 print("🔧 Migrating database: Adding 'size' column...")
                 cursor.execute("ALTER TABLE trades ADD COLUMN size REAL")
 
+
             if 'capital_at_entry' not in columns:
                 print("🔧 Migrating database: Adding 'capital_at_entry' column...")
                 cursor.execute("ALTER TABLE trades ADD COLUMN capital_at_entry REAL")
