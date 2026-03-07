@@ -18,6 +18,9 @@ class StrategyFilters:
         # Load filter settings from environment
         self.testing_mode = getattr(config, 'TESTING_MODE', False)
 
+        # Stablecoin Filter (Global Exclusion)
+        self.STABLECOINS = ['USDC', 'USDT', 'BUSD', 'DAI', 'TUSD', 'USDP', 'FDUSD', 'PYUSD']
+
         # ADX Settings
         self.adx_min = getattr(config, 'TESTING_ADX_MIN', 0) if self.testing_mode else 25
         self.force_trades = getattr(config, 'FORCE_TRADES', False)
@@ -36,6 +39,10 @@ class StrategyFilters:
         """
         import pandas as pd
 
+        # 0. Global Stablecoin Filter (Check first)
+        if not self._check_stablecoin_filter(symbol):
+            return False, "Symbol is a stablecoin (Global Exclusion)"
+
         # 1. ADX Trend Filter
         if not self._check_adx_filter(df):
             return False, f"ADX < {self.adx_min} (weak trend)"
@@ -53,6 +60,11 @@ class StrategyFilters:
             return False, f"Volatility > {self.max_volatility_percent}%"
 
         return True, "All filters passed"
+
+    def _check_stablecoin_filter(self, symbol: str) -> bool:
+        """Reject symbols if they involve known stablecoins as the base asset"""
+        base_asset = symbol.split('/')[0].upper()
+        return base_asset not in self.STABLECOINS
 
     def _check_adx_filter(self, df) -> bool:
         """Check if ADX indicates trending market"""

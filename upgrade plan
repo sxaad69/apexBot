@@ -1,0 +1,240 @@
+# Apex Hunter V15: Institutional-Grade Upgrade Roadmap
+
+> **Status**: BRAINSTORMING — Development is LOCKED. This document is a living plan.
+
+---
+
+## The Gap: Retail → Institutional
+
+| Dimension | Current (Retail) | Target (Quant/Institutional) |
+|---|---|---|
+| **Signal Source** | Technical indicators only (EMA, RSI, ADX, MACD) | Multi-source: Technicals + Sentiment + On-Chain + Order Flow |
+| **Confidence** | Binary (signal or no signal) | Probabilistic (expected value after fees, win rate, risk/reward) |
+| **Backtesting** | None (live-only validation) | Full regime simulation (Bull / Bear / Sideways / Mean Reversion) |
+| **Risk** | Static % sizing + drawdown halt | Dynamic Kelly Criterion, correlation-aware, regime-adaptive |
+| **Execution** | Market orders only | Limit orders, TWAP, slippage modeling |
+| **ADX Filter** | Fixed threshold (30) | Data-driven optimal threshold per regime |
+
+---
+
+## Upgrade Pillars
+
+### Pillar 1: Sentiment Intelligence Layer 🧠
+
+**Your Idea — Enhanced**
+
+Every 15 minutes (aligned with your pair refresh), scrape and score sentiment from multiple sources:
+
+**Data Sources (Ranked by Signal Quality)**:
+1. **Crypto News APIs** — CryptoPanic, CoinGecko News, LunarCrush
+2. **Social Pulse** — Twitter/X trending mentions, Reddit /r/CryptoCurrency velocity
+3. **Funding Rate** — From exchange API (already available via KuCoin). Extreme positive = overleveraged longs (bearish signal). Extreme negative = overleveraged shorts (bullish signal)
+4. **Open Interest Delta** — Rising OI + Rising Price = strong trend. Rising OI + Falling Price = trapped longs
+
+**Architecture**:
+```
+[News/Social APIs] → Sentiment Scorer (LLM or Rule-Based) → Score: -1.0 to +1.0
+                                                              ↓
+                                                    Signal Modifier Layer
+                                                              ↓
+                                              Boost/Suppress confidence score
+```
+
+**How It Integrates**:
+- Sentiment score becomes a **multiplier** on strategy confidence, not a standalone signal
+- Strong bullish sentiment + bullish technical signal = confidence boost (e.g., 0.7 → 0.85)
+- Bearish sentiment + bullish technical signal = confidence suppression (e.g., 0.7 → 0.5)
+- Extreme fear/greed = contrarian filter (optional)
+
+**Key Decision**: LLM-based scoring (more accurate, higher latency/cost) vs. Rule-based scoring (faster, cheaper, more predictable). For 15-min refresh cycles, rule-based is sufficient.
+
+---
+
+### Pillar 2: Statistical Confidence & Expected Value Engine 📊
+
+**Your Idea — Enhanced**
+
+Replace "gut feel" confidence with a mathematically grounded score:
+
+**Expected Value (EV) Formula**:
+```
+EV = (Win_Rate × Avg_Win) - (Loss_Rate × Avg_Loss) - Fees
+
+Where:
+  Win_Rate   = Historical win % for this strategy + regime + ADX range
+  Avg_Win    = Average winning trade size (after leverage)
+  Avg_Loss   = Average losing trade size (after leverage)
+  Fees       = Entry fee + Exit fee + Slippage estimate
+```
+
+**Confidence Score v2**:
+```
+Confidence = f(
+    EV_per_trade,           # Is this trade profitable after fees?
+    Signal_strength,         # How strong are the technical indicators?
+    Sentiment_score,         # What does the market "feel"?
+    Regime_alignment,        # Are we in the right market condition for this strategy?
+    Recent_strategy_performance  # Is this strategy currently "hot" or "cold"?
+)
+```
+
+**The "Fee Gate"**: If `EV < 0` after fees, the trade is automatically rejected regardless of signal strength. This alone eliminates a class of low-quality trades that erode capital slowly.
+
+**Implementation Approach**:
+- Track per-strategy win rates in SQLite (already partially done)
+- Calculate rolling 30-trade EV for each strategy
+- Use EV as a pre-filter before risk management layers
+
+---
+
+### Pillar 3: Regime-Aware Backtesting Engine 🧪
+
+**Your Idea — Enhanced**
+
+Build a simulation harness that tests strategies against **synthetic market regimes**:
+
+**Four Core Regimes**:
+
+| Regime | Characteristics | How to Simulate |
+|---|---|---|
+| **Bullish Trend** | Steady upward drift, low volatility, high ADX | Geometric Brownian Motion with positive drift |
+| **Bearish Trend** | Steady downward drift, capitulation spikes | GBM with negative drift + fat-tail events |
+| **Sideways/Range** | Mean-reverting, low ADX, choppy | Ornstein-Uhlenbeck process |
+| **Mean Reversion** | Sharp drops followed by V-shaped recoveries | Jump-diffusion model |
+
+**Simulation Framework**:
+1. Generate 10,000 candles per regime (50 coins × 200 candles each)
+2. Feed through each strategy (A1, A3, A4, A5, A6)
+3. Record: Win rate, Avg P&L, Max Drawdown, Sharpe Ratio, Profit Factor
+4. Output: **Strategy-Regime Compatibility Matrix**
+
+**ADX Hypothesis Testing** (Your specific request):
+- Run each strategy at ADX thresholds: 15, 20, 25, 30, 35, 40
+- For each threshold × regime combination, measure:
+  - Number of trades taken
+  - Win rate
+  - Average P&L per trade
+  - Maximum consecutive losses
+- **Goal**: Find the optimal ADX threshold per strategy per regime, not a single global value
+
+**Expected Outcome**: A data-driven table like:
+
+| Strategy | Bullish ADX | Bearish ADX | Sideways ADX | Mean Rev ADX |
+|---|---|---|---|---|
+| A1 (EMA Cross) | 25 | 35 | Skip | 20 |
+| A3 (ATR Breakout) | 30 | 30 | Skip | 25 |
+| A5 (Microstructure) | 20 | 25 | 15 | 20 |
+
+---
+
+### Pillar 4: Dynamic Risk Scaling (Kelly Criterion) 🎯
+
+**My Suggestion**
+
+Replace static position sizing with the **Kelly Criterion** — the mathematically optimal bet size:
+
+```
+Kelly % = (Win_Rate / Loss_Ratio) - ((1 - Win_Rate) / Win_Ratio)
+
+Practical: Use Half-Kelly (50% of Kelly) for safety
+```
+
+**Why This Matters**:
+- Current system uses fixed 7-15% position sizes regardless of edge quality
+- Kelly sizes bets proportionally to edge strength
+- A strategy with 70% win rate and 2:1 R:R gets a larger allocation than one with 55% win rate and 1.5:1 R:R
+
+**Integration**:
+- Compute Kelly % from rolling 30-trade statistics per strategy
+- Cap at Half-Kelly for safety (institutional standard)
+- Floor at 3% minimum (your current minimum)
+- Update every 24 hours (not per-trade, to avoid overfitting)
+
+---
+
+### Pillar 5: Correlation-Aware Position Management 🔗
+
+**My Suggestion**
+
+Currently, the bot treats each coin independently. But BTC drops 5% → most alts drop 8-15%. Opening 5 long positions simultaneously = 5x correlated risk.
+
+**Solution**: **Correlation Matrix Filter**
+- Calculate 30-day rolling correlation between all open positions
+- If a new trade is >0.7 correlated with existing positions, reduce its size or skip it
+- This prevents the "everything drops at once" portfolio blowup
+
+**Practical Implementation**:
+- Group positions by correlation clusters (e.g., "BTC-correlated alts", "DeFi basket", "AI tokens")
+- Limit exposure per cluster to 30% of capital
+- Allow uncorrelated positions to use full allocation
+
+---
+
+### Pillar 6: Execution Quality (Smart Order Routing) ⚡
+
+**My Suggestion**
+
+Market orders guarantee fills but sacrifice price. Institutional traders use:
+
+1. **Limit Orders with Timeout**: Place limit at mid-price, wait 30s, fallback to market
+2. **TWAP (Time-Weighted Average Price)**: Split large orders into smaller chunks over time
+3. **Slippage Tracking**: Log expected vs. actual fill price, measure execution quality
+
+**Impact**: On a $15 position at 10x leverage, 0.1% slippage improvement = $0.15 per trade. Over 1000 trades = $150 saved (1.5% of capital).
+
+---
+
+### Pillar 7: Regime Detection Engine 🌡️
+
+**My Suggestion**
+
+Instead of applying all strategies all the time, detect the current market regime and activate only the strategies that perform best in that regime:
+
+**Detection Methods**:
+- **ADX + DI Spread**: High ADX + wide DI = trending. Low ADX = ranging
+- **Volatility Regime**: ATR percentile (30-day). High = volatile, Low = quiet
+- **BTC Dominance Trend**: Rising = risk-off (alts underperform). Falling = risk-on
+- **Funding Rate Aggregate**: Average funding across top 20 coins
+
+**Strategy Router**:
+```
+IF regime == TRENDING:
+    Activate A1 (EMA Cross), A3 (ATR Breakout)
+    Deactivate A5 (Microstructure - tends to overtrade in trends)
+
+IF regime == RANGING:
+    Activate A5 (Microstructure), Mean Reversion strategies
+    Deactivate A1, A3 (trend-followers get chopped in ranges)
+
+IF regime == HIGH_VOLATILITY:
+    Reduce all position sizes by 50%
+    Tighten stop losses
+    Widen take profits
+```
+
+---
+
+## Priority Matrix
+
+| Pillar | Impact | Effort | Priority |
+|---|---|---|---|
+| **P3: Backtesting Engine** | 🔴 Critical | Medium | **#1 — Do First** |
+| **P2: EV/Confidence Engine** | 🔴 Critical | Low-Medium | **#2** |
+| **P7: Regime Detection** | 🟡 High | Medium | **#3** |
+| **P4: Kelly Criterion Sizing** | 🟡 High | Low | **#4** |
+| **P1: Sentiment Layer** | 🟡 High | High | **#5** |
+| **P5: Correlation Filter** | 🟢 Medium | Medium | **#6** |
+| **P6: Smart Execution** | 🟢 Medium | High | **#7** |
+
+> [!IMPORTANT]
+> **Backtesting comes first** because every other pillar requires validation. Without a backtesting engine, we can't prove that sentiment helps, Kelly sizing works, or ADX 25 beats ADX 30.
+
+---
+
+## Open Questions for Brainstorming
+
+1. **Sentinel Budget**: Are we willing to use a paid API (CryptoPanic Pro, LunarCrush) for sentiment, or should we stick to free sources (funding rates, OI delta, Fear & Greed Index)?
+2. **ADX Flexibility**: Should we allow different ADX thresholds per strategy (data-driven), or keep one global value for simplicity?
+3. **Regime Override**: Should the regime detector be able to **fully disable** a strategy in unfavorable conditions, or just reduce its position size?
+4. **Backtesting Scope**: Should we test against historical KuCoin data (real but limited) or synthetic data (unlimited but potentially unrealistic)?
+5. **Latency Tolerance**: For the sentiment layer, is a 15-minute refresh adequate, or do you want sub-minute sentiment for scalping strategies?

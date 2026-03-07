@@ -6,7 +6,7 @@ Apex Hunter V14 is an institutional-grade, multi-strategy automated trading bot 
 
 The bot follows a rigid end-to-end execution flow:
 
-1.  **Market Scanning**: Fetches top 30 pairs by volume if `FUTURES_PAIRS=auto` (filtered by $1M min volume).
+1.  **Market Scanning**: Fetches top 30-200 pairs (configurable) filtered by $1M min volume and **Global Stablecoin Exclusion** (USDC, USDT, DAI, etc.).
 2.  **Strategy Engine**: Orchestrates 6 concurrent strategies (A1-A6).
 3.  **Indicator Filters**: Strictly enforces **ADX Trend Filters** and **ATR Dynamic Stops** (A1-A4).
 4.  **Institutional Alpha (A6)**: Implements orderbook imbalance analysis via WSS for high-frequency edges.
