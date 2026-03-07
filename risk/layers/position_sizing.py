@@ -80,6 +80,9 @@ class PositionSizingLayer:
         
         position_size = min(position_size, self.config.MAX_POSITION_SIZE)
         
+        # Calculate actual risk percentage for logging and tracking
+        adjusted_percent = (position_size / available_capital * 100) if available_capital > 0 else 0
+        
         # Update trade parameters
         trade_params['position_size'] = position_size
         trade_params['risk_percent'] = adjusted_percent
