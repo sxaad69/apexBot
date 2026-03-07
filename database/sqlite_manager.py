@@ -70,10 +70,13 @@ class SQLiteManager:
             if 'reason' not in columns:
                 print("🔧 Migrating database: Adding 'reason' column back...")
                 cursor.execute("ALTER TABLE trades ADD COLUMN reason TEXT")
+<<<<<<< HEAD
 
             if 'size' not in columns:
                 print("🔧 Migrating database: Adding 'size' column...")
                 cursor.execute("ALTER TABLE trades ADD COLUMN size REAL")
+=======
+>>>>>>> faf3b3d (position size fix)
                 
             if 'capital_at_entry' not in columns:
                 print("🔧 Migrating database: Adding 'capital_at_entry' column...")
