@@ -174,19 +174,42 @@ class PaperTradingEngine:
 
             # Fetch all tickers
             tickers = self.exchange.exchange.fetch_tickers()
+            
+            # DEBUG AUDIT: Log first 5 ticker formats if needed
+            ticker_items = list(tickers.items())
+            if len(ticker_items) > 0 and getattr(self.config, 'LOG_LEVEL', 'INFO') == 'DEBUG':
+                self.logger.debug(f"Ticker format audit (Sample of 3): {ticker_items[:3]}")
 
             # Filter and sort by volume
             usdt_pairs = []
             for symbol, ticker in tickers.items():
-                # Only USDT pairs (support varied CCXT futures formats)
-                if ':USDT' not in symbol and not symbol.endswith('/USDT'):
+                # Robust USDT check (covers /USDT, :USDT, SHIBUSDT, SYMBOL/USDT:USDT, etc.)
+                clean_symbol = symbol.upper()
+                if 'USDT' not in clean_symbol:
+                    continue
+
+                # Skip specific non-trading symbols if necessary
+                if any(x in clean_symbol for x in ['BUSD', 'EUR', 'GBP', 'AUD']):
                     continue
 
                 # Skip if no volume data
+                # Standard CCXT quoteVolume is preferred, but fallback to baseVolume or info dict
                 quote_volume = ticker.get('quoteVolume', 0)
+                
+                # If quoteVolume is zero/none/NaN, check the info dict (exchange specific)
+                if not quote_volume and 'info' in ticker:
+                    info = ticker['info']
+                    # Common exchange volume keys
+                    for vol_key in ['quoteVolume', 'volume', 'vol', '24hVolume', 'quote_volume']:
+                        if vol_key in info:
+                            try:
+                                # Handle both string and float
+                                quote_volume = float(info[vol_key])
+                                if quote_volume > 0: break
+                            except: continue
+
                 if not quote_volume or quote_volume < min_volume_usdt:
                     continue
-
 
                 usdt_pairs.append({
                     'symbol': symbol,
@@ -203,8 +226,12 @@ class PaperTradingEngine:
             self.top_pairs_cache = top_pairs
             self.last_pairs_update = now
 
-            self.logger.info(f"Found {len(top_pairs)} top pairs (min volume: ${min_volume_usdt:,.0f})")
-            self.logger.info(f"Top 10: {', '.join(top_pairs[:10])}")
+            if len(top_pairs) == 0:
+                self.logger.warning(f"⚠️  MARKET DISCOVERY FAILED: Found 0 pairs matching 'USDT' with volume > ${min_volume_usdt:,.0f}.")
+                self.logger.warning(f"Likely causes: High volume threshold or strict symbol filtering.")
+            else:
+                self.logger.info(f"Found {len(top_pairs)} top pairs (min volume: ${min_volume_usdt:,.0f})")
+                self.logger.info(f"Top 10: {', '.join(top_pairs[:10])}")
 
             return top_pairs
 
