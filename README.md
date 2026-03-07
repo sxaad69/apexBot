@@ -148,4 +148,28 @@ Configure your bot tokens in `.env` to receive:
 
 ---
 
+---
+
+## 🏦 Tiered Based Balance Management (Phase 14)
+
+The system now implements a **Dynamic High-Water Mark Signal Gate** to protect both initial capital and realized profits. This creates a tiered "survival zone" that gates access to signals based on performance.
+
+### 🧩 Architecture: The Signal Gate
+The bot tracks your **Peak Balance** (highest equity reached). It then applies 3 distinct zones of protection:
+
+| Equity Status | Signal Gating | Strategy Behavior |
+| :--- | :--- | :--- |
+| **Growth (>50% of Peak)** | **Open** | All strategies A1-A6 can execute normally. |
+| **Preservation (30%-50%)** | **Elite Only** | Only signals with $\ge$ 90% confidence can open trades. |
+| **Survival (≤ 30% of Peak)** | **Halt** | All trade execution is blocked to protect remaining capital. |
+
+### ⚙️ Environment Configuration
+Adjust these variables in your `.env` to tune the sensitivity:
+- `TIERED_RISK_ENABLED`: Master activation toggle (`true`/`false`).
+- `NORMAL_SIGNAL_THRESHOLD`: Percentage drawdown from peak to lock out normal trades (default: `50.0`).
+- `ELITE_SIGNAL_THRESHOLD`: Percentage drawdown from peak for total halt (default: `70.0`).
+- `ELITE_CONFIDENCE_LEVEL`: Confidence multiplier needed to bypass the 50% gate (default: `0.90`).
+
+---
+
 **APEX HUNTER V14: Advanced Analytics & Disciplined Risk Management** 🚀

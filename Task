@@ -1,0 +1,86 @@
+- [x] Analyze Today's Trade Activity (2026-03-02)
+    - [x] Explore schema of `data/apex_hunter.db`
+    - [x] Query today's trades from `trades` table
+    - [x] Correct P&L confusion (Dollar vs Percent)
+    - [x] Profit & Leverage Math Audit (SOL Proof)
+    - [x] Summarize results for the user
+- [x] Phase 9: Fix Trailing Take Profit (Reverse Ratchet Bug)
+    - [x] Create implementation plan
+    - [x] Update Trailing TP logic in `main.py`
+    - [x] Update Trailing TP logic in `core/spot_trading_engine.py`
+    - [x] Verify fix with audit tool
+- [x] Phase 10: ARCSOL High-Fidelity TTP Verification
+    - [x] Extract 1m tape data for ARCSOL/USDT (2026-03-02)
+    - [x] Create `/tmp/ttp_forensic_test.py`
+    - [x] Run simulation and compare results (Old logic vs New logic)
+    - [x] Summarize "What If" results for the user
+- [x] Phase 11: ARCSOL Moonshot Potential Analysis
+    - [x] Analyze 4.9% exit cause (TP vs SL)
+    - [x] Run "Infinite Chase" simulation (High target)
+    - [x] Summarize moonshot findings for the user
+- [x] Phase 12: Batch Forensic Portfolio Audit (New Strategy)
+    - [x] Identify all symbols traded today (2026-03-02)
+    - [x] Download 1m tape data for all symbols
+    - [x] Run batch simulation (Compare Old vs New Strategy)
+    - [x] Summarize total portfolio delta for the user
+- [x] Phase 13: Analysis of Missed Top Performers
+    - [x] Audit rejections for ROBO, SIREN, FORM, OPN, GRASS
+    - [x] Identify exclusion reasons (Exchange existence, Volume, Risk)
+    - [x] Summarize "Missed Opportunities" for the user
+- [x] Phase 14: Resilience, Live-Sync, and Financial Logging
+    - [x] Implement Global Symbol Guard (One Position per Symbol)
+    - [x] Implement State Hydration (Load open trades from SQLite at startup)
+    - [x] Implement Exchange/SQLite Cross-Check (Live Mode Safety)
+    - [x] Implement Perpetual Balance Tracking (SQL migration and logging)
+    - [x] Implement Persistent Peak Balance (Maintain drawdown stats across crashes)
+    - [x] Implement Exit Retry Mechanism (Prevent Ghost Wins/Losses)
+    - [x] Verify Trade Process Continuity for resumed trades
+- [x] Phase 15: Comprehensive Simulation & Regression Testing
+    - [x] Create `/tmp/comprehensive_simulation.py` script
+    - [x] Verify End-to-End Trade Lifecycle (Entry -> Restart -> Exit)
+    - [x] Verify Global Symbol Guard (Regression Check)
+    - [x] Verify Financial Audit Logging (SQLite Check)
+    - [x] Verify PENDING_EXIT recovery flow
+- [x] Phase 16: Optimizing Scan Depth & Strategy Alignment
+    - [x] Update `main.py` to strictly respect configured `FUTURES_AUTO_TOP_N`
+    - [x] Remove hardcoded 4-pair limitation in Strategy A6
+    - [x] Update `.env` to 200 pairs and optimize Volatility Logic
+    - [x] Verify 200-pair scan works in simulation
+- [x] Phase 17: Final Review and Verification
+    - [x] Review Phase 16 code changes for consistency and bugs
+    - [x] Run end-to-end simulation test
+    - [x] Verify 200-pair scan and Strategy A6 alignment
+    - [x] Verify Strict ADX (30+) logging
+- [x] Phase 18: Fresh Start Sanity Overhaul
+    - [x] Standardize Strategy A1 to ADX 30+ (Matching A3/A4/A5/A6)
+    - [x] Disable `TESTING_MODE` and `FORCE_TRADES` for real-market audit
+    - [x] Provide cleanup commands for DB files
+    - [x] Verify production-ready configuration
+- [x] Phase 19: March 4th Performance Audit
+    - [x] Query trades for March 4th from `apex_hunter.db`
+    - [x] Fetch top gainers/losers for March 4th from KuCoin
+    - [x] Cross-reference market movers with rejection logs in `activity_log.db`
+    - [x] Summarize findings for the user
+- [x] Phase 20: Fix Equity-Based Drawdown Logic
+    - [x] Update `execute_paper_trade` to use Equity (Balance + Margin) for MDD check
+    - [x] Verify `settings` table initialization in `SQLiteManager`
+    - [x] Run simulation to confirm 15% positions don't block subsequent trades
+- [x] Phase 21: Adjust Drawdown Threshold
+    - [x] Update `.env` with 30% Maximum Drawdown Limit
+    - [x] Verify both Futures and Spot configs are updated
+- [x] Phase 22: Final Review and Verification
+    - [x] Perform final code audit of Equity-based MDD fix
+    - [x] Run simulation to verify 30% threshold and Equity calculation
+    - [x] Update walkthrough with final verification results
+- [x] Phase 23: March 6th Performance Forensic Audit
+    - [x] Dump malformed `activity_log.db` and grep rejections
+    - [x] Identify "Missing Size" schema mismatch bug
+    - [x] Confirm "Phantom Drawdown" block cause
+- [x] Phase 24: Global Stablecoin Filter & DB Migration Fix
+    - [x] Implement `is_stablecoin` check in `strategies/filters.py`
+    - [x] Add `size` column migration to `database/sqlite_manager.py`
+    - [x] Verify both fixes (Documented in README)
+- [x] Phase 25: KuCoin Futures Market Analysis Tool
+    - [x] Create `scripts/kucoin_top_movers.py`
+    - [x] Run 24h gainers/losers report
+- [ ] Ready for next assignment.

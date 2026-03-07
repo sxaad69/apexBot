@@ -171,6 +171,13 @@ class Config:
 
         self.MAX_DAILY_LOSS_PERCENT = float(os.getenv('MAX_DAILY_LOSS_PERCENT', '5'))
         self.MAX_DRAWDOWN_PERCENT = float(os.getenv('MAX_DRAWDOWN_PERCENT', '15'))
+        
+        # ===== Tiered Risk Management (Phase 14) =====
+        self.TIERED_RISK_ENABLED = self._str_to_bool(os.getenv('TIERED_RISK_ENABLED', 'true'))
+        self.NORMAL_SIGNAL_THRESHOLD = float(os.getenv('NORMAL_SIGNAL_THRESHOLD', '50.0'))
+        self.ELITE_SIGNAL_THRESHOLD = float(os.getenv('ELITE_SIGNAL_THRESHOLD', '70.0'))
+        self.ELITE_CONFIDENCE_LEVEL = float(os.getenv('ELITE_CONFIDENCE_LEVEL', '0.90'))
+        
         self.CORRELATION_THRESHOLD = float(os.getenv('CORRELATION_THRESHOLD', '0.7'))
         self.VOLATILITY_LOOKBACK_PERIODS = int(os.getenv('VOLATILITY_LOOKBACK_PERIODS', '20'))
         self.MIN_LIQUIDITY_DEPTH = float(os.getenv('MIN_LIQUIDITY_DEPTH', '10000'))
