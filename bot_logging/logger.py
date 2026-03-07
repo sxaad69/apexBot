@@ -80,8 +80,7 @@ class Logger:
             console_handler.setFormatter(simple_formatter)
             main_logger.addHandler(console_handler)
         
-        # Add file handler with rotation
-        if self.config.LOG_OUTPUT in ['file', 'both']:
+            # Add file handler with rotation
             log_file = Path(self.config.LOG_FILE_PATH) / f"apex_hunter_{datetime.now().strftime('%Y%m%d')}.log"
             file_handler = logging.handlers.RotatingFileHandler(
                 log_file,
@@ -91,6 +90,18 @@ class Logger:
             file_handler.setLevel(log_level)
             file_handler.setFormatter(detailed_formatter)
             main_logger.addHandler(file_handler)
+            
+            # --- Dedicated Black Box Error Log ---
+            # Guaranteed to capture ERROR+ regardless of LOG_LEVEL
+            error_file = Path(self.config.LOG_FILE_PATH) / self.config.ERROR_LOG_FILE
+            error_handler = logging.handlers.RotatingFileHandler(
+                error_file,
+                maxBytes=5 * 1024 * 1024,  # 5MB dedicated error log
+                backupCount=self.config.LOG_FILE_BACKUP_COUNT
+            )
+            error_handler.setLevel(logging.ERROR)
+            error_handler.setFormatter(detailed_formatter)
+            main_logger.addHandler(error_handler)
         
         self._loggers['main'] = main_logger
         
@@ -184,6 +195,18 @@ class Logger:
     
     def position_rejected(self, symbol: str, reason: str, layer: str, **kwargs):
         """Log rejected position with reason"""
+        # Mute rejection logs in text files if configured (already in SQLite)
+        if getattr(self.config, 'MUTE_REJECTION_LOGS', True):
+            # Only log to SQLite (via mongo_manager which handles both)
+            if hasattr(self, 'mongo_manager'):
+                self.mongo_manager.log_rejection({
+                    'symbol': symbol,
+                    'reason': reason,
+                    'layer': layer,
+                    **kwargs
+                })
+            return
+
         self._log(
             LogCategory.POSITION_REJECTIONS,
             logging.WARNING,

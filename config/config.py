@@ -225,6 +225,8 @@ class Config:
         self.LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', './logs')
         self.LOG_FILE_MAX_SIZE = int(os.getenv('LOG_FILE_MAX_SIZE', '10'))
         self.LOG_FILE_BACKUP_COUNT = int(os.getenv('LOG_FILE_BACKUP_COUNT', '5'))
+        self.MUTE_REJECTION_LOGS = self._str_to_bool(os.getenv('MUTE_REJECTION_LOGS', 'true'))
+        self.ERROR_LOG_FILE = os.getenv('ERROR_LOG_FILE', 'apex_error.log')
 
         # ===== MongoDB Configuration =====
         self.MONGODB_ENABLED = self._str_to_bool(os.getenv('MONGODB_ENABLED', 'false'))

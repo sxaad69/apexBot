@@ -170,6 +170,30 @@ Adjust these variables in your `.env` to tune the sensitivity:
 - `ELITE_SIGNAL_THRESHOLD`: Percentage drawdown from peak for total halt (default: `70.0`).
 - `ELITE_CONFIDENCE_LEVEL`: Confidence multiplier needed to bypass the 50% gate (default: `0.90`).
 
+
+---
+
+## 🛠 Production Stability & Logging (Phase 15)
+
+The bot now features **Triple-Layer Isolation** and **Black Box Logging** to ensure 24/7 uptime even during exchange disconnects or local errors.
+
+### Black Box Logging
+*   **Dedicated Error Log**: All critical failures are mirrored to `logs/apex_error.log`. This file is mandatory and ignores the main `LOG_LEVEL` to ensure you never miss a crash.
+*   **Log Files vs SQLite**: 
+    *   **Text Logs**: Saved to `logs/apex_hunter_YYYYMMDD.log`.
+    *   **Forensics**: Position rejections are **muted** in text logs to prevent clutter, but remain 100% available in your SQLite `rejections` table.
+*   **Log Levels (.env)**:
+    *   `LOG_LEVEL=DEBUG`: Ticker-level detail (High noise, for active debugging).
+    *   `LOG_LEVEL=INFO`: Standard trading events (Entries, Exits, Performance). **[RECOMMENDED]**
+    *   `LOG_LEVEL=ERROR`: Only critical alerts and crashes.
+
+### Trading Resilience
+*   **Triple Isolation**:
+    1.  **Booking Isolation**: Booking crashes (SQLite/API) are caught locally and cannot stop the hunting engine.
+    2.  **Management Isolation**: Errors in Trailing Stop or Take Profit updates are isolated from the symbol scanner.
+    3.  **Global Safety Net**: A top-level catch ensures 100% persistence of any unhandled exception before restart, writing directly to `apex_error.log`.
+*   **Live Entry Bridge**: The bot is now fully connected for live execution. Switching `MODE=live` in your `.env` will trigger real exchange orders.
+
 ---
 
 **APEX HUNTER V14: Advanced Analytics & Disciplined Risk Management** 🚀

@@ -548,65 +548,93 @@ class PaperTradingEngine:
                 return
 
             # Approved trade - execute
-            entry_price = approved_params['entry_price']
-            size = approved_params['size']
-            leverage = approved_params.get('leverage', leverage)
-            
-            # Calculate entry fee
-            fee_percent = getattr(self.config, 'FUTURES_FEE_PERCENT', 0.04) / 100
-            entry_fee = size * fee_percent
-            
-            # Deduct from shared pool
-            self.total_capital -= (size + entry_fee)
-            
-            # Persist total_capital if in paper mode
-            if self.mode == 'paper' and hasattr(self.logger, 'db'):
-                self.logger.db.set_setting('paper_total_capital', self.total_capital)
-            
-            trade_id = f"FUT-{uuid.uuid4().hex[:8].upper()}"
-            
-            position = {
-                'trade_id': trade_id,
-                'entry_time': datetime.now(),
-                'entry_price': entry_price,
-                'side': approved_params['side'],
-                'stop_loss': approved_params['stop_loss'],
-                'take_profit': approved_params['take_profit'],
-                'size': size,
-                'entry_fee': entry_fee,
-                'leverage': approved_params['leverage'],
-                'strategy': strategy_name,
-                'symbol': symbol,
-                # Trailing stop initialization
-                'trailing_stop_active': False,
-                'highest_price': entry_price,
-                'lowest_price': entry_price,
+            try:
+                entry_price = approved_params['entry_price']
+                size = approved_params['size']
+                leverage = approved_params.get('leverage', leverage)
+                
+                # --- [PHASE 15: LIVE ENTRY BRIDGE] ---
+                # This is the "Entry" side of the live trading connection.
+                # It only triggers if MODE=live and an exchange is connected.
+                order_metadata = {}
+                if self.mode == 'live' and self.exchange:
+                    try:
+                        self.logger.info(f"🚀 LIVE ORDER: Placing {approved_params['side']} order for {symbol}...")
+                        # Calculate quantity for CCXT (Base Asset Amount)
+                        quantity = size / entry_price
+                        
+                        order = self.exchange.exchange.create_order(
+                            symbol=symbol,
+                            type='market',
+                            side=approved_params['side'].lower(),
+                            amount=quantity
+                        )
+                        order_metadata['exchange_order_id'] = order.get('id')
+                        order_metadata['exchange_status'] = order.get('status')
+                        self.logger.info(f"✅ LIVE ORDER SUCCESS: {order.get('id')} | Status: {order.get('status')}")
+                    except Exception as e:
+                        self.logger.error(f"❌ LIVE ENTRY FAILED: {e}", exc_info=True)
+                        # CRITICAL: If the real exchange order fails, we MUST NOT book it locally.
+                        return
 
-                'trailing_activation_price': None,
-                'original_stop_loss': approved_params['stop_loss']
-            }
+                # Calculate entry fee
+                fee_percent = getattr(self.config, 'FUTURES_FEE_PERCENT', 0.04) / 100
+                entry_fee = size * fee_percent
+                
+                # Deduct from shared pool
+                self.total_capital -= (size + entry_fee)
+                
+                # Persist total_capital if in paper mode
+                if self.mode == 'paper' and hasattr(self.logger, 'db'):
+                    self.logger.db.set_setting('paper_total_capital', self.total_capital)
+                
+                trade_id = f"FUT-{uuid.uuid4().hex[:8].upper()}"
+                
+                position = {
+                    'trade_id': trade_id,
+                    'entry_time': datetime.now(),
+                    'entry_price': entry_price,
+                    'side': approved_params['side'],
+                    'stop_loss': approved_params['stop_loss'],
+                    'take_profit': approved_params['take_profit'],
+                    'size': size,
+                    'entry_fee': entry_fee,
+                    'leverage': approved_params['leverage'],
+                    'strategy': strategy_name,
+                    'symbol': symbol,
+                    # Trailing stop initialization
+                    'trailing_stop_active': False,
+                    'highest_price': entry_price,
+                    'lowest_price': entry_price,
+                    'trailing_activation_price': None,
+                    'original_stop_loss': approved_params['stop_loss'],
+                    'metadata': order_metadata  # Store exchange order IDs etc.
+                }
 
-            self.positions[position_key] = position
-            
-            self.logger.info(f"[{strategy_name}] {symbol} BALANCE DEDUCTED: ${size + entry_fee:.2f} (Entry: ${size:.2f} + Fee: ${entry_fee:.2f})")
+                self.positions[position_key] = position
+                
+                self.logger.info(f"[{strategy_name}] {symbol} BALANCE DEDUCTED: ${size + entry_fee:.2f} (Entry: ${size:.2f} + Fee: ${entry_fee:.2f})")
+                self.logger.info(f"[{strategy_name}] {symbol} ENTRY {signal['side'].upper()} @ ${signal['entry_price']:.2f} (Leverage: {leverage}x) ✅ Risk Approved")
 
-            self.logger.info(f"[{strategy_name}] {symbol} ENTRY {signal['side'].upper()} @ ${signal['entry_price']:.2f} (Leverage: {leverage}x) ✅ Risk Approved")
-
-            # MongoDB structured logging
-            self.logger.trade_entry(
-                symbol=symbol,
-                side=signal['side'],
-                size=position['size'],
-                price=signal['entry_price'],
-                leverage=leverage,
-                market_type='futures',
-                strategy=strategy_name,
-                confidence=confidence,
-                stop_loss=signal['stop_loss'],
-                take_profit=signal['take_profit'],
-                trade_id=position['trade_id'],
-                total_capital=self.total_capital
-            )
+                # MongoDB structured logging
+                self.logger.trade_entry(
+                    symbol=symbol,
+                    side=signal['side'],
+                    size=position['size'],
+                    price=signal['entry_price'],
+                    leverage=leverage,
+                    market_type='futures',
+                    strategy=strategy_name,
+                    confidence=confidence,
+                    stop_loss=signal['stop_loss'],
+                    take_profit=signal['take_profit'],
+                    trade_id=position['trade_id'],
+                    total_capital=self.total_capital,
+                    metadata=order_metadata
+                )
+            except Exception as e:
+                self.logger.error(f"🚨 CRITICAL: Booking Failure for {symbol} | Error: {e}", exc_info=True)
+                return
 
             # Telegram notification
             if self.telegram and self.telegram.futures_bot:
@@ -1628,44 +1656,55 @@ class ApexHunterBot:
                 for symbol in pairs:
                     if not self.running:
                         break
-                    self.engine.run_cycle(symbol)
+                    try:
+                        self.engine.run_cycle(symbol)
+                    except Exception as e:
+                        self.logger.error(f"🚨 CRITICAL: Symbol Cycle Failed for {symbol}", exc_info=True)
 
                 # Run spot analysis if enabled
-                if hasattr(self, 'spot_engine') and self.spot_engine:
-                    # Use spot trading engine for full simulation
-                    spot_pairs = getattr(self.config, 'SPOT_PAIRS', 'BTC/USDT,ETH/USDT,SOL/USDT')
-                    if isinstance(spot_pairs, str):
-                        spot_pairs = [p.strip() for p in spot_pairs.split(',')]
+                try:
+                    if hasattr(self, 'spot_engine') and self.spot_engine:
+                        # Use spot trading engine for full simulation
+                        spot_pairs = getattr(self.config, 'SPOT_PAIRS', 'BTC/USDT,ETH/USDT,SOL/USDT')
+                        if isinstance(spot_pairs, str):
+                            spot_pairs = [p.strip() for p in spot_pairs.split(',')]
 
-                    for symbol in spot_pairs:
-                        if not self.running:
-                            break
-                        self.logger.debug(f"Running spot cycle for {symbol}")
-                        self.spot_engine.run_cycle(symbol)
+                        for symbol in spot_pairs:
+                            if not self.running:
+                                break
+                            self.logger.debug(f"Running spot cycle for {symbol}")
+                            self.spot_engine.run_cycle(symbol)
 
-                elif hasattr(self, 'spot_logger') and self.spot_logger:
-                    # Fallback to spot logger for signal logging only
-                    spot_pairs = getattr(self.config, 'SPOT_PAIRS', 'BTC/USDT,ETH/USDT,SOL/USDT')
-                    if isinstance(spot_pairs, str):
-                        spot_pairs = [p.strip() for p in spot_pairs.split(',')]
+                    elif hasattr(self, 'spot_logger') and self.spot_logger:
+                        # Fallback to spot logger for signal logging only
+                        spot_pairs = getattr(self.config, 'SPOT_PAIRS', 'BTC/USDT,ETH/USDT,SOL/USDT')
+                        if isinstance(spot_pairs, str):
+                            spot_pairs = [p.strip() for p in spot_pairs.split(',')]
 
-                    for symbol in spot_pairs:
-                        if not self.running:
-                            break
-                        self._run_spot_cycle(symbol)
+                        for symbol in spot_pairs:
+                            if not self.running:
+                                break
+                            self._run_spot_cycle(symbol)
+                except Exception as e:
+                    self.logger.error(f"🚨 CRITICAL: Spot Engine Analysis Failed", exc_info=True)
 
                 # Process Bot-Side Trailing Stops if enabled
-                if getattr(self.config, 'TRAILING_TP_ENABLED', True) and getattr(self, 'trailing_stop_engine', None):
-                    # For performance, only pass prices of top pairs we're currently monitoring
-                    self.trailing_stop_engine.process_open_trades(self.engine.current_prices)
+                try:
+                    if getattr(self.config, 'TRAILING_TP_ENABLED', True) and getattr(self, 'trailing_stop_engine', None):
+                        # For performance, only pass prices of top pairs we're currently monitoring
+                        self.trailing_stop_engine.process_open_trades(self.engine.current_prices)
+                except Exception as e:
+                    self.logger.error(f"🚨 CRITICAL: Trailing Stop Engine Failed", exc_info=True)
 
                 # Wait before next cycle
                 if self.running:
                     time.sleep(interval)
 
         except KeyboardInterrupt:
-            pass
-
+            self.logger.info("Bot stopped by user.")
+        except Exception as e:
+            self.logger.critical(f"FATAL BOT CRASH: {e}", exc_info=True)
+            raise e
         finally:
             self.shutdown()
     

@@ -60,7 +60,12 @@ class CCXTExchangeClient(BaseExchangeClient):
         """Initialize the CCXT exchange instance"""
         try:
             # Get exchange class
-            exchange_class = getattr(ccxt, self.exchange_id)
+            # Get exchange class (Map 'kucoin' to 'kucoinfutures' for proper API support)
+            effective_id = self.exchange_id
+            if effective_id == 'kucoin':
+                effective_id = 'kucoinfutures'
+            
+            exchange_class = getattr(ccxt, effective_id)
             
             # Base configuration
             exchange_config = {

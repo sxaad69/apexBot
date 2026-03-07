@@ -17,6 +17,7 @@ class TrailingStopLayer:
         self.db = sqlite_manager
         self.exchange = exchange_client
         self.engine = engine
+        self.mode = getattr(config, 'TRADING_MODE', 'paper').lower()
         
         # Configuration - Activation distance and trailing distance
         # e.g. Start trailing once we are 1% in profit, and trail by 0.5%
@@ -80,9 +81,11 @@ class TrailingStopLayer:
         symbol = trade['symbol']
         trade_id = trade['trade_id']
         try:
-            # 1. Fire Exchange API Call
-            if self.exchange:
+            # 1. Fire Exchange API Call (Only in LIVE mode)
+            if self.exchange and self.mode == 'live':
                 self.exchange.close_position(symbol)
+            else:
+                self.logger.debug(f"[Paper] Simulated Close for {symbol}")
                 
             # 2. Sync with Trading Engine (Phase 14)
             if self.engine:
@@ -95,7 +98,7 @@ class TrailingStopLayer:
                     if trade['entry_price'] > 0:
                         side_mult = 1 if trade['side'].lower() == 'buy' else -1
                         pnl_percent = (current_price - trade['entry_price']) / trade['entry_price'] * side_mult
-                        leveraged_pnl_percent = pnl_percent * trade.get('leverage', 1)
+                        leveraged_pnl_percent = pnl_percent * trade['leverage']
                     
                     pnl_amount = pos['size'] * leveraged_pnl_percent
                     
@@ -179,7 +182,7 @@ class TrailingStopLayer:
                     return None
                     
                 import json
-                meta = trade.get('metadata')
+                meta = trade['metadata']
                 meta_dict = json.loads(meta) if isinstance(meta, str) else (meta or {})
                 exchange_sl_id = meta_dict.get('exchange_sl_id')
                 
