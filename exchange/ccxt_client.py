@@ -78,21 +78,24 @@ class CCXTExchangeClient(BaseExchangeClient):
             
             # Set testnet/sandbox if configured
             if self.config.EXCHANGE_ENVIRONMENT == 'testnet':
-                if self.exchange_id != 'binance':
-                    exchange_config['sandbox'] = True  # Sandbox for others
+                exchange_config['sandbox'] = True  # Sandbox for others and Binance using standard CCXT init
             
             # Initialize exchange
             exchange = exchange_class(exchange_config)
             
-            # Binance explicit demo trading enable (requires ccxt >= 4.x)
-            # Falls back gracefully if the AWS ccxt version is older
+            # Binance explicit demo trading enable (handles different ccxt versions safely)
             if self.config.EXCHANGE_ENVIRONMENT == 'testnet' and self.exchange_id == 'binance':
                 try:
-                    exchange.enable_demo_trading(True)
-                    self.logger.info("Binance Demo Trading enabled via enable_demo_trading(True)")
+                    # Native general CCXT method
+                    exchange.set_sandbox_mode(True)
                 except AttributeError:
-                    # Older ccxt version - upgrade recommended
-                    self.logger.warning("ccxt too old for enable_demo_trading(). Run: pip install --upgrade ccxt")
+                    try:
+                        exchange.enable_demo_trading(True)
+                    except AttributeError:
+                        self.logger.warning("Could not set Binance sandbox mode dynamically. Ensure ccxt is up to date.")
+                
+                # Binance Testnet API keys are futures-only, fetching SPOT currencies crashes it
+                exchange.options['fetchCurrencies'] = False
             
             # Load markets
             exchange.load_markets()
