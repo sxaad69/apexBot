@@ -84,9 +84,15 @@ class CCXTExchangeClient(BaseExchangeClient):
             # Initialize exchange
             exchange = exchange_class(exchange_config)
             
-            # Binance explicit demo trading enable
+            # Binance explicit demo trading enable (requires ccxt >= 4.x)
+            # Falls back gracefully if the AWS ccxt version is older
             if self.config.EXCHANGE_ENVIRONMENT == 'testnet' and self.exchange_id == 'binance':
-                exchange.enable_demo_trading(True)
+                try:
+                    exchange.enable_demo_trading(True)
+                    self.logger.info("Binance Demo Trading enabled via enable_demo_trading(True)")
+                except AttributeError:
+                    # Older ccxt version - upgrade recommended
+                    self.logger.warning("ccxt too old for enable_demo_trading(). Run: pip install --upgrade ccxt")
             
             # Load markets
             exchange.load_markets()

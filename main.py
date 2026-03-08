@@ -5,6 +5,7 @@ Supports paper trading (simulation) and live trading
 """
 
 import sys
+import os
 import time
 import signal
 import argparse
@@ -1738,6 +1739,8 @@ class ApexHunterBot:
                     pairs = [p.strip() for p in pairs_config.split(',')]
                 else:
                     pairs = pairs_config
+
+
 
                 # Run cycle for each trading pair
                 for symbol in pairs:
