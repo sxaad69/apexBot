@@ -454,10 +454,24 @@ class PaperTradingEngine:
         
         # 1. Global Symbol Guard (Phase 14)
         # Prevent taking multiple positions on the same coin across different strategies
-        # This protects against over-exposure and "doubling down" on a single asset
+        # Checks BOTH in-memory positions AND SQLite OPEN trades (survives bot restarts)
         if any(p['symbol'] == symbol for p in self.positions.values()):
-            self.logger.info(f"[{strategy_name}] {symbol} SIGNAL SKIPPED - Global Symbol Guard active (already in trade)")
+            self.logger.info(f"[{strategy_name}] {symbol} SIGNAL SKIPPED - Global Symbol Guard active (in-memory)")
             return
+        
+        # Also check SQLite for live mode — prevents re-entry after restart
+        if self.mode == 'live' and hasattr(self.logger, 'db'):
+            try:
+                conn = self.logger.db._get_connection(self.logger.db.main_db)
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM trades WHERE symbol = ? AND status = 'OPEN'", (symbol,))
+                open_count = cursor.fetchone()[0]
+                conn.close()
+                if open_count > 0:
+                    self.logger.info(f"[{strategy_name}] {symbol} SIGNAL SKIPPED - Global Symbol Guard active (SQLite OPEN trade exists)")
+                    return
+            except Exception as guard_e:
+                self.logger.warning(f"[{strategy_name}] Symbol guard SQLite check failed: {guard_e}")
 
         position_key = f"{strategy_name}:{symbol}"
 
@@ -535,13 +549,14 @@ class PaperTradingEngine:
             current_capital = self.total_capital
             
             # Calculate total value of open positions (Margin + P&L)
+            # NOTE: Use 'pos_symbol' NOT 'symbol' to avoid overwriting the outer signal symbol!
             open_positions_value = 0
             for pos in self.positions.values():
-                symbol = pos['symbol']
-                current_price = self.current_prices.get(symbol, pos['entry_price'])
+                pos_symbol = pos['symbol']  # ← renamed to avoid clobbering outer `symbol`
+                current_price = self.current_prices.get(pos_symbol, pos['entry_price'])
                 
                 # Simple leveraged P&L calculation for paper mode
-                price_move = (current_price - pos['entry_price']) / pos['entry_price']
+                price_move = (current_price - pos['entry_price']) / pos['entry_price'] if pos['entry_price'] > 0 else 0
                 if pos['side'].lower() == 'sell':
                     price_move = -price_move
                 
@@ -594,10 +609,21 @@ class PaperTradingEngine:
                 order_metadata = {}
                 if self.mode == 'live' and self.exchange:
                     try:
-                        self.logger.info(f"🚀 LIVE ORDER: Placing {approved_params['side']} order for {symbol}...")
-                        # Calculate quantity for CCXT (Base Asset Amount)
-                        quantity = size / entry_price
+                        self.logger.info(f"🚀 LIVE ENTRY: Placing {approved_params['side']} order for {symbol}...")
                         
+                        # Calculate quantity for CCXT (Margin * Leverage / Price)
+                        quantity = (size * leverage) / entry_price
+                        
+                        # Format precision to fix "minimum amount precision" errors
+                        try:
+                            quantity = float(self.exchange.exchange.amount_to_precision(symbol, quantity))
+                        except Exception:
+                            pass
+                            
+                        if quantity <= 0:
+                            raise ValueError(f"Calculated target quantity ({quantity}) too small after formatting.")
+                            
+                        # 1. Place Market Entry Order
                         order = self.exchange.exchange.create_order(
                             symbol=symbol,
                             type='market',
@@ -606,10 +632,36 @@ class PaperTradingEngine:
                         )
                         order_metadata['exchange_order_id'] = order.get('id')
                         order_metadata['exchange_status'] = order.get('status')
-                        self.logger.info(f"✅ LIVE ORDER SUCCESS: {order.get('id')} | Status: {order.get('status')}")
+                        order_metadata['executed_qty'] = quantity
+                        self.logger.info(f"✅ LIVE ENTRY SUCCESS: {order.get('id')} ({quantity} {symbol})")
+                        
+                        # 2. Place Hard Stop Loss on Exchange instantaneously (Safely Wrapped)
+                        sl_side = 'sell' if approved_params['side'].lower() == 'buy' else 'buy'
+                        sl_price = approved_params['stop_loss']
+                        
+                        try:
+                            sl_price = float(self.exchange.exchange.price_to_precision(symbol, sl_price))
+                        except Exception:
+                            pass
+                            
+                        try:
+                            # We provide the quantity alongside reduceOnly for highest compatibility across exchanges
+                            sl_order = self.exchange.exchange.create_order(
+                                symbol=symbol,
+                                type='STOP_MARKET',
+                                side=sl_side,
+                                amount=quantity,
+                                price=None, # Trigger price goes in params
+                                params={'stopPrice': sl_price, 'reduceOnly': True}
+                            )
+                            order_metadata['exchange_sl_id'] = sl_order.get('id')
+                            self.logger.info(f"🛡️ LIVE SL SUCCESS: {sl_order.get('id')} at ${sl_price}")
+                        except Exception as sl_e:
+                            self.logger.warning(f"⚠️ HARDWARE SL PLACEMENT REJECTED: {sl_e}. Defaulting to software stop-loss loop!")
+                        
                     except Exception as e:
                         self.logger.error(f"❌ LIVE ENTRY FAILED: {e}", exc_info=True)
-                        # CRITICAL: If the real exchange order fails, we MUST NOT book it locally.
+                        # CRITICAL: If the real exchange ENTRY order fails, we MUST NOT book it locally.
                         return
 
                 # Calculate entry fee
@@ -1816,13 +1868,19 @@ def main():
     
     # Verify mode
     if args.mode == 'live':
-        print("\n⚠️  WARNING: LIVE TRADING MODE!")
-        print("   Real money will be at risk!")
-        print()
-        confirm = input("Are you sure? Type 'YES' to continue: ")
-        if confirm != 'YES':
-            print("Aborted.")
-            sys.exit(0)
+        # Allow headless AWS/Docker deployments to bypass the prompt via env var
+        # Set APEX_CONFIRM_LIVE=YES in systemd EnvironmentFile or Docker env
+        auto_confirm = os.environ.get('APEX_CONFIRM_LIVE', '').strip().upper()
+        if auto_confirm == 'YES':
+            print("\n✅ LIVE TRADING MODE - Auto-confirmed via APEX_CONFIRM_LIVE env var (headless mode)")
+        else:
+            print("\n⚠️  WARNING: LIVE TRADING MODE!")
+            print("   Real money will be at risk!")
+            print()
+            confirm = input("Are you sure? Type 'YES' to continue: ")
+            if confirm != 'YES':
+                print("Aborted.")
+                sys.exit(0)
     
     # Create and run bot
     bot = ApexHunterBot(mode=args.mode)

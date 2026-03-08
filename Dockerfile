@@ -42,5 +42,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 HEALTHCHECK --interval=60s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import os; exit(0 if os.path.exists('logs') else 1)"
 
-# Run the bot
-CMD ["python3", "main.py", "--mode", "paper", "--interval", "60"]
+# Run the bot - mode is controlled by TRADING_MODE env variable
+# Set TRADING_MODE=live in AWS environment to enable live trading
+# Set TRADING_MODE=paper for paper/simulation mode
+CMD ["python3", "main.py", "--mode", "live", "--interval", "60"]

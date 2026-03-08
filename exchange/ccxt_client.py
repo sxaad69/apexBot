@@ -78,10 +78,15 @@ class CCXTExchangeClient(BaseExchangeClient):
             
             # Set testnet/sandbox if configured
             if self.config.EXCHANGE_ENVIRONMENT == 'testnet':
-                exchange_config['sandbox'] = True
+                if self.exchange_id != 'binance':
+                    exchange_config['sandbox'] = True  # Sandbox for others
             
             # Initialize exchange
             exchange = exchange_class(exchange_config)
+            
+            # Binance explicit demo trading enable
+            if self.config.EXCHANGE_ENVIRONMENT == 'testnet' and self.exchange_id == 'binance':
+                exchange.enable_demo_trading(True)
             
             # Load markets
             exchange.load_markets()
@@ -212,6 +217,13 @@ class CCXTExchangeClient(BaseExchangeClient):
             
             # Close with market order
             result = self.place_order(symbol, side, 'market', amount, reduceOnly=True)
+            
+            # Clean up any lingering Stop Loss / Take profit orders (Important!)
+            try:
+                self.exchange.cancel_all_orders(symbol)
+                self.logger.info(f"Cleared lingering physical orders for {symbol}")
+            except Exception as clean_e:
+                self.logger.warning(f"Failed to clean up orders after closing {symbol}: {clean_e}")
             
             self.logger.info(f"Closed position for {symbol}")
             return result

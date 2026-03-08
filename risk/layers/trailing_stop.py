@@ -146,17 +146,31 @@ class TrailingStopLayer:
             new_stop = highest_price * (1 - (self.TRAIL_DISTANCE_PCT / 100.0))
             # Ratchet only (never move stop down)
             if current_stop is None or new_stop > current_stop:
-                self._move_stop_loss_on_exchange(trade, new_stop)
-                cursor.execute("UPDATE trades SET highest_price = ?, trailing_stop_price = ?, stop_loss = ? WHERE trade_id = ?", 
-                               (highest_price, new_stop, new_stop, trade_id))
+                new_sl_id = self._move_stop_loss_on_exchange(trade, new_stop)
+                
+                import json
+                meta = trade['metadata']
+                meta_dict = json.loads(meta) if isinstance(meta, str) else (meta or {})
+                if new_sl_id and new_sl_id != "error":
+                    meta_dict['exchange_sl_id'] = new_sl_id
+                    
+                cursor.execute("UPDATE trades SET highest_price = ?, trailing_stop_price = ?, stop_loss = ?, metadata = ? WHERE trade_id = ?", 
+                               (highest_price, new_stop, new_stop, json.dumps(meta_dict), trade_id))
                 self.logger.system(f"Trailing Stop RATCHETED to {new_stop:.4f} for {symbol} (Profit: {profit_pct:.2f}%)")
         else:
             new_stop = highest_price * (1 + (self.TRAIL_DISTANCE_PCT / 100.0))
             # Ratchet only (never move stop up for Shorts)
             if current_stop is None or new_stop < current_stop:
-                self._move_stop_loss_on_exchange(trade, new_stop)
-                cursor.execute("UPDATE trades SET highest_price = ?, trailing_stop_price = ?, stop_loss = ? WHERE trade_id = ?", 
-                               (highest_price, new_stop, new_stop, trade_id))
+                new_sl_id = self._move_stop_loss_on_exchange(trade, new_stop)
+                
+                import json
+                meta = trade['metadata']
+                meta_dict = json.loads(meta) if isinstance(meta, str) else (meta or {})
+                if new_sl_id and new_sl_id != "error":
+                    meta_dict['exchange_sl_id'] = new_sl_id
+                    
+                cursor.execute("UPDATE trades SET highest_price = ?, trailing_stop_price = ?, stop_loss = ?, metadata = ? WHERE trade_id = ?", 
+                               (highest_price, new_stop, new_stop, json.dumps(meta_dict), trade_id))
                 self.logger.system(f"Trailing Stop RATCHETED to {new_stop:.4f} for {symbol} (Profit: {profit_pct:.2f}%)")
 
     def _move_stop_loss_on_exchange(self, trade, new_stop_price):
@@ -195,18 +209,40 @@ class TrailingStopLayer:
                 
                 # 3. Create New Stop Market Order
                 stop_side = 'sell' if side == 'buy' else 'buy'
-                # Position sizing might need to be drawn from exchange active position later, using 'close' amount logic
-                # For now using stop market standard implementation via CCXT params
+                
+                # Fetch original size
+                size_qty = meta_dict.get('executed_qty', None)
+                if not size_qty:
+                    # Fallback approximation just in case
+                    if trade.get('entry_price', 0) > 0:
+                        size_qty = trade['size'] / trade['entry_price'] * trade.get('leverage', 1)
+                    else:
+                        size_qty = 0
+                    
+                # Format precision cleanly to prevent InvalidOrder limits from Exchange checks natively
+                try:
+                    new_stop_price = float(self.exchange.exchange.price_to_precision(symbol, new_stop_price))
+                    # Fallback formatting size if purely an approximation
+                    size_qty = float(self.exchange.exchange.amount_to_precision(symbol, size_qty))
+                except Exception:
+                    pass
+                
                 params = {'stopPrice': new_stop_price, 'reduceOnly': True}
                 
-                # We do not pass an exact amount as reduceOnly usually handles closing the entire active size
-                new_order = self.exchange.place_order(symbol, stop_side, 'market', amount=0, price=None, **params)
+                new_order = self.exchange.exchange.create_order(
+                    symbol=symbol,
+                    type='STOP_MARKET',
+                    side=stop_side,
+                    amount=size_qty,
+                    price=None,
+                    params=params
+                )
                 
                 if new_order and 'id' in new_order:
-                    self.logger.debug(f"[Live] Updated Exchange Stop Loss for {symbol} to {new_stop_price:.4f} (ID: {new_order['id']})")
+                    self.logger.debug(f"[Live] Updated Exchange Stop Loss for {symbol} to {new_stop_price} (ID: {new_order['id']})")
                     return new_order['id']
                 return None
                 
         except Exception as e:
             self.logger.error(f"Failed to move physical exchange stop for {symbol}: {e}", exc_info=True)
-            return None
+            return "error"
