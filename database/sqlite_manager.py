@@ -53,7 +53,9 @@ class SQLiteManager:
                 stop_loss REAL,
                 take_profit REAL,
                 highest_price REAL,
+                lowest_price REAL,
                 trailing_stop_price REAL,
+                trailing_stop_active INTEGER DEFAULT 0,
                 capital_at_entry REAL,
                 capital_at_exit REAL,
                 reason TEXT,
@@ -83,6 +85,14 @@ class SQLiteManager:
             if 'capital_at_exit' not in columns:
                 print("🔧 Migrating database: Adding 'capital_at_exit' column...")
                 cursor.execute("ALTER TABLE trades ADD COLUMN capital_at_exit REAL")
+            
+            if 'lowest_price' not in columns:
+                print("🔧 Migrating database: Adding 'lowest_price' column...")
+                cursor.execute("ALTER TABLE trades ADD COLUMN lowest_price REAL")
+            
+            if 'trailing_stop_active' not in columns:
+                print("🔧 Migrating database: Adding 'trailing_stop_active' column...")
+                cursor.execute("ALTER TABLE trades ADD COLUMN trailing_stop_active INTEGER DEFAULT 0")
             
             conn.commit()
         except Exception as e:
@@ -242,6 +252,24 @@ class SQLiteManager:
             print(f"❌ SQLite set_setting error: {e}")
             return False
 
+    def get_trades(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Fetch trades from the database, optionally filtered by status"""
+        try:
+            conn = self._get_connection(self.main_db)
+            cursor = conn.cursor()
+            query = "SELECT * FROM trades"
+            params = []
+            if status:
+                query += " WHERE status = ?"
+                params.append(status)
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            conn.close()
+            return [dict(row) for row in rows]
+        except Exception as e:
+            print(f"❌ SQLite get_trades error: {e}")
+            return []
+
     def open_trade(self, trade_data: Dict[str, Any]) -> bool:
         """Create a new 'OPEN' trade entry in main DB"""
         try:
@@ -251,8 +279,9 @@ class SQLiteManager:
                 INSERT INTO trades (
                     trade_id, symbol, market_type, strategy, side, leverage, size,
                     entry_price, entry_time, stop_loss, take_profit, 
+                    highest_price, lowest_price,
                     capital_at_entry, status, metadata
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)
             ''', (
                 trade_data.get('trade_id'),
                 trade_data.get('symbol'),
@@ -265,6 +294,8 @@ class SQLiteManager:
                 trade_data.get('timestamp', datetime.utcnow().isoformat()),
                 trade_data.get('stop_loss'),
                 trade_data.get('take_profit'),
+                trade_data.get('entry_price'), # highest_price
+                trade_data.get('entry_price'), # lowest_price
                 trade_data.get('capital_at_entry'),
                 json.dumps(trade_data.get('metadata', {}))
             ))

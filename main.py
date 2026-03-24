@@ -22,6 +22,7 @@ from risk import RiskManager
 from core.spot_logger import SpotLogger
 from core.spot_trading_engine import SpotTradingEngine
 from risk.layers.trailing_stop import TrailingStopLayer
+from core.trade_manager import TradeManager
 
 
 class PaperTradingEngine:
@@ -39,15 +40,33 @@ class PaperTradingEngine:
         # Initialize exchange for market data
         self.exchange = CCXTExchangeClient(config, logger, config.FUTURES_EXCHANGE)
 
-        # Initialize risk manager (11 layers)
+        # Capital Initialization logic (Safety Integrity Fix: Sync balance BEFORE risk init)
+        if self.mode == 'live':
+            self.logger.info("Fetching REAL balance from exchange...")
+            try:
+                full_balance = self.exchange.get_balance()
+                # Unified access for USDT balance across major exchanges
+                self.total_capital = float(full_balance.get('USDT', {}).get('free', 0))
+                
+                if self.total_capital <= 0:
+                    self.logger.warning("Real USDT balance is 0 or could not be fetched. Falling back to virtual.")
+                    self.total_capital = getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
+                else:
+                    self.logger.info(f"💰 LIVE BALANCE SYNCED: ${self.total_capital:.2f} USDT")
+            except Exception as e:
+                self.logger.error(f"Failed to fetch real balance: {e}")
+                self.total_capital = getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
+        else:
+            self.total_capital = getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
+
+        # Initialize Trade Manager (Centralized Entry/Exit Handler)
+        self.trade_manager = TradeManager(self.config, self.logger.db, self.exchange, self.logger)
+
+        # IMPORTANT: Update the config's primary Initial Capital for risk layers
+        self.config.INITIAL_CAPITAL = self.total_capital
+
+        # Initialize risk manager (11 layers) - Now accurately aware of capital
         self.risk_manager = RiskManager(config, logger, db_manager=logger.db if hasattr(logger, 'db') else None)
-
-        # Cache for top pairs
-        self.top_pairs_cache = []
-        self.last_pairs_update = None
-
-        # Peak balance tracking for drawdown
-        self.peak_balance = {}
 
         # Initialize strategies
         self.strategies = []
@@ -82,25 +101,11 @@ class PaperTradingEngine:
         # Virtual positions (key: "strategy_name:symbol" -> position_data)
         self.positions = {}
 
-        # Capital Initialization logic (Shared Pool)
-        if self.mode == 'live':
-            self.logger.info("Fetching REAL balance from exchange...")
-            try:
-                full_balance = self.exchange.get_balance()
-                # Unified access for USDT balance across major exchanges
-                self.total_capital = float(full_balance.get('USDT', {}).get('free', 0))
-                
-                if self.total_capital <= 0:
-                    self.logger.warning("Real USDT balance is 0 or could not be fetched. Falling back to virtual.")
-                    self.total_capital = getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
-                else:
-                    self.logger.info(f"💰 LIVE BALANCE SYNCED: ${self.total_capital:.2f} USDT")
-            except Exception as e:
-                self.logger.error(f"Failed to fetch real balance: {e}")
-                self.total_capital = getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
-        else:
-            self.total_capital = getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
+        # Cache for top pairs
+        self.top_pairs_cache = []
+        self.last_pairs_update = None
 
+        # Peak balance tracking for drawdown
         self.peak_balance = self.total_capital
 
 
@@ -191,6 +196,14 @@ class PaperTradingEngine:
                     # Filter for linear futures (USDT settled)
                     is_futures = market_info.get('future', False) or market_info.get('swap', False)
                     if not is_futures:
+                        continue
+                        
+                    # --- FIX: Filter out inactive/non-trading symbols ---
+                    if not market_info.get('active', True):
+                        continue
+                        
+                    # Binance-specific status check
+                    if market_info.get('info', {}).get('status') and market_info['info']['status'] != 'TRADING':
                         continue
 
                 # Skip specific non-trading symbols if necessary
@@ -624,6 +637,22 @@ class PaperTradingEngine:
                         if quantity <= 0:
                             raise ValueError(f"Calculated target quantity ({quantity}) too small after formatting.")
                             
+                        # --- FIX: Check against exchange max quantity limits ---
+                        if symbol in self.exchange.exchange.markets:
+                            limits = self.exchange.exchange.markets[symbol].get('limits', {})
+                            max_qty = limits.get('amount', {}).get('max')
+                            if max_qty and quantity > max_qty:
+                                self.logger.warning(f"⚠️ Quantity {quantity} exceeds max {max_qty} for {symbol}. Capping.")
+                                quantity = max_qty
+                            
+                        # 0. Set Leverage on Exchange (CRITICAL SYNC)
+                        try:
+                            # Standardize leverage to int as required by some CCXT implementations
+                            self.exchange.exchange.set_leverage(int(leverage), symbol)
+                            self.logger.info(f"⚙️ Leverage set to {int(leverage)}x for {symbol} on exchange.")
+                        except Exception as lev_e:
+                            self.logger.warning(f"⚠️ Failed to set leverage for {symbol}: {lev_e}")
+
                         # 1. Place Market Entry Order
                         order = self.exchange.exchange.create_order(
                             symbol=symbol,
@@ -631,10 +660,25 @@ class PaperTradingEngine:
                             side=approved_params['side'].lower(),
                             amount=quantity
                         )
-                        order_metadata['exchange_order_id'] = order.get('id')
-                        order_metadata['exchange_status'] = order.get('status')
-                        order_metadata['executed_qty'] = quantity
-                        self.logger.info(f"✅ LIVE ENTRY SUCCESS: {order.get('id')} ({quantity} {symbol})")
+                        
+                        # --- [PHASE 15.1: ENTRY GROUNDING via TradeManager] ---
+                        position = self.trade_manager.record_entry(
+                            symbol=symbol,
+                            strategy_name=strategy_name,
+                            side=approved_params['side'],
+                            size=size,
+                            leverage=leverage,
+                            stop_loss=approved_params['stop_loss'],
+                            take_profit=approved_params['take_profit'],
+                            order_response=order,
+                            planned_price=entry_price
+                        )
+                        
+                        # Use grounded info for SL placement if filled
+                        if order and order.get('average'):
+                            entry_price = float(order['average'])
+                        
+                        self.logger.info(f"✅ LIVE ENTRY SUCCESS: {order.get('id')} ({quantity} {symbol}) at {entry_price}")
                         
                         # 2. Place Hard Stop Loss on Exchange instantaneously (Safely Wrapped)
                         sl_side = 'sell' if approved_params['side'].lower() == 'buy' else 'buy'
@@ -655,54 +699,37 @@ class PaperTradingEngine:
                                 price=None, # Trigger price goes in params
                                 params={'stopPrice': sl_price, 'reduceOnly': True}
                             )
-                            order_metadata['exchange_sl_id'] = sl_order.get('id')
-                            self.logger.info(f"🛡️ LIVE SL SUCCESS: {sl_order.get('id')} at ${sl_price}")
+                            self.logger.info(f"🛡️ HARD STOP PLACED: {sl_side.upper()} {symbol} @ {sl_price}")
                         except Exception as sl_e:
-                            self.logger.warning(f"⚠️ HARDWARE SL PLACEMENT REJECTED: {sl_e}. Defaulting to software stop-loss loop!")
-                        
+                            self.logger.warning(f"⚠️ Failed to place hard Stop Loss on exchange: {sl_e}. Bot safety logic still active.")
+                            
                     except Exception as e:
-                        self.logger.error(f"❌ LIVE ENTRY FAILED: {e}", exc_info=True)
-                        # CRITICAL: If the real exchange ENTRY order fails, we MUST NOT book it locally.
+                        self.logger.error(f"🚨 LIVE ENTRY ATTEMPT FAILED for {symbol}: {e}")
                         return
 
-                # Calculate entry fee
+                # --- UNIFIED POSITION TRACKING ---
+                if self.mode == 'paper':
+                    # Record entry via TradeManager (handles DB persistence)
+                    position = self.trade_manager.record_entry(
+                        symbol=symbol,
+                        strategy_name=strategy_name,
+                        side=approved_params['side'],
+                        size=size,
+                        leverage=leverage,
+                        stop_loss=approved_params['stop_loss'],
+                        take_profit=approved_params['take_profit'],
+                        planned_price=entry_price
+                    )
+                
+                # Update Capital accounting
                 fee_percent = getattr(self.config, 'FUTURES_FEE_PERCENT', 0.04) / 100
                 entry_fee = size * fee_percent
-                
-                # Deduct from shared pool
                 self.total_capital -= (size + entry_fee)
-                
-                # Persist total_capital if in paper mode
-                if self.mode == 'paper' and hasattr(self.logger, 'db'):
-                    self.logger.db.set_setting('paper_total_capital', self.total_capital)
-                
-                trade_id = f"FUT-{uuid.uuid4().hex[:8].upper()}"
-                
-                position = {
-                    'trade_id': trade_id,
-                    'entry_time': datetime.now(),
-                    'entry_price': entry_price,
-                    'side': approved_params['side'],
-                    'stop_loss': approved_params['stop_loss'],
-                    'take_profit': approved_params['take_profit'],
-                    'size': size,
-                    'entry_fee': entry_fee,
-                    'leverage': approved_params['leverage'],
-                    'strategy': strategy_name,
-                    'symbol': symbol,
-                    # Trailing stop initialization
-                    'trailing_stop_active': False,
-                    'highest_price': entry_price,
-                    'lowest_price': entry_price,
-                    'trailing_activation_price': None,
-                    'original_stop_loss': approved_params['stop_loss'],
-                    'metadata': order_metadata  # Store exchange order IDs etc.
-                }
 
                 self.positions[position_key] = position
                 
                 self.logger.info(f"[{strategy_name}] {symbol} BALANCE DEDUCTED: ${size + entry_fee:.2f} (Entry: ${size:.2f} + Fee: ${entry_fee:.2f})")
-                self.logger.info(f"[{strategy_name}] {symbol} ENTRY {signal['side'].upper()} @ ${signal['entry_price']:.2f} (Leverage: {leverage}x) ✅ Risk Approved")
+                self.logger.info(f"[{strategy_name}] {symbol} ENTRY {signal['side'].upper()} @ ${position['entry_price']:.2f} (Leverage: {leverage}x) ✅ Risk Approved")
 
                 # MongoDB structured logging
                 self.logger.trade_entry(
@@ -762,10 +789,11 @@ class PaperTradingEngine:
                 leverage = position.get('leverage', 1)
 
                 # --- LIVE EXECUTION (Phase 14) ---
+                close_order = None
                 if self.mode == 'live':
                     try:
                         self.logger.system(f"🚀 [LIVE] Executing Market Close for {symbol} ({reason})")
-                        self.exchange.close_position(symbol)
+                        close_order = self.exchange.close_position(symbol)
                     except Exception as e:
                         self.logger.error(f"🚨 LIVE EXIT FAILED for {symbol}: {e}")
                         # Mark as PENDING_EXIT in SQLite for infinite retry
@@ -779,64 +807,35 @@ class PaperTradingEngine:
                         self.positions[position_key] = position
                         continue # Skip capital updates until successfully closed
 
-                # Calculate P&L (price movement percentage)
-                if position['side'] == 'buy':
-                    pnl_percent = (current_price - position['entry_price']) / position['entry_price']
-                else:
-                    pnl_percent = (position['entry_price'] - current_price) / position['entry_price']
+                # --- UNIFIED EXIT FINALIZATION via TradeManager ---
+                exit_result = self.trade_manager.record_exit(
+                    symbol=symbol,
+                    trade_id=position['trade_id'],
+                    reason=reason,
+                    current_price=current_price,
+                    order_response=close_order
+                )
 
-                # Apply leverage to P&L
-                leveraged_pnl_percent = pnl_percent * leverage
-                gross_pnl_amount = position['size'] * leveraged_pnl_percent
+                if exit_result:
+                    # Update Memory State & Capital
+                    self.total_capital += exit_result['capital_return']
+                    self.logger.info(f"💰 CAPITAL RECOVERED: ${exit_result['capital_return']:.2f} (including Sync P&L)")
+
+                    # Record result with risk manager
+                    is_win = exit_result['net_pnl'] > 0
+                    self.risk_manager.record_trade_result(is_win, exit_result['net_pnl'])
+
+                    # Update peak balance and drawdown tracking
+                    if self.total_capital > self.peak_balance:
+                        self.peak_balance = self.total_capital
+                        self.risk_manager.update_peak_balance(self.total_capital)
+                        if hasattr(self.logger, 'db'):
+                            self.logger.db.set_setting('peak_balance', self.total_capital)
                 
-                # Calculate exit fee
-                fee_percent = getattr(self.config, 'FUTURES_FEE_PERCENT', 0.04) / 100
-                exit_fee = position['size'] * (1 + pnl_percent) * fee_percent # Fee based on exit value
-                
-                # Net P&L after all fees (entry + exit)
-                total_fees = position.get('entry_fee', 0) + exit_fee
-                net_pnl_amount = gross_pnl_amount - exit_fee # subtract exit fee from pnl
-                
-                # Return margin and P&L to shared pool
-                self.total_capital += (position['size'] + net_pnl_amount)
-                
-                pnl_amount = net_pnl_amount # Use net for logging
-
-                # Update peak balance (for drawdown tracking)
-                if self.total_capital > self.peak_balance:
-                    self.peak_balance = self.total_capital
-                    self.risk_manager.update_peak_balance(self.total_capital)
-                    if hasattr(self.logger, 'db'):
-                        self.logger.db.set_setting('peak_balance', self.total_capital)
-                
-                # Persist total_capital if in paper mode
-                if self.mode == 'paper' and hasattr(self.logger, 'db'):
-                    self.logger.db.set_setting('paper_total_capital', self.total_capital)
-
-                # Record trade result with risk manager
-                is_win = pnl_amount > 0
-                self.risk_manager.record_trade_result(is_win, pnl_amount)
-
-                # Record trade
-                trade = {
-                    'entry_time': position['entry_time'],
-                    'exit_time': datetime.now(),
-                    'strategy': strategy_name,
-                    'symbol': symbol,
-                    'side': position['side'],
-                    'entry_price': position['entry_price'],
-                    'exit_price': current_price,
-                    'leverage': leverage,
-                    'pnl': pnl_amount,
-                    'pnl_percent': leveraged_pnl_percent * 100,
-                    'reason': reason,
-                    'capital_after': self.total_capital
-                }
-
-                self.trades.append(trade)
-
-                self.logger.info(f"[{strategy_name}] {symbol} EXIT {reason.upper()} @ ${current_price:.2f}, "
-                               f"Leverage: {leverage}x, P&L: ${pnl_amount:+.2f} ({leveraged_pnl_percent*100:+.2f}%)")
+                # Remove from memory loop
+                closed_positions.append(position_key)
+                continue
+                # (Legacy code removed)
 
                 # MongoDB structured logging
                 self.logger.trade_exit(
@@ -1703,7 +1702,13 @@ class ApexHunterBot:
                         'take_profit': db_trade['take_profit'],
                         'strategy': db_trade['strategy'],
                         'size': db_trade['size'] if 'size' in db_trade.keys() else metadata.get('size', 0), 
-                        'status': db_trade['status']
+                        'status': db_trade['status'],
+                        # Trailing stop reconstruction
+                        'highest_price': db_trade['highest_price'] or db_trade['entry_price'],
+                        'lowest_price': db_trade['lowest_price'] or db_trade['entry_price'],
+                        'trailing_stop_active': bool(db_trade['trailing_stop_active']),
+                        'trailing_stop_price': db_trade['trailing_stop_price'],
+                        'original_stop_loss': db_trade['stop_loss']
                     }
                     
                     # Add back to active memory

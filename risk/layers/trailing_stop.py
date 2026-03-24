@@ -44,21 +44,21 @@ class TrailingStopLayer:
                     
                 current_price = live_tickers[symbol]
                 
-                # Update Highest Watermark
+                # Update Watermarks
                 highest_price = trade['highest_price'] or trade['entry_price']
-                is_new_high = False
+                lowest_price = trade['lowest_price'] or trade['entry_price']
+                is_new_peak = False
                 
                 if trade['side'] == 'buy' and current_price > highest_price:
                     highest_price = current_price
-                    is_new_high = True
-                elif trade['side'] == 'sell' and current_price < highest_price:
-                    # For shorts, the "highest" is actually the lowest price (max profit)
-                    highest_price = current_price
-                    is_new_high = True
+                    is_new_peak = True
+                elif trade['side'] == 'sell' and current_price < lowest_price:
+                    lowest_price = current_price
+                    is_new_peak = True
                 
                 # 1. Trailing Stop Ratchet Logic
-                if is_new_high:
-                    self._evaluate_and_update_stop(trade, highest_price, current_price, cursor)
+                if is_new_peak:
+                    self._evaluate_and_update_stop(trade, highest_price, lowest_price, current_price, cursor)
                     
                 # 2. Trigger Trailing Stop Exit Logic
                 current_stop = trade['trailing_stop_price'] or trade['stop_loss']
@@ -121,7 +121,7 @@ class TrailingStopLayer:
         except Exception as e:
             self.logger.error(f"🚨 Failed to close position {symbol} during Trailing Stop hit! {e}")
 
-    def _evaluate_and_update_stop(self, trade, highest_price, current_price, cursor):
+    def _evaluate_and_update_stop(self, trade, highest_price, lowest_price, current_price, cursor):
         """Calculates trailing distance and pushes API update if needed."""
         entry_price = trade['entry_price']
         side = trade['side']
@@ -132,18 +132,21 @@ class TrailingStopLayer:
         # Calculate max profit reached so far
         if side == 'buy':
             profit_pct = ((highest_price - entry_price) / entry_price) * 100
+            peak_price = highest_price
         else:
-            profit_pct = ((entry_price - highest_price) / entry_price) * 100
+            profit_pct = ((entry_price - lowest_price) / entry_price) * 100
+            peak_price = lowest_price
             
         # Has it reached Activation threshold?
         if profit_pct < self.ACTIVATION_PROFIT_PCT:
             # We must still simply update SQLite's watermark so we don't lose progress if AWS crashes
-            cursor.execute("UPDATE trades SET highest_price = ? WHERE trade_id = ?", (highest_price, trade_id))
+            cursor.execute("UPDATE trades SET highest_price = ?, lowest_price = ? WHERE trade_id = ?", 
+                           (highest_price, lowest_price, trade_id))
             return
             
         # Calculate new trailing stop floor
         if side == 'buy':
-            new_stop = highest_price * (1 - (self.TRAIL_DISTANCE_PCT / 100.0))
+            new_stop = peak_price * (1 - (self.TRAIL_DISTANCE_PCT / 100.0))
             # Ratchet only (never move stop down)
             if current_stop is None or new_stop > current_stop:
                 new_sl_id = self._move_stop_loss_on_exchange(trade, new_stop)
@@ -158,7 +161,7 @@ class TrailingStopLayer:
                                (highest_price, new_stop, new_stop, json.dumps(meta_dict), trade_id))
                 self.logger.system(f"Trailing Stop RATCHETED to {new_stop:.4f} for {symbol} (Profit: {profit_pct:.2f}%)")
         else:
-            new_stop = highest_price * (1 + (self.TRAIL_DISTANCE_PCT / 100.0))
+            new_stop = peak_price * (1 + (self.TRAIL_DISTANCE_PCT / 100.0))
             # Ratchet only (never move stop up for Shorts)
             if current_stop is None or new_stop < current_stop:
                 new_sl_id = self._move_stop_loss_on_exchange(trade, new_stop)
@@ -169,8 +172,8 @@ class TrailingStopLayer:
                 if new_sl_id and new_sl_id != "error":
                     meta_dict['exchange_sl_id'] = new_sl_id
                     
-                cursor.execute("UPDATE trades SET highest_price = ?, trailing_stop_price = ?, stop_loss = ?, metadata = ? WHERE trade_id = ?", 
-                               (highest_price, new_stop, new_stop, json.dumps(meta_dict), trade_id))
+                cursor.execute("UPDATE trades SET lowest_price = ?, trailing_stop_price = ?, stop_loss = ?, metadata = ? WHERE trade_id = ?", 
+                               (lowest_price, new_stop, new_stop, json.dumps(meta_dict), trade_id))
                 self.logger.system(f"Trailing Stop RATCHETED to {new_stop:.4f} for {symbol} (Profit: {profit_pct:.2f}%)")
 
     def _move_stop_loss_on_exchange(self, trade, new_stop_price):
@@ -191,12 +194,17 @@ class TrailingStopLayer:
                 return mock_order_id
             else:
                 # Live Trading Sync
-                # 1. We must parse metadata to get the active stop loss order ID
+                # Check if exchange-side stops are enabled (Default to False as requested)
+                if not getattr(self.config, 'ENABLE_EXCHANGE_STOPS', False):
+                    self.logger.debug(f"Exchange-side stops disabled. Using software loop for {symbol}.")
+                    return None
+
                 if not self.exchange:
                     return None
                     
                 import json
-                meta = trade['metadata']
+                trade_dict = dict(trade)
+                meta = trade_dict.get('metadata')
                 meta_dict = json.loads(meta) if isinstance(meta, str) else (meta or {})
                 exchange_sl_id = meta_dict.get('exchange_sl_id')
                 
@@ -214,8 +222,8 @@ class TrailingStopLayer:
                 size_qty = meta_dict.get('executed_qty', None)
                 if not size_qty:
                     # Fallback approximation just in case
-                    if trade.get('entry_price', 0) > 0:
-                        size_qty = trade['size'] / trade['entry_price'] * trade.get('leverage', 1)
+                    if trade_dict.get('entry_price', 0) > 0:
+                        size_qty = trade_dict['size'] / trade_dict['entry_price'] * trade_dict.get('leverage', 1)
                     else:
                         size_qty = 0
                     
