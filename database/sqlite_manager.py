@@ -59,7 +59,8 @@ class SQLiteManager:
                 capital_at_entry REAL,
                 capital_at_exit REAL,
                 reason TEXT,
-                metadata TEXT
+                metadata TEXT,
+                exchange_order_id TEXT
             )
         ''')
         
@@ -93,6 +94,10 @@ class SQLiteManager:
             if 'trailing_stop_active' not in columns:
                 print("🔧 Migrating database: Adding 'trailing_stop_active' column...")
                 cursor.execute("ALTER TABLE trades ADD COLUMN trailing_stop_active INTEGER DEFAULT 0")
+                
+            if 'exchange_order_id' not in columns:
+                print("🔧 Migrating database: Adding 'exchange_order_id' column...")
+                cursor.execute("ALTER TABLE trades ADD COLUMN exchange_order_id TEXT")
             
             conn.commit()
         except Exception as e:
@@ -270,18 +275,25 @@ class SQLiteManager:
             print(f"❌ SQLite get_trades error: {e}")
             return []
 
-    def open_trade(self, trade_data: Dict[str, Any]) -> bool:
+    def record_trade(self, trade_data: Dict[str, Any]) -> bool:
         """Create a new 'OPEN' trade entry in main DB"""
         try:
             conn = self._get_connection(self.main_db)
             cursor = conn.cursor()
+            
+            # Key alignment between TradeManager and SQLiteManager
+            entry_time = trade_data.get('entry_time') or trade_data.get('timestamp') or datetime.utcnow().isoformat()
+            metadata = trade_data.get('metadata', '{}')
+            if isinstance(metadata, dict):
+                metadata = json.dumps(metadata)
+
             cursor.execute('''
                 INSERT INTO trades (
                     trade_id, symbol, market_type, strategy, side, leverage, size,
                     entry_price, entry_time, stop_loss, take_profit, 
                     highest_price, lowest_price,
-                    capital_at_entry, status, metadata
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)
+                    capital_at_entry, status, metadata, exchange_order_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)
             ''', (
                 trade_data.get('trade_id'),
                 trade_data.get('symbol'),
@@ -291,19 +303,53 @@ class SQLiteManager:
                 trade_data.get('leverage', 1),
                 trade_data.get('size', 0.0),
                 trade_data.get('entry_price'),
-                trade_data.get('timestamp', datetime.utcnow().isoformat()),
+                entry_time,
                 trade_data.get('stop_loss'),
                 trade_data.get('take_profit'),
-                trade_data.get('entry_price'), # highest_price
-                trade_data.get('entry_price'), # lowest_price
-                trade_data.get('capital_at_entry'),
-                json.dumps(trade_data.get('metadata', {}))
+                trade_data.get('highest_price') or trade_data.get('entry_price'),
+                trade_data.get('lowest_price') or trade_data.get('entry_price'),
+                trade_data.get('capital_at_entry', 0.0),
+                metadata,
+                trade_data.get('exchange_order_id')
             ))
             conn.commit()
             conn.close()
             return True
         except Exception as e:
-            print(f"❌ SQLite open_trade error: {e}")
+            print(f"❌ SQLite record_trade error: {e}")
+            return False
+
+    def update_trade_metadata(self, trade_id: str, updates: Dict[str, Any]) -> bool:
+        """Update an existing trade with live parameters like SL/TP and metadata."""
+        try:
+            conn = self._get_connection(self.main_db)
+            cursor = conn.cursor()
+            
+            # Dynamically build the UPDATE query based on the updates dict mapping
+            set_clauses = []
+            values = []
+            
+            for key, val in updates.items():
+                if key == 'metadata':
+                    set_clauses.append("metadata = ?")
+                    values.append(json.dumps(val))
+                elif key in ['take_profit', 'stop_loss', 'highest_price', 'lowest_price', 'trailing_stop_price', 'exchange_order_id', 'size']:
+                    set_clauses.append(f"{key} = ?")
+                    values.append(val)
+                    
+            if not set_clauses:
+                return False
+                
+            query = f"UPDATE trades SET {', '.join(set_clauses)} WHERE trade_id = ?"
+            values.append(trade_id)
+            
+            cursor.execute(query, tuple(values))
+            success = cursor.rowcount > 0
+            conn.commit()
+            conn.close()
+            return success
+        except Exception as e:
+            print(f"❌ SQLite update_trade_metadata error: {e}")
             return False
 
     def close_trade(self, trade_id: str, exit_data: Dict[str, Any]) -> bool:

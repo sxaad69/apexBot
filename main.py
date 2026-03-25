@@ -46,7 +46,7 @@ class PaperTradingEngine:
             try:
                 full_balance = self.exchange.get_balance()
                 # Unified access for USDT balance across major exchanges
-                self.total_capital = float(full_balance.get('USDT', {}).get('free', 0))
+                self.total_capital = float(full_balance.get('USDT', {}).get('total', 0))
                 
                 if self.total_capital <= 0:
                     self.logger.warning("Real USDT balance is 0 or could not be fetched. Falling back to virtual.")
@@ -233,8 +233,26 @@ class PaperTradingEngine:
             # Sort by volume (descending)
             usdt_pairs.sort(key=lambda x: x['volume'], reverse=True)
 
-            # Get top N
+            # Get top N base list
             top_pairs = [p['symbol'] for p in usdt_pairs[:top_n]]
+
+            # --- PHASE 26: Inject Open Positions into Monitoring Cycle ---
+            try:
+                if hasattr(self.logger, 'db'):
+                    conn = self.logger.db._get_connection(self.logger.db.main_db)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT DISTINCT symbol FROM trades WHERE status IN ('OPEN', 'PENDING_EXIT')")
+                    must_monitor = [row['symbol'] for row in cursor.fetchall()]
+                    conn.close()
+                    
+                    if must_monitor:
+                        # Merge and deduplicate
+                        combined = list(set(top_pairs + must_monitor))
+                        # Keep original volume order for top N, then append newcomers
+                        top_pairs = combined
+                        self.logger.info(f"📍 Position-Aware Sync: Added {len(must_monitor)} active trade symbols to monitoring cycle.")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to inject open positions into monitoring: {e}")
 
             # Update cache
             self.top_pairs_cache = top_pairs
@@ -368,6 +386,7 @@ class PaperTradingEngine:
 
                 if position['trailing_tp_peak_price'] is None or current_price > position['trailing_tp_peak_price']:
                     position['trailing_tp_peak_price'] = current_price
+                    self._persist_tp_watermark(position['trade_id'], peak=current_price)  # Phase 31
 
                     if profit_percent >= tp_activation_threshold and not position['trailing_tp_active']:
                         position['trailing_tp_active'] = True
@@ -376,7 +395,8 @@ class PaperTradingEngine:
                         new_tp = current_price * (1 - tp_trailing_distance)
                         if new_tp > old_tp and new_tp > position['entry_price']:
                             position['take_profit'] = new_tp
-                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP ACTIVATED @ ${current_price:.2f} (Profit: {profit_percent*100:.1f}%) | TP: ${old_tp:.2f} → ${new_tp:.2f}")
+                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP ACTIVATED @ ${current_price:.5f} (Profit: {profit_percent*100:.2f}%) | TP: ${old_tp:.5f} → ${new_tp:.5f}")
+                            self._persist_tp_update(position['trade_id'], new_tp, current_price, "activation")
 
                     elif position['trailing_tp_active']:
                         new_tp = position['trailing_tp_peak_price'] * (1 - tp_trailing_distance)
@@ -384,6 +404,7 @@ class PaperTradingEngine:
                             old_tp = position['take_profit']
                             position['take_profit'] = new_tp
                             self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP UPDATED @ ${current_price:.2f} | TP: ${old_tp:.2f} → ${new_tp:.2f}")
+                            self._persist_tp_update(position['trade_id'], new_tp, current_price, "ratchet")
 
             else:  # sell position
                 profit_percent = (position['entry_price'] - current_price) / position['entry_price']
@@ -393,6 +414,7 @@ class PaperTradingEngine:
 
                 if position['trailing_tp_trough_price'] is None or current_price < position['trailing_tp_trough_price']:
                     position['trailing_tp_trough_price'] = current_price
+                    self._persist_tp_watermark(position['trade_id'], trough=current_price)  # Phase 31
 
                     if profit_percent >= tp_activation_threshold and not position['trailing_tp_active']:
                         position['trailing_tp_active'] = True
@@ -401,7 +423,8 @@ class PaperTradingEngine:
                         new_tp = current_price * (1 + tp_trailing_distance)
                         if new_tp < old_tp and new_tp < position['entry_price']:
                             position['take_profit'] = new_tp
-                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP ACTIVATED @ ${current_price:.2f} (Profit: {profit_percent*100:.1f}%) | TP: ${old_tp:.2f} → ${new_tp:.2f}")
+                            self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP ACTIVATED @ ${current_price:.5f} (Profit: {profit_percent*100:.2f}%) | TP: ${old_tp:.5f} → ${new_tp:.5f}")
+                            self._persist_tp_update(position['trade_id'], new_tp, current_price, "activation")
 
                     elif position['trailing_tp_active']:
                         new_tp = position['trailing_tp_trough_price'] * (1 + tp_trailing_distance)
@@ -409,6 +432,53 @@ class PaperTradingEngine:
                             old_tp = position['take_profit']
                             position['take_profit'] = new_tp
                             self.logger.info(f"[{strategy_name}] {symbol} TRAILING TP UPDATED @ ${current_price:.2f} | TP: ${old_tp:.2f} → ${new_tp:.2f}")
+                            self._persist_tp_update(position['trade_id'], new_tp, current_price, "ratchet")
+
+    def _persist_tp_update(self, trade_id: str, new_tp: float, current_price: float, event_type: str):
+        """Helper to sync trailing take-profit changes to the DB."""
+        try:
+            import json
+            from datetime import datetime
+            trades = self.db.get_trades(status='OPEN')
+            trade = next((t for t in trades if t['trade_id'] == trade_id), None)
+            if trade:
+                meta = json.loads(trade['metadata']) if trade['metadata'] else {}
+                meta['trailing_tp_history'] = meta.get('trailing_tp_history', []) + [{
+                    'price': new_tp, 
+                    'trigger_price': current_price, 
+                    'type': event_type,
+                    'time': datetime.utcnow().isoformat()
+                }]
+                self.trade_manager.update_trade_params(trade_id, {
+                    'take_profit': new_tp,
+                    'metadata': meta
+                })
+        except Exception as e:
+            self.logger.error(f"Failed to persist Trailing TP update: {e}")
+
+    def _persist_tp_watermark(self, trade_id: str, peak: float = None, trough: float = None):
+        """Phase 31: Persist trailing TP high-water/low-water marks to metadata for restart recovery."""
+        try:
+            import json
+            trades = self.db.get_trades(status='OPEN')
+            trade = next((t for t in trades if t['trade_id'] == trade_id), None)
+            if not trade:
+                return
+            meta = json.loads(trade['metadata']) if trade['metadata'] else {}
+            if peak is not None:
+                meta['trailing_tp_peak_price'] = peak
+            if trough is not None:
+                meta['trailing_tp_trough_price'] = trough
+            # Also persist the active flag from memory (look it up by trade_id)
+            for pos in self.positions.values():
+                if pos.get('trade_id') == trade_id:
+                    meta['trailing_tp_active'] = pos.get('trailing_tp_active', False)
+                    if pos.get('trailing_tp_activation_price'):
+                        meta['trailing_tp_activation_price'] = pos['trailing_tp_activation_price']
+                    break
+            self.trade_manager.update_trade_params(trade_id, {'metadata': meta})
+        except Exception as e:
+            self.logger.warning(f"Failed to persist TP watermark: {e}")
 
 
     def check_position_exit(self, position, current_price):
@@ -466,15 +536,16 @@ class PaperTradingEngine:
     def execute_paper_trade(self, signal, strategy_name, symbol):
         """Simulate trade execution with risk validation"""
         
-        # 1. Global Symbol Guard (Phase 14)
+        # 1. Triple-Check Global Symbol Guard (Phase 28)
         # Prevent taking multiple positions on the same coin across different strategies
-        # Checks BOTH in-memory positions AND SQLite OPEN trades (survives bot restarts)
+        
+        # A) In-memory check
         if any(p['symbol'] == symbol for p in self.positions.values()):
             self.logger.info(f"[{strategy_name}] {symbol} SIGNAL SKIPPED - Global Symbol Guard active (in-memory)")
             return
         
-        # Also check SQLite for live mode — prevents re-entry after restart
-        if self.mode == 'live' and hasattr(self.logger, 'db'):
+        # B) SQLite check (survives bot restarts)
+        if hasattr(self.logger, 'db'):
             try:
                 conn = self.logger.db._get_connection(self.logger.db.main_db)
                 cursor = conn.cursor()
@@ -487,10 +558,27 @@ class PaperTradingEngine:
             except Exception as guard_e:
                 self.logger.warning(f"[{strategy_name}] Symbol guard SQLite check failed: {guard_e}")
 
+        # C) Binance Live Check (Ultimate Source of Truth)
+        if self.mode == 'live' and self.exchange:
+            try:
+                positions = self.exchange.get_positions()
+                # Check for any non-zero position on this symbol
+                live_pos = next((p for p in positions if p['symbol'] == symbol), None)
+                if live_pos and abs(float(live_pos.get('contracts', 0) or 0)) > 0:
+                    self.logger.info(f"[{strategy_name}] {symbol} SIGNAL SKIPPED - Global Symbol Guard active (BINANCE position exists)")
+                    return
+            except Exception as bin_e:
+                self.logger.warning(f"[{strategy_name}] Binance guard check failed: {bin_e}")
+
         position_key = f"{strategy_name}:{symbol}"
 
         # Entry
         if signal and position_key not in self.positions:
+            # Phase 32: Set Margin Mode before entry
+            if self.mode == 'live' and self.exchange:
+                margin_mode = getattr(self.config, 'FUTURES_MARGIN_MODE', 'ISOLATED')
+                self.exchange.set_margin_mode(symbol, margin_mode)
+
             # --- Confidence-Based Position Sizing ---
             # Higher conviction signals deserve proportionally more capital
             confidence = signal.get('confidence', 0.5)
@@ -816,9 +904,9 @@ class PaperTradingEngine:
                     order_response=close_order
                 )
 
-                if exit_result:
+                if exit_result and exit_result.get('verified'):
                     # Update Memory State & Capital
-                    self.total_capital += exit_result['capital_return']
+                    self.total_capital += exit_result.get('capital_return', 0)
                     self.logger.info(f"💰 CAPITAL RECOVERED: ${exit_result['capital_return']:.2f} (including Sync P&L)")
 
                     # Record result with risk manager
@@ -937,11 +1025,22 @@ class PaperTradingEngine:
         # Save current active positions for dashboard with live prices
         self.logger.save_active_positions(self.positions, self.current_prices)
 
-        # Log status with more details
+        # Log status with high-precision price and per-position profit % (Phase 31)
         total_pnl = self.total_capital - getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
-        
-        self.logger.info(f"{symbol} | Price: ${current_price:.2f} | "
-                        f"Open: {len(self.positions)} | Total P&L: ${total_pnl:+.2f}")
+        symbol_positions = [p for p in self.positions.values() if p['symbol'] == symbol]
+        profit_parts = []
+        for p in symbol_positions:
+            entry = p['entry_price']
+            if entry and entry > 0:
+                if p['side'] == 'buy':
+                    pct = (current_price - entry) / entry * 100
+                else:
+                    pct = (entry - current_price) / entry * 100
+                trailing_tag = ' [TTP]' if p.get('trailing_tp_active') else ''
+                profit_parts.append(f"{p['strategy'].split(':')[0]}: {pct:+.2f}%{trailing_tag}")
+        profit_str = ' | '.join(profit_parts) if profit_parts else ''
+        self.logger.info(f"{symbol} | Price: ${current_price:.5f} | "
+                        f"{profit_str} | Open: {len(self.positions)} | Total P&L: ${total_pnl:+.2f}")
 
         # Debug: Log strategy analysis summary
         for strategy in self.strategies:
@@ -1113,29 +1212,8 @@ class PaperTradingEngine:
 
             current_date = now.strftime('%Y-%m-%d')
 
-            # Load market analysis data
-            market_data = self.logger.mongo_manager.load_market_analysis(current_date)
-            if market_data:
-                for hour in report_hours:
-                    if hour in market_data:
-                        hour_data = market_data[hour]
-                        trading_type = hour_data.get('trading_type', 'futures')
-
-                        if trading_type in report_data:
-                            report_data[trading_type]['total_analyses'] += hour_data.get('total_analyses', 0)
-
-            # Load hourly metrics data
-            metrics_data = self.logger.mongo_manager.load_hourly_metrics(current_date)
-            if metrics_data:
-                for hour in report_hours:
-                    if hour in metrics_data:
-                        hour_data = metrics_data[hour]
-                        trading_type = hour_data.get('trading_type', 'futures')
-
-                        if trading_type in report_data:
-                            report_data[trading_type]['signals_generated'] += hour_data.get('signals_generated', 0)
-                            report_data[trading_type]['total_rejections'] += hour_data.get('total_rejections', 0)
-                            report_data[trading_type]['trades_opened'] += hour_data.get('trades_executed', 0)
+            # Metrics generation from SQLite not yet implemented
+            pass
 
             # For arbitrage, we'd need to implement similar logic if arbitrage data is stored
             # For now, arbitrage reports will show 0
@@ -1196,8 +1274,7 @@ APEX HUNTER V14 🤖
             # Send to futures Telegram bot
             if self.telegram and hasattr(self.telegram, 'futures_bot') and self.telegram.futures_bot:
                 self.telegram.futures_bot.send_message(
-                    chat_id=self.config.TELEGRAM_FUTURES_CHAT_ID,
-                    text=report_message.strip(),
+                    message=report_message.strip(),
                     parse_mode='HTML'
                 )
                 self.logger.info("Futures hourly report sent to Telegram (from database)")
@@ -1230,8 +1307,7 @@ APEX HUNTER V14 🤖
             # Send to spot Telegram bot
             if self.telegram and hasattr(self.telegram, 'spot_bot') and self.telegram.spot_bot:
                 self.telegram.spot_bot.send_message(
-                    chat_id=self.config.TELEGRAM_SPOT_CHAT_ID,
-                    text=report_message.strip(),
+                    message=report_message.strip(),
                     parse_mode='HTML'
                 )
                 self.logger.info("Spot hourly report sent to Telegram (from database)")
@@ -1262,8 +1338,7 @@ APEX HUNTER V14 🤖
             # Send to arbitrage Telegram bot
             if self.telegram and hasattr(self.telegram, 'arbitrage_bot') and self.telegram.arbitrage_bot:
                 self.telegram.arbitrage_bot.send_message(
-                    chat_id=self.config.TELEGRAM_ARBITRAGE_CHAT_ID,
-                    text=report_message.strip(),
+                    message=report_message.strip(),
                     parse_mode='HTML'
                 )
                 self.logger.info("Arbitrage hourly report sent to Telegram (from database)")
@@ -1526,7 +1601,8 @@ class ApexHunterBot:
                 self.logger,
                 self.logger.db,
                 self.engine.exchange,
-                engine=self.engine
+                engine=self.engine,
+                trade_manager=self.engine.trade_manager
             )
         else:
             self.trailing_stop_engine = None
@@ -1701,14 +1777,19 @@ class ApexHunterBot:
                         'stop_loss': db_trade['stop_loss'],
                         'take_profit': db_trade['take_profit'],
                         'strategy': db_trade['strategy'],
-                        'size': db_trade['size'] if 'size' in db_trade.keys() else metadata.get('size', 0), 
+                        'size': db_trade['size'] if 'size' in db_trade.keys() else metadata.get('size', 0),
                         'status': db_trade['status'],
                         # Trailing stop reconstruction
                         'highest_price': db_trade['highest_price'] or db_trade['entry_price'],
                         'lowest_price': db_trade['lowest_price'] or db_trade['entry_price'],
                         'trailing_stop_active': bool(db_trade['trailing_stop_active']),
                         'trailing_stop_price': db_trade['trailing_stop_price'],
-                        'original_stop_loss': db_trade['stop_loss']
+                        'original_stop_loss': db_trade['stop_loss'],
+                        # Phase 31: Restore Trailing TP state from persisted metadata
+                        'trailing_tp_active': metadata.get('trailing_tp_active', False),
+                        'trailing_tp_peak_price': metadata.get('trailing_tp_peak_price', None),
+                        'trailing_tp_trough_price': metadata.get('trailing_tp_trough_price', None),
+                        'trailing_tp_activation_price': metadata.get('trailing_tp_activation_price', None),
                     }
                     
                     # Add back to active memory

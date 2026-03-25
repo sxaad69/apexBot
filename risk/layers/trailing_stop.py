@@ -11,12 +11,13 @@ class TrailingStopLayer:
     3. Issues cancellation/replacement API calls to lock in profit manually.
     """
     
-    def __init__(self, config, logger, sqlite_manager, exchange_client, engine=None):
+    def __init__(self, config, logger, sqlite_manager, exchange_client, engine=None, trade_manager=None):
         self.config = config
         self.logger = logger
         self.db = sqlite_manager
         self.exchange = exchange_client
         self.engine = engine
+        self.trade_manager = trade_manager
         self.mode = getattr(config, 'TRADING_MODE', 'paper').lower()
         
         # Configuration - Activation distance and trailing distance
@@ -38,37 +39,49 @@ class TrailingStopLayer:
             open_trades = cursor.fetchall()
             
             for trade in open_trades:
-                symbol = trade['symbol']
-                if symbol not in live_tickers:
-                    continue
+                # --- FIX: Isolate each trade in its own try/except so one bad record
+                # --- never prevents SL checks from running on subsequent trades.
+                try:
+                    symbol = trade['symbol']
+                    if symbol not in live_tickers:
+                        continue
+
+                    # --- FIX: Guard against malformed records with entry_price = 0
+                    entry_price = trade['entry_price']
+                    if not entry_price or entry_price == 0:
+                        self.logger.warning(f"⚠️ Skipping {symbol} (trade {trade['trade_id'][:8]}) — entry_price is 0/None. Possible zombie record.")
+                        continue
+                        
+                    current_price = live_tickers[symbol]
                     
-                current_price = live_tickers[symbol]
-                
-                # Update Watermarks
-                highest_price = trade['highest_price'] or trade['entry_price']
-                lowest_price = trade['lowest_price'] or trade['entry_price']
-                is_new_peak = False
-                
-                if trade['side'] == 'buy' and current_price > highest_price:
-                    highest_price = current_price
-                    is_new_peak = True
-                elif trade['side'] == 'sell' and current_price < lowest_price:
-                    lowest_price = current_price
-                    is_new_peak = True
-                
-                # 1. Trailing Stop Ratchet Logic
-                if is_new_peak:
-                    self._evaluate_and_update_stop(trade, highest_price, lowest_price, current_price, cursor)
+                    # Update Watermarks
+                    highest_price = trade['highest_price'] or entry_price
+                    lowest_price = trade['lowest_price'] or entry_price
+                    is_new_peak = False
                     
-                # 2. Trigger Trailing Stop Exit Logic
-                current_stop = trade['trailing_stop_price'] or trade['stop_loss']
-                if current_stop:
-                    if trade['side'] == 'buy' and current_price <= current_stop:
-                        self.logger.system(f"🚨 Trailing Stop HIT for {symbol} (Long). Executing Market Close.")
-                        self._trigger_close_position(trade, current_price, cursor)
-                    elif trade['side'] == 'sell' and current_price >= current_stop:
-                        self.logger.system(f"🚨 Trailing Stop HIT for {symbol} (Short). Executing Market Close.")
-                        self._trigger_close_position(trade, current_price, cursor)
+                    if trade['side'] == 'buy' and current_price > highest_price:
+                        highest_price = current_price
+                        is_new_peak = True
+                    elif trade['side'] == 'sell' and current_price < lowest_price:
+                        lowest_price = current_price
+                        is_new_peak = True
+                    
+                    # 1. Trailing Stop Ratchet Logic
+                    if is_new_peak:
+                        self._evaluate_and_update_stop(trade, highest_price, lowest_price, current_price, cursor)
+                        
+                    # 2. Trigger Trailing Stop Exit Logic
+                    current_stop = trade['trailing_stop_price'] or trade['stop_loss']
+                    if current_stop:
+                        if trade['side'] == 'buy' and current_price <= current_stop:
+                            self.logger.system(f"🚨 Trailing Stop HIT for {symbol} (Long). Executing Market Close.")
+                            self._trigger_close_position(trade, current_price, cursor)
+                        elif trade['side'] == 'sell' and current_price >= current_stop:
+                            self.logger.system(f"🚨 Trailing Stop HIT for {symbol} (Short). Executing Market Close.")
+                            self._trigger_close_position(trade, current_price, cursor)
+
+                except Exception as trade_err:
+                    self.logger.error(f"🚨 Error evaluating SL for {trade.get('symbol', '?')}: {trade_err}")
                     
             conn.commit()
             conn.close()
@@ -82,41 +95,34 @@ class TrailingStopLayer:
         trade_id = trade['trade_id']
         try:
             # 1. Fire Exchange API Call (Only in LIVE mode)
+            close_order = None
             if self.exchange and self.mode == 'live':
-                self.exchange.close_position(symbol)
+                close_order = self.exchange.close_position(symbol)
             else:
                 self.logger.debug(f"[Paper] Simulated Close for {symbol}")
                 
-            # 2. Sync with Trading Engine (Phase 14)
-            if self.engine:
-                position_key = f"{trade['strategy']}:{symbol}"
-                if position_key in self.engine.positions:
-                    pos = self.engine.positions[position_key]
-                    
-                    # Calculate P&L for capital tracking
-                    leveraged_pnl_percent = 0
-                    if trade['entry_price'] > 0:
-                        side_mult = 1 if trade['side'].lower() == 'buy' else -1
-                        pnl_percent = (current_price - trade['entry_price']) / trade['entry_price'] * side_mult
-                        leveraged_pnl_percent = pnl_percent * trade['leverage']
-                    
-                    pnl_amount = pos['size'] * leveraged_pnl_percent
-                    
-                    # Return capital to shared pool
-                    self.engine.total_capital += (pos['size'] + pnl_amount)
-                    
-                    # Persist total_capital if in paper mode
-                    if getattr(self.config, 'MODE', 'paper') == 'paper':
-                        self.db.set_setting('paper_total_capital', self.engine.total_capital)
-                    
-                    # Remove from in-memory positions
-                    del self.engine.positions[position_key]
-                    self.logger.info(f"💾 Trailing Stop SYNC: Removed {position_key} from engine memory.")
-
-            # 3. Update SQLite State
-            exit_time = __import__('datetime').datetime.utcnow().isoformat()
-            cursor.execute("UPDATE trades SET status = 'CLOSED', exit_price = ?, exit_time = ?, reason = 'trailing_stop' WHERE trade_id = ?",
-                           (current_price, exit_time, trade_id))
+            # 2. UNIFIED EXIT FINALIZATION via TradeManager (with Zero-Position Verification)
+            if self.trade_manager:
+                exit_result = self.trade_manager.record_exit(
+                    symbol=symbol,
+                    trade_id=trade_id,
+                    reason='trailing_stop',
+                    current_price=current_price,
+                    order_response=close_order
+                )
+                
+                # 3. If verified closed, update memory engine capital
+                if exit_result and exit_result.get('verified') and self.engine:
+                    position_key = f"{trade['strategy']}:{symbol}"
+                    if position_key in self.engine.positions:
+                        self.engine.total_capital += exit_result.get('capital_return', 0)
+                        del self.engine.positions[position_key]
+                        self.logger.info(f"💰 CAPITAL RECOVERED: ${exit_result['capital_return']:.2f}")
+            else:
+                # Fallback for paper mode without trade_manager (not recommended)
+                exit_time = __import__('datetime').datetime.utcnow().isoformat()
+                cursor.execute("UPDATE trades SET status = 'CLOSED', exit_price = ?, exit_time = ?, reason = 'trailing_stop' WHERE trade_id = ?",
+                               (current_price, exit_time, trade_id))
             
         except Exception as e:
             self.logger.error(f"🚨 Failed to close position {symbol} during Trailing Stop hit! {e}")
@@ -128,6 +134,10 @@ class TrailingStopLayer:
         symbol = trade['symbol']
         trade_id = trade['trade_id']
         current_stop = trade['trailing_stop_price'] or trade['stop_loss']
+        
+        # Guard: should never reach here with entry_price=0, but belt-and-suspenders
+        if not entry_price or entry_price == 0:
+            return
         
         # Calculate max profit reached so far
         if side == 'buy':
@@ -152,10 +162,16 @@ class TrailingStopLayer:
                 new_sl_id = self._move_stop_loss_on_exchange(trade, new_stop)
                 
                 import json
+                from datetime import datetime
                 meta = trade['metadata']
                 meta_dict = json.loads(meta) if isinstance(meta, str) else (meta or {})
                 if new_sl_id and new_sl_id != "error":
                     meta_dict['exchange_sl_id'] = new_sl_id
+                
+                meta_dict['trailing_sl_history'] = meta_dict.get('trailing_sl_history', []) + [{
+                    'price': new_stop,
+                    'time': datetime.utcnow().isoformat()
+                }]
                     
                 cursor.execute("UPDATE trades SET highest_price = ?, trailing_stop_price = ?, stop_loss = ?, metadata = ? WHERE trade_id = ?", 
                                (highest_price, new_stop, new_stop, json.dumps(meta_dict), trade_id))
@@ -167,10 +183,16 @@ class TrailingStopLayer:
                 new_sl_id = self._move_stop_loss_on_exchange(trade, new_stop)
                 
                 import json
+                from datetime import datetime
                 meta = trade['metadata']
                 meta_dict = json.loads(meta) if isinstance(meta, str) else (meta or {})
                 if new_sl_id and new_sl_id != "error":
                     meta_dict['exchange_sl_id'] = new_sl_id
+                
+                meta_dict['trailing_sl_history'] = meta_dict.get('trailing_sl_history', []) + [{
+                    'price': new_stop,
+                    'time': datetime.utcnow().isoformat()
+                }]
                     
                 cursor.execute("UPDATE trades SET lowest_price = ?, trailing_stop_price = ?, stop_loss = ?, metadata = ? WHERE trade_id = ?", 
                                (lowest_price, new_stop, new_stop, json.dumps(meta_dict), trade_id))
@@ -186,7 +208,7 @@ class TrailingStopLayer:
             if self.mode == 'paper':
                 # Virtual physical sync: Provide a mock exchange order ID
                 import uuid
-                mock_order_id = f"mock_stop_{uuid.uuid4().hex[:8]}"
+                mock_order_id = f"mock_stop_{str(uuid.uuid4().hex)[:8]}"
                 self.logger.debug(f"[Paper] Sent Trailing Stop to Exchange: {symbol} at {new_stop_price:.4f} (ID: {mock_order_id})")
                 
                 # In paper trading, we just rely on bot-side triggers since no real exchange holds our orders.

@@ -128,7 +128,7 @@ class CCXTExchangeClient(BaseExchangeClient):
                 positions = self.exchange.fetch_positions()
             
             # Filter out empty positions
-            active_positions = [p for p in positions if float(p.get('contracts', 0)) > 0]
+            active_positions = [p for p in positions if abs(float(p.get('contracts', 0) or 0)) > 0]
             
             self.logger.debug(f"Fetched {len(active_positions)} positions from {self.exchange_id}")
             return active_positions
@@ -145,6 +145,28 @@ class CCXTExchangeClient(BaseExchangeClient):
             self.logger.error(f"Error fetching ticker for {symbol}: {e}")
             return {}
     
+    def set_margin_mode(self, symbol: str, margin_mode: str = 'ISOLATED'):
+        """
+        Set margin mode for a symbol (e.g., 'ISOLATED', 'CROSS')
+        Binance specific implementation via CCXT
+        """
+        try:
+            # Normalize mode to uppercase for Binance
+            mode = margin_mode.upper()
+            
+            # Use CCXT unified method if available
+            if hasattr(self.exchange, 'set_margin_mode'):
+                self.exchange.set_margin_mode(mode, symbol)
+                self.logger.info(f"Set margin mode to {mode} for {symbol}")
+            else:
+                self.logger.debug(f"Exchange {self.exchange_id} does not support set_margin_mode via CCXT")
+        except Exception as e:
+            # Binance throws error if already set to that mode - we ignore and log as debug
+            if "No need to change margin type" in str(e):
+                self.logger.debug(f"Margin mode for {symbol} already set to {margin_mode}")
+            else:
+                self.logger.warning(f"Could not set margin mode for {symbol}: {e}")
+
     def get_orderbook(self, symbol: str, limit: int = 20) -> Dict[str, Any]:
         """Get order book"""
         try:
@@ -168,13 +190,7 @@ class CCXTExchangeClient(BaseExchangeClient):
             else:
                 raise ValueError(f"Unsupported order type: {order_type}")
             
-            self.logger.trade_entry(
-                symbol=symbol,
-                side=side,
-                size=amount,
-                price=price or 0,
-                leverage=kwargs.get('leverage', 1)
-            )
+            # self.logger.trade_entry(...) - REMOVED (Redundant with TradeManager)
             
             return order
         except Exception as e:

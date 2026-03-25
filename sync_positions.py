@@ -47,7 +47,7 @@ class PositionSyncer:
         # CCXT positions often include symbols with 0 size, filter them
         active = {}
         for pos in positions:
-            if abs(float(pos.get('contracts', 0))) > 0 or abs(float(pos.get('size', 0))) > 0:
+            if abs(float(pos.get('contracts', 0) or 0)) > 0 or abs(float(pos.get('size', 0) or 0)) > 0:
                 symbol = pos['symbol']
                 active[symbol] = pos
         return active
@@ -95,9 +95,26 @@ class PositionSyncer:
             
             status = "MATCH"
             if db_trade and not live_pos:
-                status = "❌ ORPHANED"
+                status = "❌ ZOMBIE (Purging...)"
+                # Kill Zombie: Trade in DB but NOT on exchange
+                try:
+                    self.trade_manager.record_exit(
+                        symbol=sym,
+                        trade_id=db_trade['trade_id'],
+                        reason="ZOMBIE_PURGE",
+                        current_price=db_trade.get('entry_price', 0),
+                        skip_verification=True # Exchange is already zero
+                    )
+                    status = "✅ ZOMBIE PURGED"
+                except: pass
             elif live_pos and not db_trade:
-                status = "⚠️ STRANGER"
+                status = "⚠️ STRANGER (Liquidating...)"
+                # Kill Ghost: Trade on exchange but NOT in DB
+                try:
+                    order = self.exchange.close_position(sym)
+                    status = "✅ GHOST LIQUIDATED"
+                except Exception as e:
+                    status = f"❌ LIQ FAIL: {str(e)[:10]}"
             elif abs(float(db_lev) - float(binance_lev)) > 0:
                 status = "🚨 LEV MISMATCH"
             elif abs(float(db_entry) - float(binance_entry)) > 0.0001:
@@ -207,7 +224,7 @@ class PositionSyncer:
             if is_past_sl and roe_pct < 0:
                 action = "🔥 CLOSING!"
                 try:
-                    order = self.exchange.close_position(sym)
+                    order_res = self.exchange.close_position(sym)
                     
                     # --- GROUNDED EXIT via TradeManager ---
                     if db_trade:
@@ -216,7 +233,7 @@ class PositionSyncer:
                             trade_id=db_trade['trade_id'],
                             reason="EMERGENCY_SYNC_CLOSE",
                             current_price=current_price,
-                            order_response=order
+                            order_response=order_res
                         )
                     
                     action = "✅ CLOSED"

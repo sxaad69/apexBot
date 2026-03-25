@@ -134,26 +134,10 @@ class MongoLogger(Logger):
             'metadata': kwargs
         }
 
-        # 1. Log to SQLite (Robust Entry)
-        if self.sqlite_enabled:
-            trade_data = {
-                'trade_id': kwargs.get('trade_id'),
-                'symbol': symbol,
-                'market_type': market_type,
-                'side': side,
-                'entry_price': price,
-                'leverage': leverage,
-                'stop_loss': kwargs.get('stop_loss'),
-                'take_profit': kwargs.get('take_profit'),
-                'highest_price': price,
-                'trailing_stop_price': kwargs.get('stop_loss'),
-                'strategy': kwargs.get('strategy'),
-                'capital_at_entry': total_capital,
-                'size': size,
-                'timestamp': datetime.utcnow().isoformat(),
-                'metadata': kwargs
-            }
-            self.db.open_trade(trade_data)
+        # 1. Log to SQLite (Robust Entry) - REMOVED (Redundant with TradeManager)
+        # Note: TradeManager.record_entry already persists to SQLite. 
+        # Redundant writes here cause ghost rows with empty IDs.
+        pass
 
         # 2. Route to correct collection (Only if Mongo is actually enabled)
         if hasattr(self, 'mongo_manager') and self.mongo_manager:

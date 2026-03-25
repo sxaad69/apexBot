@@ -76,28 +76,39 @@ class Config:
         self.SPOT_TRADING_ENABLED = os.getenv('SPOT_TRADING_ENABLED', 'no').lower()
         self.ARBITRAGE_TRADING_ENABLED = os.getenv('ARBITRAGE_TRADING_ENABLED', 'no').lower()
         
-        # ===== Futures Trading Configuration =====
+        # ===== Futures Trading Configuration (Primary) =====
+        self.FUTURES_TRADING_ENABLED = self._str_to_bool(os.getenv('FUTURES_TRADING_ENABLED', 'true'))
         self.FUTURES_VIRTUAL_CAPITAL = float(os.getenv('FUTURES_VIRTUAL_CAPITAL', '100'))
         self.FUTURES_POSITION_SIZE_PERCENT = float(os.getenv('FUTURES_POSITION_SIZE_PERCENT', '10'))
-        self.FUTURES_MAX_LEVERAGE = int(os.getenv('FUTURES_MAX_LEVERAGE', '10'))
+        self.FUTURES_MAX_LEVERAGE = int(os.getenv('FUTURES_MAX_LEVERAGE', '20'))
         self.FUTURES_STOP_LOSS_PERCENT = float(os.getenv('FUTURES_STOP_LOSS_PERCENT', '2'))
-        self.FUTURES_TAKE_PROFIT_PERCENT = float(os.getenv('FUTURES_TAKE_PROFIT_PERCENT', '4'))
+        self.FUTURES_TAKE_PROFIT_PERCENT = float(os.getenv('FUTURES_TAKE_PROFIT_PERCENT', '10'))
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float(os.getenv('FUTURES_MAX_DAILY_LOSS_PERCENT', '5'))
-        self.FUTURES_MAX_DRAWDOWN_PERCENT = float(os.getenv('FUTURES_MAX_DRAWDOWN_PERCENT', '15'))
-        self.FUTURES_MAX_OPEN_POSITIONS = int(os.getenv('FUTURES_MAX_OPEN_POSITIONS', '5'))
-        self.MAX_EQUITY_RISK_PERCENT = float(os.getenv('MAX_EQUITY_RISK_PERCENT', '3.0'))
-        self.MAX_LEVERAGE_ABSOLUTE = int(os.getenv('MAX_LEVERAGE_ABSOLUTE', '20'))
-        self.MIN_ATR_PERCENT = float(os.getenv('MIN_ATR_PERCENT', '0.1'))  # Min ATR to prevent noise-based SL
-        futures_pairs_str = os.getenv('FUTURES_PAIRS', 'BTC/USDT,ETH/USDT,SOL/USDT')
-        # Support 'auto' mode or comma-separated list
-        if futures_pairs_str.lower() == 'auto':
-            self.FUTURES_PAIRS = 'auto'
-        else:
-            self.FUTURES_PAIRS = [pair.strip() for pair in futures_pairs_str.split(',')]
+        self.FUTURES_MAX_DRAWDOWN_PERCENT = float(os.getenv('FUTURES_MAX_DRAWDOWN_PERCENT', '70'))
+        self.FUTURES_MAX_OPEN_POSITIONS = int(os.getenv('FUTURES_MAX_OPEN_POSITIONS', '8'))
 
-        # Auto-scan configuration
-        self.FUTURES_AUTO_TOP_N = int(os.getenv('FUTURES_AUTO_TOP_N', '30'))
-        self.FUTURES_AUTO_MIN_VOLUME = float(os.getenv('FUTURES_AUTO_MIN_VOLUME', '1000000'))
+        # Market Discovery Sync
+        self.FUTURES_PAIRS = os.getenv('FUTURES_PAIRS', 'auto')
+        self.FUTURES_AUTO_TOP_N = int(os.getenv('FUTURES_AUTO_TOP_N', '200'))
+        self.FUTURES_AUTO_MIN_VOLUME = float(os.getenv('FUTURES_AUTO_MIN_VOLUME', '500000'))
+        
+        # Position Boundary Sync
+        self.MIN_POSITION_SIZE = float(os.getenv('MIN_POSITION_SIZE', '10.0'))
+        self.MAX_POSITION_SIZE = float(os.getenv('MAX_POSITION_SIZE', '1000.0'))
+
+        # ===== Global Synchronization (For Legacy/Risk Layers compatibility) =====
+        self.INITIAL_CAPITAL = self.FUTURES_VIRTUAL_CAPITAL
+        self.POSITION_SIZE_PERCENT = self.FUTURES_POSITION_SIZE_PERCENT
+        self.MAX_LEVERAGE = self.FUTURES_MAX_LEVERAGE
+        self.STOP_LOSS_PERCENT = self.FUTURES_STOP_LOSS_PERCENT
+        self.MAX_EQUITY_RISK_PERCENT = float(os.getenv('MAX_EQUITY_RISK_PERCENT', '20.0'))
+        self.TAKE_PROFIT_PERCENT = self.FUTURES_TAKE_PROFIT_PERCENT
+        self.MAX_DAILY_LOSS_PERCENT = self.FUTURES_MAX_DAILY_LOSS_PERCENT
+        self.MAX_DRAWDOWN_PERCENT = self.FUTURES_MAX_DRAWDOWN_PERCENT
+        self.MAX_OPEN_POSITIONS = self.FUTURES_MAX_OPEN_POSITIONS
+        
+        # Margin configuration (Phase 32)
+        self.FUTURES_MARGIN_MODE = os.getenv('FUTURES_MARGIN_MODE', 'ISOLATED').upper()
 
         # ===== Spot Trading Configuration =====
         self.ENABLE_SPOT_TRADING = self._str_to_bool(os.getenv('ENABLE_SPOT_TRADING', 'false'))

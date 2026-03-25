@@ -152,9 +152,15 @@ class StrategyA6(BaseStrategy):
         confidence = min(1.0, 0.70 + (abs(imbalance) - 0.40)) 
 
         return {
+            'symbol': symbol,
             'side': side,
             'entry_price': current_price,
             'stop_loss': stop_loss,
             'take_profit': take_profit,
-            'confidence': confidence
+            'confidence': confidence,
+            'strategy': self.name,
+            'indicators': {
+                'imbalance': round(imbalance, 4),
+                'atr': round(atr, 8)
+            }
         }
