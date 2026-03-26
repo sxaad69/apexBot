@@ -141,6 +141,16 @@ class SQLiteManager:
                 last_updated TEXT
             )
         ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS circuit_breaker_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                triggered_at TEXT NOT NULL,
+                net_roe_pct REAL,
+                positions_closed INTEGER,
+                cooldown_minutes INTEGER,
+                cooldown_until TEXT
+            )
+        ''')
         conn.commit()
         conn.close()
 

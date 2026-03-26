@@ -1,4 +1,5 @@
 import ccxt
+import json
 from typing import Dict, Any, Optional
 
 class TrailingStopLayer:
@@ -31,7 +32,10 @@ class TrailingStopLayer:
         If a trade reaches a new peak profit, it moves the Stop Loss up on the exchange.
         """
         try:
+            import sqlite3
             conn = self.db._get_connection(self.db.main_db)
+            # Durable Core: Ensure we can index columns by name
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
             # Fetch all currently open trades from SQLite memory
@@ -43,45 +47,57 @@ class TrailingStopLayer:
                 # --- never prevents SL checks from running on subsequent trades.
                 try:
                     symbol = trade['symbol']
+                    # self.logger.debug(f"[TrailingStopLayer] Evaluating {symbol}...")
                     if symbol not in live_tickers:
-                        continue
-
+                        # try fuzzy match for colon suffix
+                        fuzzy_symbol = symbol.split(':')[0] if ':' in symbol else symbol
+                        if fuzzy_symbol in live_tickers:
+                            current_price = live_tickers[fuzzy_symbol]
+                        else:
+                            # self.logger.debug(f"[TrailingStopLayer] {symbol} not in live_tickers")
+                            continue
+                    else:
+                        current_price = live_tickers[symbol]
+                    
                     # --- FIX: Guard against malformed records with entry_price = 0
-                    entry_price = trade['entry_price']
+                    trade_dict = dict(trade)
+                    entry_price = trade_dict.get('entry_price')
                     if not entry_price or entry_price == 0:
-                        self.logger.warning(f"⚠️ Skipping {symbol} (trade {trade['trade_id'][:8]}) — entry_price is 0/None. Possible zombie record.")
+                        self.logger.warning(f"⚠️ Skipping {symbol} (trade {trade_dict.get('trade_id')[:8]}) — entry_price is 0/None. Possible zombie record.")
                         continue
                         
-                    current_price = live_tickers[symbol]
-                    
                     # Update Watermarks
-                    highest_price = trade['highest_price'] or entry_price
-                    lowest_price = trade['lowest_price'] or entry_price
+                    highest_price = trade_dict.get('highest_price') or entry_price
+                    lowest_price = trade_dict.get('lowest_price') or entry_price
                     is_new_peak = False
                     
-                    if trade['side'] == 'buy' and current_price > highest_price:
+                    if trade_dict['side'] == 'buy' and current_price > highest_price:
                         highest_price = current_price
                         is_new_peak = True
-                    elif trade['side'] == 'sell' and current_price < lowest_price:
+                    elif trade_dict['side'] == 'sell' and current_price < lowest_price:
                         lowest_price = current_price
                         is_new_peak = True
                     
-                    # 1. Trailing Stop Ratchet Logic
-                    if is_new_peak:
-                        self._evaluate_and_update_stop(trade, highest_price, lowest_price, current_price, cursor)
+                    # 1. Trailing Stop Ratchet Logic (Phase 61: Always evaluate for activation if not active)
+                    if is_new_peak or not trade_dict.get('trailing_stop_price'):
+                        self._evaluate_and_update_stop(trade_dict, highest_price, lowest_price, current_price, cursor)
                         
                     # 2. Trigger Trailing Stop Exit Logic
-                    current_stop = trade['trailing_stop_price'] or trade['stop_loss']
+                    current_stop = trade_dict.get('trailing_stop_price') or trade_dict.get('stop_loss')
                     if current_stop:
-                        if trade['side'] == 'buy' and current_price <= current_stop:
+                        if trade_dict['side'] == 'buy' and current_price <= current_stop:
                             self.logger.system(f"🚨 Trailing Stop HIT for {symbol} (Long). Executing Market Close.")
-                            self._trigger_close_position(trade, current_price, cursor)
-                        elif trade['side'] == 'sell' and current_price >= current_stop:
+                            self._trigger_close_position(trade_dict, current_price, cursor)
+                        elif trade_dict['side'] == 'sell' and current_price >= current_stop:
                             self.logger.system(f"🚨 Trailing Stop HIT for {symbol} (Short). Executing Market Close.")
-                            self._trigger_close_position(trade, current_price, cursor)
+                            self._trigger_close_position(trade_dict, current_price, cursor)
 
                 except Exception as trade_err:
-                    self.logger.error(f"🚨 Error evaluating SL for {trade.get('symbol', '?')}: {trade_err}")
+                    symbol_name = "Unknown"
+                    try:
+                        symbol_name = trade['symbol'] if isinstance(trade, (dict, sqlite3.Row)) else "?"
+                    except: pass
+                    self.logger.error(f"🚨 Error evaluating SL for {symbol_name}: {trade_err}")
                     
             conn.commit()
             conn.close()
@@ -147,16 +163,36 @@ class TrailingStopLayer:
             profit_pct = ((entry_price - lowest_price) / entry_price) * 100
             peak_price = lowest_price
             
+        # 1. Determine Dynamic Activation & Distance (Phase 53: Leverage-Aware)
+        leverage = trade.get('leverage', 1)
+        target_roe = getattr(self.config, 'TRAILING_TARGET_ROE', 6.0)
+        capture_roe = getattr(self.config, 'TRAILING_CAPTURE_ROE', 2.5)
+        
+        # Scale to Price Move %: Threshold = ROE / Leverage
+        activation_pct = target_roe / max(1.0, float(leverage or 1))
+        trail_dist_pct = capture_roe / max(1.0, float(leverage or 1))
+        
+        # Fallback to static config if extremely low leverage or missing
+        activation_pct = min(activation_pct, self.ACTIVATION_PROFIT_PCT)
+        trail_dist_pct = min(trail_dist_pct, self.TRAIL_DISTANCE_PCT)
+
         # Has it reached Activation threshold?
-        if profit_pct < self.ACTIVATION_PROFIT_PCT:
-            # We must still simply update SQLite's watermark so we don't lose progress if AWS crashes
+        if profit_pct < activation_pct:
+            # We must still simply update SQLite's watermark so we don't lose progress
             cursor.execute("UPDATE trades SET highest_price = ?, lowest_price = ? WHERE trade_id = ?", 
                            (highest_price, lowest_price, trade_id))
             return
             
-        # Calculate new trailing stop floor
+        # 2. Calculate new trailing stop floor (with Fee-Safety Floor)
+        # Round-trip Taker fee is ~0.1% notional. Stop must be 0.12% above entry to be truly "profitable"
+        fee_floor_pct = 0.12 
+        
         if side == 'buy':
-            new_stop = peak_price * (1 - (self.TRAIL_DISTANCE_PCT / 100.0))
+            new_stop = peak_price * (1 - (trail_dist_pct / 100.0))
+            # Ensure new stop never falls below a "Safe Breakeven" after fees
+            safe_breakeven = entry_price * (1 + (fee_floor_pct / 100.0))
+            new_stop = max(new_stop, safe_breakeven)
+            
             # Ratchet only (never move stop down)
             if current_stop is None or new_stop > current_stop:
                 new_sl_id = self._move_stop_loss_on_exchange(trade, new_stop)
@@ -177,7 +213,11 @@ class TrailingStopLayer:
                                (highest_price, new_stop, new_stop, json.dumps(meta_dict), trade_id))
                 self.logger.system(f"Trailing Stop RATCHETED to {new_stop:.4f} for {symbol} (Profit: {profit_pct:.2f}%)")
         else:
-            new_stop = peak_price * (1 + (self.TRAIL_DISTANCE_PCT / 100.0))
+            new_stop = peak_price * (1 + (trail_dist_pct / 100.0))
+            # Ensure new stop never rises above a "Safe Breakeven" after fees for Shorts
+            safe_breakeven = entry_price * (1 - (fee_floor_pct / 100.0))
+            new_stop = min(new_stop, safe_breakeven)
+            
             # Ratchet only (never move stop up for Shorts)
             if current_stop is None or new_stop < current_stop:
                 new_sl_id = self._move_stop_loss_on_exchange(trade, new_stop)

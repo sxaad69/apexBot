@@ -80,7 +80,7 @@ Signals from all strategies flow through the Triple-Check Symbol Guard before en
 - **A3**: "2-of-3" confirmation model (EMA cross, BB Squeeze breakout, Volume Spike). Very selective.
 - **A4**: The most selective strategy. Requires 210+ candles for warm-up. All 5 of the last 5 candles must align across 3 EMAs. Fixed 0.90 confidence triggers the Opportunity Reserve.
 - **A6**: Runs a dedicated background WebSocket thread (ccxt.pro). Monitors live orderbook imbalance across all tracked pairs. Triggers when bid/ask imbalance > ±40%.
-- **A2, A3, A5**: Active but secondary strategies.
+- **A1, A2, A4, A5, A6**: All actively running in parallel, scaling up to 100 concurrent positions to gather maximum statistical volume.
 
 ---
 
@@ -99,7 +99,7 @@ Layers are applied sequentially. Any `None` return immediately cancels the trade
 | 7 | Volatility Adjustment | `volatility_adjustment.py` | ⚠️ Stub | Pass-through. Not implemented. |
 | 8 | Liquidity Check | `liquidity_check.py` | ⚠️ Stub | Pass-through. Not implemented. |
 | 9 | Rate Limit | `rate_limit.py` | ⚠️ Stub | Pass-through. Not implemented. |
-| 10 | Circuit Breaker | `circuit_breaker.py` | ✅ Active | Triggers halt on N consecutive losses or flash crash (configurable). |
+| 10 | Portfolio Circuit Breaker | `portfolio_circuit_breaker.py` | ✅ Active | Halts all new trades for 30 min if aggregate unrealized P&L drops below -10%. |
 | 11 | Capital Preservation | `capital_preservation.py` | ✅ Active | Hard blocks any trade if balance < 10% of `INITIAL_CAPITAL`. |
 
 ---
@@ -145,6 +145,9 @@ Layers are applied sequentially. Any `None` return immediately cancels the trade
 | `FUTURES_MARGIN_MODE` | ISOLATED or CROSS | `ISOLATED` |
 | `TRAILING_TP_ACTIVATION` | TP ratchet activation % | `3.0` |
 | `TRAILING_TP_DISTANCE` | TP ratchet trailing distance % | `1.5` |
+| `LOSS_CB_ENABLED` | Enable portfolio circuit breaker | `true` |
+| `LOSS_CB_PCT` | Portfolio unrealized loss % trigger | `10.0` |
+| `LOSS_CB_COOLDOWN_MINUTES` | Halt duration on CB trigger | `30` |
 
 ---
 

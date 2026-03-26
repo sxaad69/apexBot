@@ -170,10 +170,20 @@ class StrategyA4(BaseStrategy):
         # Calculate wider stops for trend trading
         stop_loss, take_profit = self.get_dynamic_stops(df, cross_direction, self.atr_sl_mult, self.atr_tp_mult)
 
-        # High confidence for fully aligned trend trades
-        confidence = 0.90 if trend_strength == 'strong' else 0.80
+        # Dynamic confidence based on ADX strength (not fixed 0.90)
+        # ADX 30-40: moderate (0.70), ADX 40-50: strong (0.80), ADX 50+: elite (0.90)
+        if adx_val >= 50:
+            confidence = 0.90  # Extremely strong trend - unlock opportunity reserve
+        elif adx_val >= 40:
+            confidence = 0.80  # Strong trend - normal allocation
+        else:
+            confidence = 0.70  # Minimum qualifying trend - cautious allocation
 
-        self.logger.debug(f"[{self.name}] {symbol}: {cross_direction.upper()} - {trend_strength} trend alignment")
+        # Bonus: strong alignment above 200 EMA boosts confidence slightly
+        if trend_strength == 'strong':
+            confidence = min(confidence + 0.05, 0.95)
+
+        self.logger.debug(f"[{self.name}] {symbol}: {cross_direction.upper()} - ADX {adx_val:.1f} → Confidence {confidence:.2f}")
 
         return {
             'symbol': symbol,

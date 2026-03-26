@@ -107,8 +107,17 @@ class Config:
         self.MAX_DRAWDOWN_PERCENT = self.FUTURES_MAX_DRAWDOWN_PERCENT
         self.MAX_OPEN_POSITIONS = self.FUTURES_MAX_OPEN_POSITIONS
         
+        # Core Mode & Currency (Synched)
+        self.TRADING_MODE = os.getenv('TRADING_MODE', 'live' if self.EXCHANGE_ENVIRONMENT == 'testnet' else 'simulation')
+        self.BASE_CURRENCY = os.getenv('BASE_CURRENCY', 'USDT')
+        trading_pairs_str = os.getenv('TRADING_PAIRS', 'BTC/USDT,ETH/USDT,SOL/USDT')
+        self.TRADING_PAIRS = [p.strip() for p in trading_pairs_str.split(',')]
+        
         # Margin configuration (Phase 32)
         self.FUTURES_MARGIN_MODE = os.getenv('FUTURES_MARGIN_MODE', 'ISOLATED').upper()
+        
+        # Risk Layer Sync (Fixes technical debt from Phase 45)
+        self.MAX_LEVERAGE_ABSOLUTE = self.FUTURES_MAX_LEVERAGE
 
         # ===== Spot Trading Configuration =====
         self.ENABLE_SPOT_TRADING = self._str_to_bool(os.getenv('ENABLE_SPOT_TRADING', 'false'))
@@ -145,19 +154,8 @@ class Config:
         self.ARBITRAGE_DAILY_SUMMARY = self._str_to_bool(os.getenv('ARBITRAGE_DAILY_SUMMARY', 'true'))
         self.ARBITRAGE_DAILY_SUMMARY_TIME = os.getenv('ARBITRAGE_DAILY_SUMMARY_TIME', '00:00')
         
-        # ===== Legacy Configuration (Backwards Compatibility) =====
-        self.TRADING_MODE = os.getenv('TRADING_MODE', 'simulation')
-        self.INITIAL_CAPITAL = float(os.getenv('INITIAL_CAPITAL', '20'))
-        self.BASE_CURRENCY = os.getenv('BASE_CURRENCY', 'USDT')
-        trading_pairs_str = os.getenv('TRADING_PAIRS', 'BTCUSDT,ETHUSDT,SOLUSDT')
-        self.TRADING_PAIRS = [pair.strip() for pair in trading_pairs_str.split(',')]
-        
-        # ===== Position Sizing Configuration =====
-        self.POSITION_SIZE_PERCENT = float(os.getenv('POSITION_SIZE_PERCENT', '10'))
-        self.MAX_LEVERAGE = int(os.getenv('MAX_LEVERAGE', '10'))
-        self.MIN_POSITION_SIZE = float(os.getenv('MIN_POSITION_SIZE', '1'))
-        self.MAX_POSITION_SIZE = float(os.getenv('MAX_POSITION_SIZE', '1000'))
-        self.MAX_OPEN_POSITIONS = int(os.getenv('MAX_OPEN_POSITIONS', '5'))
+        # (Legacy overrides REMOVED to prevent FUTURES_* settings from being overwritten)
+        # self.POSITION_SIZE_PERCENT, self.MAX_LEVERAGE, etc are now managed in the Global section above
         
         # ===== Strategy Selection Configuration =====
         self.STRATEGY_A1_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A1_ENABLED', 'true'))
@@ -165,6 +163,7 @@ class Config:
         self.STRATEGY_A3_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A3_ENABLED', 'true'))
         self.STRATEGY_A4_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A4_ENABLED', 'true'))
         self.STRATEGY_A5_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A5_ENABLED', 'false'))
+        self.STRATEGY_A6_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A6_ENABLED', 'false'))
         
         # ===== Fee Configuration (Simulation) =====
         self.FUTURES_FEE_PERCENT = float(os.getenv('FUTURES_FEE_PERCENT', '0.04'))
@@ -175,10 +174,14 @@ class Config:
         self.TRAILING_STOP_ACTIVATION = float(os.getenv('TRAILING_STOP_ACTIVATION', '5'))
         self.TRAILING_STOP_DISTANCE = float(os.getenv('TRAILING_STOP_DISTANCE', '2'))
 
-        # Trailing Take Profit Configuration
+        # Trailing Take Profit Configuration (Phase 53: Leverage-Aware)
         self.TRAILING_TP_ENABLED = self._str_to_bool(os.getenv('TRAILING_TP_ENABLED', 'true'))
-        self.TRAILING_TP_ACTIVATION = float(os.getenv('TRAILING_TP_ACTIVATION', '3'))  # Activate at 3% profit
-        self.TRAILING_TP_DISTANCE = float(os.getenv('TRAILING_TP_DISTANCE', '1.5'))    # Trail 1.5% behind peak
+        self.TRAILING_TP_ACTIVATION = float(os.getenv('TRAILING_TP_ACTIVATION', '3'))  # Fallback price move %
+        self.TRAILING_TP_DISTANCE = float(os.getenv('TRAILING_TP_DISTANCE', '1.5'))    # Fallback price move %
+        
+        # New ROE-based Targets (Scales with leverage)
+        self.TRAILING_TARGET_ROE = float(os.getenv('TRAILING_TARGET_ROE', '6.0'))      # Target 6% ROE to start trailing
+        self.TRAILING_CAPTURE_ROE = float(os.getenv('TRAILING_CAPTURE_ROE', '2.5'))    # Gap of 2.5% ROE from peak
 
         self.MAX_DAILY_LOSS_PERCENT = float(os.getenv('MAX_DAILY_LOSS_PERCENT', '5'))
         self.MAX_DRAWDOWN_PERCENT = float(os.getenv('MAX_DRAWDOWN_PERCENT', '15'))
@@ -194,10 +197,15 @@ class Config:
         self.MIN_LIQUIDITY_DEPTH = float(os.getenv('MIN_LIQUIDITY_DEPTH', '10000'))
         
         # ===== Circuit Breaker Configuration =====
-        self.ENABLE_CIRCUIT_BREAKER = self._str_to_bool(os.getenv('ENABLE_CIRCUIT_BREAKER', 'true'))
-        self.TRADE_FAILURE_HALT_HOURS = int(os.getenv('TRADE_FAILURE_HALT_HOURS', '48'))
+        self.ENABLE_CIRCUIT_BREAKER = self._str_to_bool(os.getenv('ENABLE_CIRCUIT_BREAKER', 'false'))
+        self.TRADE_FAILURE_HALT_HOURS = float(os.getenv('TRADE_FAILURE_HALT_HOURS', '0.5'))
         self.CONSECUTIVE_LOSSES_THRESHOLD = int(os.getenv('CONSECUTIVE_LOSSES_THRESHOLD', '5'))
         self.FLASH_CRASH_THRESHOLD = float(os.getenv('FLASH_CRASH_THRESHOLD', '-10'))
+        
+        # ===== Portfolio Loss Circuit Breaker =====
+        self.LOSS_CB_ENABLED = self._str_to_bool(os.getenv('LOSS_CB_ENABLED', 'true'))
+        self.LOSS_CB_PCT = float(os.getenv('LOSS_CB_PCT', '10.0'))
+        self.LOSS_CB_COOLDOWN_MINUTES = int(os.getenv('LOSS_CB_COOLDOWN_MINUTES', '30'))
         
         # ===== Telegram Integration (3 Separate Bots) =====
         # Futures Bot
@@ -306,7 +314,7 @@ class Config:
         
         # Validate KuCoin credentials
         if self.TRADING_MODE == 'live':
-            if not self.KUCOIN_API_KEY or not self.KUCOIN_SECRET_KEY or not self.KUCOIN_PASSPHRASE:
+            if not self.KUCOIN_API_KEY or not self.KUCOIN_API_SECRET or not self.KUCOIN_API_PASSPHRASE:
                 raise ValueError("KuCoin API credentials are required for live trading")
         
         # Validate Telegram credentials if notifications enabled

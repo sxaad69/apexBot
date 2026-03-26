@@ -22,7 +22,9 @@ from risk import RiskManager
 from core.spot_logger import SpotLogger
 from core.spot_trading_engine import SpotTradingEngine
 from risk.layers.trailing_stop import TrailingStopLayer
+from risk.layers.portfolio_circuit_breaker import PortfolioCircuitBreaker
 from core.trade_manager import TradeManager
+
 
 
 class PaperTradingEngine:
@@ -78,10 +80,11 @@ class PaperTradingEngine:
             self.strategies.append(StrategyA3(config, logger))
         if hasattr(config, 'STRATEGY_A4_ENABLED') and config.STRATEGY_A4_ENABLED:
             self.strategies.append(StrategyA4(config, logger))
-        if hasattr(config, 'STRATEGY_A5_ENABLED') and config.STRATEGY_A5_ENABLED:
-            self.strategies.append(StrategyA5(config, logger))
-        if hasattr(config, 'STRATEGY_A6_ENABLED') and config.STRATEGY_A6_ENABLED:
-            self.strategies.append(StrategyA6(config, logger))
+        if getattr(self.config, 'STRATEGY_A5_ENABLED', False):
+            self.strategies.append(StrategyA5(self.config, self.logger))
+            
+        if getattr(self.config, 'STRATEGY_A6_ENABLED', False):
+            self.strategies.append(StrategyA6(self.config, self.logger))
 
         # If no strategies explicitly enabled, enable all including A6
         if not self.strategies:
@@ -1003,18 +1006,24 @@ class PaperTradingEngine:
         self.check_exits(symbol, current_price)
 
         # Check for new signals
-        for strategy in self.strategies:
-            position_key = f"{strategy.name}:{symbol}"
+        # Only if not in circuit breaker cooldown
+        in_cooldown = False
+        if hasattr(self, 'portfolio_circuit_breaker') and self.portfolio_circuit_breaker:
+            in_cooldown = self.portfolio_circuit_breaker.is_in_cooldown()
+            
+        if not in_cooldown:
+            for strategy in self.strategies:
+                position_key = f"{strategy.name}:{symbol}"
 
-            # Skip if strategy already has open position for this symbol
-            if position_key in self.positions:
-                continue
+                # Skip if strategy already has open position for this symbol
+                if position_key in self.positions:
+                    continue
 
-            # Generate signal
-            signal = strategy.generate_signal(df)
+                # Generate signal
+                signal = strategy.generate_signal(df)
 
-            if signal:
-                self.execute_paper_trade(signal, strategy.name, symbol)
+                if signal:
+                    self.execute_paper_trade(signal, strategy.name, symbol)
 
         # Collect and save market analysis data for dashboard
         self._collect_market_analysis_data(symbol, df, current_price)
@@ -1607,6 +1616,16 @@ class ApexHunterBot:
         else:
             self.trailing_stop_engine = None
             
+        # Initialize Portfolio Loss Circuit Breaker
+        if hasattr(self, 'engine'):
+            self.portfolio_circuit_breaker = PortfolioCircuitBreaker(
+                self.config, self.logger.db, self.logger
+            )
+            # Inject into engine so it can check cooldowns
+            self.engine.portfolio_circuit_breaker = self.portfolio_circuit_breaker
+        else:
+            self.portfolio_circuit_breaker = None
+            
         # Send startup message
         if self.telegram:
             self.telegram.send_startup_message()
@@ -1871,6 +1890,15 @@ class ApexHunterBot:
                         self.trailing_stop_engine.process_open_trades(self.engine.current_prices)
                 except Exception as e:
                     self.logger.error(f"🚨 CRITICAL: Trailing Stop Engine Failed", exc_info=True)
+
+                # Process Portfolio Loss Circuit Breaker
+                try:
+                    if getattr(self, 'portfolio_circuit_breaker', None) and hasattr(self, 'engine'):
+                        self.portfolio_circuit_breaker.check_and_trigger(
+                            self.engine.positions, self.engine.current_prices
+                        )
+                except Exception as e:
+                    self.logger.error(f"🚨 CRITICAL: Portfolio Circuit Breaker Failed", exc_info=True)
 
                 # Wait before next cycle
                 if self.running:

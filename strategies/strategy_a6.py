@@ -44,38 +44,61 @@ class StrategyA6(BaseStrategy):
         asyncio.set_event_loop(loop)
         loop.run_until_complete(self._watch_orderbooks())
         
-    async def _watch_orderbooks(self):
-        """Asynchronous stream that instantly updates memory dict."""
-        exchange = ccxt.pro.binance({
-            'enableRateLimit': True,
-        })
-        
+    async def _watch_single_symbol(self, exchange, symbol: str):
+        """Dedicated coroutine that continuously streams one symbol's orderbook."""
         while True:
             try:
-                # 1. Look at current active monitoring list from the engine
-                # Strategy A6 should track exactly what the core engine is tracking
+                book = await exchange.watch_order_book(symbol, limit=50)
+                self.latest_orderbooks[symbol] = book
+            except Exception as e:
+                self.logger.debug(f"[A6 WSS] {symbol} stream error: {e}. Retrying in 5s...")
+                await asyncio.sleep(5)
+
+    async def _watch_orderbooks(self):
+        """Asynchronous stream: spawns one concurrent task per monitored symbol.
+        This replaces the slow sequential for-loop with true parallel streaming.
+        """
+        exchange = ccxt.pro.binance({'enableRateLimit': True})
+        active_tasks = {}  # symbol → asyncio.Task
+
+        while True:
+            try:
+                # Determine current target pairs
                 if hasattr(self.logger, 'engine') and self.logger.engine:
-                    pairs = self.logger.engine.top_pairs_cache or []
+                    pairs = list(self.logger.engine.top_pairs_cache or [])
                 else:
-                    # Fallback to config if engine not accessible (unlikely in prod)
                     pairs_config = getattr(self.config, 'FUTURES_PAIRS', ['BTC/USDT'])
                     if isinstance(pairs_config, str) and pairs_config.lower() == 'auto':
                         pairs = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
                     elif isinstance(pairs_config, str):
                         pairs = [p.strip() for p in pairs_config.split(',')]
                     else:
-                        pairs = pairs_config
+                        pairs = list(pairs_config)
 
                 if not pairs:
                     await asyncio.sleep(10)
                     continue
 
-                for symbol in pairs:
-                    book = await exchange.watch_order_book(symbol, limit=50)
-                    self.latest_orderbooks[symbol] = book
+                # Cancel tasks for symbols no longer tracked
+                for sym in list(active_tasks.keys()):
+                    if sym not in pairs:
+                        active_tasks[sym].cancel()
+                        del active_tasks[sym]
+                        if sym in self.latest_orderbooks:
+                            del self.latest_orderbooks[sym]
+
+                # Spawn new tasks for newly added symbols
+                for sym in pairs:
+                    if sym not in active_tasks or active_tasks[sym].done():
+                        task = asyncio.ensure_future(self._watch_single_symbol(exchange, sym))
+                        active_tasks[sym] = task
+
+                # Re-check the pair list every 60 seconds
+                await asyncio.sleep(60)
+
             except Exception as e:
-                self.logger.error(f"[A6 WSS] WebSocket Error: {e}")
-                await asyncio.sleep(5) # Cooldown on failure
+                self.logger.error(f"[A6 WSS] Supervisor error: {e}")
+                await asyncio.sleep(5)
 
     def fetch_imbalance(self, symbol: str) -> float:
         """Calculate math from instant WSS memory dictionary."""
