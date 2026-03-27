@@ -25,6 +25,8 @@ class PortfolioCircuitBreaker:
         total_unrealized_pnl = 0.0
         
         for pos_key, pos in active_positions.items():
+            if not isinstance(pos, dict) or 'symbol' not in pos:
+                continue
             symbol = pos['symbol']
             entry = pos['entry_price']
             size = pos.get('size', 0)

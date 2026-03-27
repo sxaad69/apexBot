@@ -859,7 +859,8 @@ class PaperTradingEngine:
                             stop_loss=approved_params['stop_loss'],
                             take_profit=approved_params['take_profit'],
                             order_response=order,
-                            planned_price=entry_price
+                            planned_price=entry_price,
+                            confidence=approved_params.get('confidence', 0.0)
                         )
                         
                         # Use grounded info for SL placement if filled
@@ -942,7 +943,8 @@ class PaperTradingEngine:
                         leverage=leverage,
                         stop_loss=approved_params['stop_loss'],
                         take_profit=approved_params['take_profit'],
-                        planned_price=entry_price
+                        planned_price=entry_price,
+                        confidence=approved_params.get('confidence', 0.0)
                     )
                 
                 # Update Capital accounting
