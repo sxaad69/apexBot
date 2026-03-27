@@ -171,13 +171,18 @@ class TradeManager:
         
         # 5. Update Database
         exit_time = datetime.utcnow().isoformat()
-        conn = self.db._get_connection(self.db.main_db)
-        cursor = conn.cursor()
-        query = "UPDATE trades SET status = ?, exit_price = ?, exit_time = ?, reason = ?, pnl_amount = ?, pnl_percent = ? WHERE trade_id = ?"
-        params = ('CLOSED', exit_price, exit_time, reason, net_pnl_amount, leveraged_pnl_percent * 100, trade_id)
-        cursor.execute(query, params)
-        conn.commit()
-        conn.close()
+        try:
+            conn = self.db._get_connection(self.db.main_db)
+            try:
+                cursor = conn.cursor()
+                query = "UPDATE trades SET status = ?, exit_price = ?, exit_time = ?, reason = ?, pnl_amount = ?, pnl_percent = ? WHERE trade_id = ?"
+                params = ('CLOSED', exit_price, exit_time, reason, net_pnl_amount, leveraged_pnl_percent * 100, trade_id)
+                cursor.execute(query, params)
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as e:
+            self.logger.error(f"Failed to update trade exit in DB: {e}")
 
         # 6. Logging & Final report
         self.logger.info(f"🏁 EXIT SYNC: {symbol} | Net P&L: ${net_pnl_amount:.2f} ({leveraged_pnl_percent*100:.1f}%) | Reason: {reason}")

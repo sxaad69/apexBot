@@ -15,6 +15,9 @@ class PortfolioCircuitBreaker:
         if not getattr(self.config, 'LOSS_CB_ENABLED', True):
             return
             
+        if self.is_in_cooldown():
+            return
+            
         if not active_positions:
             return
             

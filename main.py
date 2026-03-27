@@ -243,10 +243,12 @@ class PaperTradingEngine:
             try:
                 if hasattr(self.logger, 'db'):
                     conn = self.logger.db._get_connection(self.logger.db.main_db)
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT DISTINCT symbol FROM trades WHERE status IN ('OPEN', 'PENDING_EXIT')")
-                    must_monitor = [row['symbol'] for row in cursor.fetchall()]
-                    conn.close()
+                    try:
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT DISTINCT symbol FROM trades WHERE status IN ('OPEN', 'PENDING_EXIT')")
+                        must_monitor = [row['symbol'] for row in cursor.fetchall()]
+                    finally:
+                        conn.close()
                     
                     if must_monitor:
                         # Merge and deduplicate
@@ -551,10 +553,12 @@ class PaperTradingEngine:
         if hasattr(self.logger, 'db'):
             try:
                 conn = self.logger.db._get_connection(self.logger.db.main_db)
-                cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM trades WHERE symbol = ? AND status = 'OPEN'", (symbol,))
-                open_count = cursor.fetchone()[0]
-                conn.close()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM trades WHERE symbol = ? AND status = 'OPEN'", (symbol,))
+                    open_count = cursor.fetchone()[0]
+                finally:
+                    conn.close()
                 if open_count > 0:
                     self.logger.info(f"[{strategy_name}] {symbol} SIGNAL SKIPPED - Global Symbol Guard active (SQLite OPEN trade exists)")
                     return
@@ -890,10 +894,12 @@ class PaperTradingEngine:
                         # Mark as PENDING_EXIT in SQLite for infinite retry
                         if hasattr(self.logger, 'db'):
                             conn = self.logger.db._get_connection(self.logger.db.main_db)
-                            cursor = conn.cursor()
-                            cursor.execute("UPDATE trades SET status = 'PENDING_EXIT' WHERE trade_id = ?", (position.get('trade_id'),))
-                            conn.commit()
-                            conn.close()
+                            try:
+                                cursor = conn.cursor()
+                                cursor.execute("UPDATE trades SET status = 'PENDING_EXIT' WHERE trade_id = ?", (position.get('trade_id'),))
+                                conn.commit()
+                            finally:
+                                conn.close()
                         position['status'] = 'PENDING_EXIT'
                         self.positions[position_key] = position
                         continue # Skip capital updates until successfully closed
@@ -1739,84 +1745,85 @@ class ApexHunterBot:
         """
         try:
             conn = self.logger.db._get_connection(self.logger.db.main_db)
-            cursor = conn.cursor()
-            
-            # Fetch both OPEN and PENDING_EXIT trades
-            cursor.execute("SELECT * FROM trades WHERE status IN ('OPEN', 'PENDING_EXIT')")
-            db_trades = cursor.fetchall()
-            
-            if not db_trades:
-                conn.close()
-                return
+            try:
+                cursor = conn.cursor()
                 
-            self.logger.info(f"🔄 Hydrating and Reconciling {len(db_trades)} trades...")
-            
-            for db_trade in db_trades:
-                symbol = db_trade['symbol']
-                trade_id = db_trade['trade_id']
-                strategy_name = db_trade['strategy']
-                position_key = f"{strategy_name}:{symbol}"
+                # Fetch both OPEN and PENDING_EXIT trades
+                cursor.execute("SELECT * FROM trades WHERE status IN ('OPEN', 'PENDING_EXIT')")
+                db_trades = cursor.fetchall()
                 
-                # Check actual exchange positions for LIVE mode or if specifically requested
-                is_closed_on_exchange = False
-                if self.mode == 'live' or getattr(self.config, 'FUTURES_STRICT_SYNC', False):
-                    try:
-                        ex_positions = self.engine.exchange.get_positions(symbol)
-                        active_ex_pos = next((p for p in ex_positions if float(p.get('contracts', 0)) > 0), None)
-                        if not active_ex_pos:
-                            is_closed_on_exchange = True
-                    except Exception as exchange_e:
-                        self.logger.warning(f"⚠️ Reconciliation partially skipped for {symbol}: {exchange_e}")
+                if not db_trades:
+                    return
+                    
+                self.logger.info(f"🔄 Hydrating and Reconciling {len(db_trades)} trades...")
+                
+                for db_trade in db_trades:
+                    symbol = db_trade['symbol']
+                    trade_id = db_trade['trade_id']
+                    strategy_name = db_trade['strategy']
+                    position_key = f"{strategy_name}:{symbol}"
+                    
+                    # Check actual exchange positions for LIVE mode or if specifically requested
+                    is_closed_on_exchange = False
+                    if self.mode == 'live' or getattr(self.config, 'FUTURES_STRICT_SYNC', False):
+                        try:
+                            ex_positions = self.engine.exchange.get_positions(symbol)
+                            active_ex_pos = next((p for p in ex_positions if float(p.get('contracts', 0)) > 0), None)
+                            if not active_ex_pos:
+                                is_closed_on_exchange = True
+                        except Exception as exchange_e:
+                            self.logger.warning(f"⚠️ Reconciliation partially skipped for {symbol}: {exchange_e}")
 
-                if is_closed_on_exchange:
-                    self.logger.warning(f"👻 Ghost Trade detected! {symbol} ({strategy_name}) closed while bot was offline.")
-                    exit_time = datetime.utcnow().isoformat()
-                    cursor.execute("UPDATE trades SET status = 'CLOSED', exit_time = ?, reason = 'exchange_closed_offline' WHERE trade_id = ?",
-                                 (exit_time, trade_id))
-                    self.logger.info(f"✅ Synced {symbol} as CLOSED.")
-                else:
-                    # HYDRATE into engine memory
-                    import json
-                    from datetime import datetime as dt
-                    
-                    # Convert SQLite Row to dict and prepare for engine
-                    metadata = {}
-                    try:
-                        if db_trade['metadata']:
-                            metadata = json.loads(db_trade['metadata'])
-                    except: pass
-                    
-                    position = {
-                        'trade_id': db_trade['trade_id'],
-                        'symbol': db_trade['symbol'],
-                        'side': db_trade['side'],
-                        'entry_price': db_trade['entry_price'],
-                        'entry_time': dt.fromisoformat(db_trade['entry_time']) if db_trade['entry_time'] else dt.now(),
-                        'leverage': db_trade['leverage'],
-                        'stop_loss': db_trade['stop_loss'],
-                        'take_profit': db_trade['take_profit'],
-                        'strategy': db_trade['strategy'],
-                        'size': db_trade['size'] if 'size' in db_trade.keys() else metadata.get('size', 0),
-                        'status': db_trade['status'],
-                        # Trailing stop reconstruction
-                        'highest_price': db_trade['highest_price'] or db_trade['entry_price'],
-                        'lowest_price': db_trade['lowest_price'] or db_trade['entry_price'],
-                        'trailing_stop_active': bool(db_trade['trailing_stop_active']),
-                        'trailing_stop_price': db_trade['trailing_stop_price'],
-                        'original_stop_loss': db_trade['stop_loss'],
-                        # Phase 31: Restore Trailing TP state from persisted metadata
-                        'trailing_tp_active': metadata.get('trailing_tp_active', False),
-                        'trailing_tp_peak_price': metadata.get('trailing_tp_peak_price', None),
-                        'trailing_tp_trough_price': metadata.get('trailing_tp_trough_price', None),
-                        'trailing_tp_activation_price': metadata.get('trailing_tp_activation_price', None),
-                    }
-                    
-                    # Add back to active memory
-                    self.engine.positions[position_key] = position
-                    self.logger.info(f"🔌 HYDRATED position: {position_key} (ID: {trade_id[:8]}...)")
-                    
-            conn.commit()
-            conn.close()
+                    if is_closed_on_exchange:
+                        self.logger.warning(f"👻 Ghost Trade detected! {symbol} ({strategy_name}) closed while bot was offline.")
+                        exit_time = datetime.utcnow().isoformat()
+                        cursor.execute("UPDATE trades SET status = 'CLOSED', exit_time = ?, reason = 'exchange_closed_offline' WHERE trade_id = ?",
+                                     (exit_time, trade_id))
+                        self.logger.info(f"✅ Synced {symbol} as CLOSED.")
+                    else:
+                        # HYDRATE into engine memory
+                        import json
+                        from datetime import datetime as dt
+                        
+                        # Convert SQLite Row to dict and prepare for engine
+                        metadata = {}
+                        try:
+                            if db_trade['metadata']:
+                                metadata = json.loads(db_trade['metadata'])
+                        except: pass
+                        
+                        position = {
+                            'trade_id': db_trade['trade_id'],
+                            'symbol': db_trade['symbol'],
+                            'side': db_trade['side'],
+                            'entry_price': db_trade['entry_price'],
+                            'entry_time': dt.fromisoformat(db_trade['entry_time']) if db_trade['entry_time'] else dt.now(),
+                            'leverage': db_trade['leverage'],
+                            'stop_loss': db_trade['stop_loss'],
+                            'take_profit': db_trade['take_profit'],
+                            'strategy': db_trade['strategy'],
+                            'size': db_trade['size'] if 'size' in db_trade.keys() else metadata.get('size', 0),
+                            'status': db_trade['status'],
+                            # Trailing stop reconstruction
+                            'highest_price': db_trade['highest_price'] or db_trade['entry_price'],
+                            'lowest_price': db_trade['lowest_price'] or db_trade['entry_price'],
+                            'trailing_stop_active': bool(db_trade['trailing_stop_active']),
+                            'trailing_stop_price': db_trade['trailing_stop_price'],
+                            'original_stop_loss': db_trade['stop_loss'],
+                            # Phase 31: Restore Trailing TP state from persisted metadata
+                            'trailing_tp_active': metadata.get('trailing_tp_active', False),
+                            'trailing_tp_peak_price': metadata.get('trailing_tp_peak_price', None),
+                            'trailing_tp_trough_price': metadata.get('trailing_tp_trough_price', None),
+                            'trailing_tp_activation_price': metadata.get('trailing_tp_activation_price', None),
+                        }
+                        
+                        # Add back to active memory
+                        self.engine.positions[position_key] = position
+                        self.logger.info(f"🔌 HYDRATED position: {position_key} (ID: {trade_id[:8]}...)")
+                        
+                conn.commit()
+            finally:
+                conn.close()
         except Exception as e:
             self.logger.error(f"Failed to run Startup Hydration/Reconciliation: {e}")
 

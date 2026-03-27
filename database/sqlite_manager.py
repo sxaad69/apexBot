@@ -214,24 +214,26 @@ class SQLiteManager:
         """Log a rejected trade signal to the rejections table in log_db"""
         try:
             conn = self._get_connection(self.log_db)
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO rejections (
-                    symbol, strategy, side, entry_price, reason, layer, confidence, metadata
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                data.get('symbol'),
-                data.get('strategy'),
-                data.get('side'),
-                data.get('entry_price'),
-                data.get('reason'),
-                data.get('layer'),
-                data.get('confidence', 0.0),
-                json.dumps(data.get('metadata', {}), default=str)
-            ))
-            conn.commit()
-            conn.close()
-            return True
+            try:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO rejections (
+                        symbol, strategy, side, entry_price, reason, layer, confidence, metadata
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    data.get('symbol'),
+                    data.get('strategy'),
+                    data.get('side'),
+                    data.get('entry_price'),
+                    data.get('reason'),
+                    data.get('layer'),
+                    data.get('confidence', 0.0),
+                    json.dumps(data.get('metadata', {}), default=str)
+                ))
+                conn.commit()
+                return True
+            finally:
+                conn.close()
         except Exception as e:
             print(f"❌ SQLite log_rejection error: {e}")
             return False
@@ -240,13 +242,15 @@ class SQLiteManager:
         """Get a setting from the persistent settings table"""
         try:
             conn = self._get_connection(self.main_db)
-            cursor = conn.cursor()
-            cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
-            row = cursor.fetchone()
-            conn.close()
-            if row:
-                return row['value']
-            return default
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+                row = cursor.fetchone()
+                if row:
+                    return row['value']
+                return default
+            finally:
+                conn.close()
         except Exception as e:
             print(f"❌ SQLite get_setting error: {e}")
             return default
@@ -395,11 +399,13 @@ class SQLiteManager:
         """Log high-frequency market analysis to log DB"""
         try:
             conn = self._get_connection(self.log_db)
-            cursor = conn.cursor()
-            cursor.execute('INSERT INTO market_analysis (symbol, price, indicators) VALUES (?, ?, ?)',
-                         (symbol, price, json.dumps(indicators, default=str)))
-            conn.commit()
-            conn.close()
+            try:
+                cursor = conn.cursor()
+                cursor.execute('INSERT INTO market_analysis (symbol, price, indicators) VALUES (?, ?, ?)',
+                             (symbol, price, json.dumps(indicators, default=str)))
+                conn.commit()
+            finally:
+                conn.close()
         except Exception as e:
             print(f"❌ SQLite save_analysis error: {e}")
 
@@ -407,13 +413,15 @@ class SQLiteManager:
         """Log high-frequency strategy signals to log DB"""
         try:
             conn = self._get_connection(self.log_db)
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO strategy_signals (symbol, strategy, action, confidence, data) 
-                VALUES (?, ?, ?, ?, ?)
-            ''', (symbol, strategy, action, confidence, json.dumps(data, default=str)))
-            conn.commit()
-            conn.close()
+            try:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO strategy_signals (symbol, strategy, action, confidence, data) 
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (symbol, strategy, action, confidence, json.dumps(data, default=str)))
+                conn.commit()
+            finally:
+                conn.close()
         except Exception as e:
             print(f"❌ SQLite save_signal error: {e}")
 
@@ -453,11 +461,13 @@ class SQLiteManager:
         """Log general activity to log DB"""
         try:
             conn = self._get_connection(self.log_db)
-            cursor = conn.cursor()
-            cursor.execute('INSERT INTO activity_log (type, symbol, message, metadata) VALUES (?, ?, ?, ?)',
-                         (log_type, symbol, message, json.dumps(metadata or {}, default=str)))
-            conn.commit()
-            conn.close()
+            try:
+                cursor = conn.cursor()
+                cursor.execute('INSERT INTO activity_log (type, symbol, message, metadata) VALUES (?, ?, ?, ?)',
+                             (log_type, symbol, message, json.dumps(metadata or {}, default=str)))
+                conn.commit()
+            finally:
+                conn.close()
         except Exception as e:
             print(f"❌ SQLite log_activity error: {e}")
 
@@ -465,32 +475,38 @@ class SQLiteManager:
         """Increment hourly metrics in main DB"""
         try:
             conn = self._get_connection(self.main_db)
-            cursor = conn.cursor()
-            cursor.execute('INSERT OR IGNORE INTO metrics (date, hour, type) VALUES (?, ?, ?)', (date, hour, m_type))
-            for key, val in inc_data.items():
-                if key in ['signals_generated', 'trades_executed', 'total_rejections']:
-                    cursor.execute(f'UPDATE metrics SET {key} = {key} + ? WHERE date = ? AND hour = ? AND type = ?',
-                                 (val, date, hour, m_type))
-            conn.commit()
-            conn.close()
-        except: pass
+            try:
+                cursor = conn.cursor()
+                cursor.execute('INSERT OR IGNORE INTO metrics (date, hour, type) VALUES (?, ?, ?)', (date, hour, m_type))
+                for key, val in inc_data.items():
+                    if key in ['signals_generated', 'trades_executed', 'total_rejections']:
+                        cursor.execute(f'UPDATE metrics SET {key} = {key} + ? WHERE date = ? AND hour = ? AND type = ?',
+                                     (val, date, hour, m_type))
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            pass
 
     def purge_old_activity(self, days: int = 7):
         """Purge old logs to prevent disk bloat"""
         try:
             cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
             conn = self._get_connection(self.log_db)
-            cursor = conn.cursor()
-            for table in ['activity_log', 'market_analysis', 'strategy_signals']:
-                cursor.execute(f"DELETE FROM {table} WHERE timestamp < ?", (cutoff,))
-            count = cursor.rowcount
-            conn.commit()
-            cursor.execute("VACUUM")
-            conn.close()
-            return count
+            try:
+                cursor = conn.cursor()
+                for table in ['activity_log', 'market_analysis', 'strategy_signals']:
+                    cursor.execute(f"DELETE FROM {table} WHERE timestamp < ?", (cutoff,))
+                count = cursor.rowcount
+                conn.commit()
+                cursor.execute("VACUUM")
+                return count
+            finally:
+                conn.close()
         except Exception as e:
             print(f"❌ SQLite purge error: {e}")
             return 0
+
     def save_active_positions_snapshot(self, positions: Dict[str, Any], current_prices: Dict[str, float] = None):
         """Save/Update active positions in SQLite"""
         conn = self._get_connection(self.main_db)
