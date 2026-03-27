@@ -81,7 +81,6 @@ class Config:
         self.FUTURES_VIRTUAL_CAPITAL = float(os.getenv('FUTURES_VIRTUAL_CAPITAL', '100'))
         self.FUTURES_POSITION_SIZE_PERCENT = float(os.getenv('FUTURES_POSITION_SIZE_PERCENT', '10'))
         self.FUTURES_MAX_LEVERAGE = int(os.getenv('FUTURES_MAX_LEVERAGE', '20'))
-        self.FUTURES_STOP_LOSS_PERCENT = float(os.getenv('FUTURES_STOP_LOSS_PERCENT', '2'))
         self.FUTURES_TAKE_PROFIT_PERCENT = float(os.getenv('FUTURES_TAKE_PROFIT_PERCENT', '10'))
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float(os.getenv('FUTURES_MAX_DAILY_LOSS_PERCENT', '5'))
         self.FUTURES_MAX_DRAWDOWN_PERCENT = float(os.getenv('FUTURES_MAX_DRAWDOWN_PERCENT', '70'))
@@ -100,7 +99,7 @@ class Config:
         self.INITIAL_CAPITAL = self.FUTURES_VIRTUAL_CAPITAL
         self.POSITION_SIZE_PERCENT = self.FUTURES_POSITION_SIZE_PERCENT
         self.MAX_LEVERAGE = self.FUTURES_MAX_LEVERAGE
-        self.STOP_LOSS_PERCENT = self.FUTURES_STOP_LOSS_PERCENT
+        self.GLOBAL_STOP_LOSS_ROE = float(os.getenv('GLOBAL_STOP_LOSS_ROE', '20.0'))
         self.MAX_EQUITY_RISK_PERCENT = float(os.getenv('MAX_EQUITY_RISK_PERCENT', '20.0'))
         self.TAKE_PROFIT_PERCENT = self.FUTURES_TAKE_PROFIT_PERCENT
         self.MAX_DAILY_LOSS_PERCENT = self.FUTURES_MAX_DAILY_LOSS_PERCENT
@@ -165,12 +164,14 @@ class Config:
         self.STRATEGY_A5_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A5_ENABLED', 'false'))
         self.STRATEGY_A6_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A6_ENABLED', 'false'))
         
+        # Strategy-specific Risk Overrides
+        self.STRATEGY_A3_SL_ROE = float(os.getenv('STRATEGY_A3_SL_ROE', '2.0'))
+        
         # ===== Fee Configuration (Simulation) =====
         self.FUTURES_FEE_PERCENT = float(os.getenv('FUTURES_FEE_PERCENT', '0.04'))
         self.SPOT_FEE_PERCENT = float(os.getenv('SPOT_FEE_PERCENT', '0.1'))
         
         # ===== Risk Management Configuration =====
-        self.STOP_LOSS_PERCENT = float(os.getenv('STOP_LOSS_PERCENT', '2'))
         self.TRAILING_STOP_ACTIVATION = float(os.getenv('TRAILING_STOP_ACTIVATION', '5'))
         self.TRAILING_STOP_DISTANCE = float(os.getenv('TRAILING_STOP_DISTANCE', '2'))
 

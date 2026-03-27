@@ -512,13 +512,12 @@ class PaperTradingEngine:
                                 base_qty = float(self.exchange.exchange.amount_to_precision(symbol, base_qty))
                             except: pass
                             
-                            new_tp_order = self.exchange.exchange.create_order(
+                            new_tp_order = self.exchange.exchange.create_stop_market_order(
                                 symbol=symbol,
-                                type=tp_order_type,
                                 side=sl_side,
                                 amount=base_qty,
-                                price=None if tp_order_type == 'TAKE_PROFIT_MARKET' else new_tp_price,
-                                params={'stopPrice': new_tp_price, 'reduceOnly': True} if tp_order_type == 'TAKE_PROFIT_MARKET' else {'reduceOnly': True}
+                                stopPrice=new_tp_price,
+                                params={'reduceOnly': True}
                             )
                             
                             # 3. Save new ID
@@ -885,13 +884,12 @@ class PaperTradingEngine:
                                 
                             # 2. Place Hard Stop Loss on Exchange instantaneously
                             try:
-                                sl_order = self.exchange.exchange.create_order(
+                                sl_order = self.exchange.exchange.create_stop_market_order(
                                     symbol=symbol,
-                                    type='STOP_MARKET',
                                     side=sl_side,
                                     amount=quantity,
-                                    price=None,
-                                    params={'stopPrice': sl_price, 'reduceOnly': True}
+                                    stopPrice=sl_price,
+                                    params={'reduceOnly': True}
                                 )
                                 sl_order_id = sl_order.get('id') if sl_order else None
                                 self.logger.info(f"🛡️ HARD STOP PLACED: {sl_side.upper()} {symbol} @ {sl_price} (ID: {sl_order_id})")
@@ -906,14 +904,12 @@ class PaperTradingEngine:
                                 pass
                                 
                             try:
-                                tp_order_type = getattr(self.config, 'EXCHANGE_TP_ORDER_TYPE', 'TAKE_PROFIT_MARKET')
-                                tp_order = self.exchange.exchange.create_order(
+                                tp_order = self.exchange.exchange.create_stop_market_order(
                                     symbol=symbol,
-                                    type=tp_order_type,
                                     side=sl_side,
                                     amount=quantity,
-                                    price=None if tp_order_type == 'TAKE_PROFIT_MARKET' else tp_price,
-                                    params={'stopPrice': tp_price, 'reduceOnly': True} if tp_order_type == 'TAKE_PROFIT_MARKET' else {'reduceOnly': True}
+                                    stopPrice=tp_price,
+                                    params={'reduceOnly': True}
                                 )
                                 tp_order_id = tp_order.get('id') if tp_order else None
                                 self.logger.info(f"🎯 HARD TP PLACED: {sl_side.upper()} {symbol} @ {tp_price} (ID: {tp_order_id})")
@@ -1989,6 +1985,7 @@ class ApexHunterBot:
                         from datetime import datetime as dt
                         
                         # Convert SQLite Row to dict and prepare for engine
+                        db_trade = dict(db_trade)
                         metadata = {}
                         try:
                             if db_trade['metadata']:

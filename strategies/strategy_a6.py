@@ -142,7 +142,7 @@ class StrategyA6(BaseStrategy):
             df = self.calculate_adx(df)
             
         adx_val = df['adx'].iloc[-1]
-        if adx_val < 30:
+        if adx_val < 15:  # Lowered from 30 to catch early orderbook walls
             self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
             return None
 

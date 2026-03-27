@@ -325,14 +325,13 @@ class TrailingStopLayer:
                 except Exception:
                     pass
                 
-                params = {'stopPrice': new_stop_price, 'reduceOnly': True}
+                params = {'reduceOnly': True}
                 
-                new_order = self.exchange.exchange.create_order(
+                new_order = self.exchange.exchange.create_stop_market_order(
                     symbol=symbol,
-                    type='STOP_MARKET',
                     side=stop_side,
                     amount=size_qty,
-                    price=None,
+                    stopPrice=new_stop_price,
                     params=params
                 )
                 

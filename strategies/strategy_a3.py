@@ -38,6 +38,9 @@ class StrategyA3(BaseStrategy):
         self.atr_sl_mult = 1.2   # Tighter stop for cleaner entries
         self.atr_tp_mult = 2.5   # Faster profit lock-in (more wins)
 
+        # Strategy-Specific SL ROE (Fixed Target)
+        self.target_sl_roe = getattr(config, 'STRATEGY_A3_SL_ROE', 5.0)
+
         # Universal filters
         self.filters = get_strategy_filters(config)
 
@@ -193,6 +196,7 @@ class StrategyA3(BaseStrategy):
             'entry_price': current['close'],
             'stop_loss': stop_loss,
             'take_profit': take_profit,
+            'target_sl_roe': self.target_sl_roe,  # Layer 3 will use this for precise ROE-based SL
             'confidence': confidence,
             'strategy': self.name,
             'indicators': {
