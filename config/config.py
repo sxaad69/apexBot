@@ -183,6 +183,10 @@ class Config:
         self.TRAILING_TARGET_ROE = float(os.getenv('TRAILING_TARGET_ROE', '6.0'))      # Target 6% ROE to start trailing
         self.TRAILING_CAPTURE_ROE = float(os.getenv('TRAILING_CAPTURE_ROE', '2.5'))    # Gap of 2.5% ROE from peak
 
+        # Exchange-Side Execution
+        self.ENABLE_EXCHANGE_STOPS = self._str_to_bool(os.getenv('ENABLE_EXCHANGE_STOPS', 'false'))
+        self.EXCHANGE_TP_ORDER_TYPE = os.getenv('EXCHANGE_TP_ORDER_TYPE', 'TAKE_PROFIT_MARKET')
+
         self.MAX_DAILY_LOSS_PERCENT = float(os.getenv('MAX_DAILY_LOSS_PERCENT', '5'))
         self.MAX_DRAWDOWN_PERCENT = float(os.getenv('MAX_DRAWDOWN_PERCENT', '15'))
         

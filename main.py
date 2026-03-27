@@ -458,6 +458,100 @@ class PaperTradingEngine:
                     'take_profit': new_tp,
                     'metadata': meta
                 })
+
+                # --- [PHASE 15.4b: EXCHANGE-SIDE TP RATCHET] ---
+                if self.mode == 'live' and getattr(self.config, 'ENABLE_EXCHANGE_STOPS', False):
+                    # We need the current active TP order ID
+                    # Re-fetch from DB to be safe, or get from in-memory positions
+                    tp_order_id = None
+                    sl_order_id = None
+                    symbol = None
+                    sl_side = None
+                    qty = None
+                    
+                    for pos in self.positions.values():
+                        if pos['trade_id'] == trade_id:
+                            tp_order_id = pos.get('tp_order_id')
+                            sl_order_id = pos.get('sl_order_id')
+                            symbol = pos['symbol']
+                            sl_side = 'sell' if pos['side'] == 'buy' else 'buy'
+                            qty = pos['size']
+                            break
+                            
+                    if tp_order_id and symbol:
+                        try:
+                            # 1. Try to cancel old TP
+                            self.exchange.exchange.cancel_order(tp_order_id, symbol)
+                            
+                            # 2. SUCCESS: Place new TP. Use base asset qty from metadata, not dollar size.
+                            tp_order_type = getattr(self.config, 'EXCHANGE_TP_ORDER_TYPE', 'TAKE_PROFIT_MARKET')
+                            new_tp_price = new_tp
+                            # Resolve base asset quantity
+                            base_qty = None
+                            for pos in self.positions.values():
+                                if pos['trade_id'] == trade_id:
+                                    # Try getting executed_qty from DB metadata first, fallback to calculating
+                                    trades = self.db.get_trades(status='OPEN')
+                                    t = next((t for t in trades if t['trade_id'] == trade_id), None)
+                                    if t:
+                                        meta = {}
+                                        try: meta = json.loads(t['metadata']) if t['metadata'] else {}
+                                        except: pass
+                                        base_qty = meta.get('executed_qty')
+                                    if not base_qty and pos.get('entry_price', 0) > 0:
+                                        leverage = pos.get('leverage', 1)
+                                        base_qty = (pos['size'] * leverage) / pos['entry_price']
+                                    break
+                            
+                            if not base_qty:
+                                self.logger.warning(f"⚠️ Could not resolve base quantity for {symbol} TP ratchet. Skipping.")
+                                return
+                            
+                            try:
+                                new_tp_price = float(self.exchange.exchange.price_to_precision(symbol, new_tp_price))
+                                base_qty = float(self.exchange.exchange.amount_to_precision(symbol, base_qty))
+                            except: pass
+                            
+                            new_tp_order = self.exchange.exchange.create_order(
+                                symbol=symbol,
+                                type=tp_order_type,
+                                side=sl_side,
+                                amount=base_qty,
+                                price=None if tp_order_type == 'TAKE_PROFIT_MARKET' else new_tp_price,
+                                params={'stopPrice': new_tp_price, 'reduceOnly': True} if tp_order_type == 'TAKE_PROFIT_MARKET' else {'reduceOnly': True}
+                            )
+                            
+                            # 3. Save new ID
+                            new_id = new_tp_order.get('id')
+                            if new_id:
+                                self.trade_manager.db.update_trade_order_ids(trade_id, tp_order_id=new_id)
+                                for pos in self.positions.values():
+                                    if pos['trade_id'] == trade_id: pos['tp_order_id'] = new_id
+                                self.logger.info(f"🎯 EXCHANGE TP RATCHET SUCCESS: {symbol} -> ${new_tp_price}")
+                        
+                        except Exception as e:
+                            # 4. CANCEL FAILED: Check if it was already filled (Race Condition)
+                            try:
+                                old_order = self.exchange.exchange.fetch_order(tp_order_id, symbol)
+                                if old_order.get('status') == 'closed':
+                                    self.logger.info(f"🎯 [RACE DETECTED] TP already filled for {symbol} during ratchet. Recording exit.")
+                                    if sl_order_id:
+                                        try: self.exchange.exchange.cancel_order(sl_order_id, symbol)
+                                        except: pass
+                                    self.trade_manager.record_exit(
+                                        symbol=symbol, trade_id=trade_id, reason='take_profit',
+                                        current_price=old_order.get('average') or current_price,
+                                        order_response=old_order
+                                    )
+                                    # --- BUG FIX: Remove from in-memory positions to avoid ghost trade ---
+                                    position_key = f"{next((p['strategy'] for p in self.positions.values() if p['trade_id'] == trade_id), None)}:{symbol}"
+                                    if position_key in self.positions:
+                                        del self.positions[position_key]
+                                    return
+                            except Exception as fetch_e:
+                                self.logger.warning(f"Failed to verify old TP status after ratchet fail: {fetch_e}")
+                            
+                            self.logger.warning(f"⚠️ Trailing TP exchange update failed for {symbol}: {e}. Software fallback active.")
         except Exception as e:
             self.logger.error(f"Failed to persist Trailing TP update: {e}")
 
@@ -775,28 +869,67 @@ class PaperTradingEngine:
                         
                         self.logger.info(f"✅ LIVE ENTRY SUCCESS: {order.get('id')} ({quantity} {symbol}) at {entry_price}")
                         
-                        # 2. Place Hard Stop Loss on Exchange instantaneously (Safely Wrapped)
-                        sl_side = 'sell' if approved_params['side'].lower() == 'buy' else 'buy'
-                        sl_price = approved_params['stop_loss']
+                        # --- [PHASE 15.2: EXCHANGE-SIDE SL/TP PLACEMENT] ---
+                        # Only place hard exchange orders if ENABLE_EXCHANGE_STOPS is True
+                        sl_order_id = None
+                        tp_order_id = None
                         
-                        try:
-                            sl_price = float(self.exchange.exchange.price_to_precision(symbol, sl_price))
-                        except Exception:
-                            pass
+                        if getattr(self.config, 'ENABLE_EXCHANGE_STOPS', False):
+                            sl_side = 'sell' if approved_params['side'].lower() == 'buy' else 'buy'
+                            sl_price = approved_params['stop_loss']
                             
-                        try:
-                            # We provide the quantity alongside reduceOnly for highest compatibility across exchanges
-                            sl_order = self.exchange.exchange.create_order(
-                                symbol=symbol,
-                                type='STOP_MARKET',
-                                side=sl_side,
-                                amount=quantity,
-                                price=None, # Trigger price goes in params
-                                params={'stopPrice': sl_price, 'reduceOnly': True}
+                            try:
+                                sl_price = float(self.exchange.exchange.price_to_precision(symbol, sl_price))
+                            except Exception:
+                                pass
+                                
+                            # 2. Place Hard Stop Loss on Exchange instantaneously
+                            try:
+                                sl_order = self.exchange.exchange.create_order(
+                                    symbol=symbol,
+                                    type='STOP_MARKET',
+                                    side=sl_side,
+                                    amount=quantity,
+                                    price=None,
+                                    params={'stopPrice': sl_price, 'reduceOnly': True}
+                                )
+                                sl_order_id = sl_order.get('id') if sl_order else None
+                                self.logger.info(f"🛡️ HARD STOP PLACED: {sl_side.upper()} {symbol} @ {sl_price} (ID: {sl_order_id})")
+                            except Exception as sl_e:
+                                self.logger.warning(f"⚠️ Failed to place hard Stop Loss on exchange: {sl_e}. Bot safety logic still active.")
+                                
+                            # 3. Place Hard Take Profit on Exchange
+                            tp_price = approved_params['take_profit']
+                            try:
+                                tp_price = float(self.exchange.exchange.price_to_precision(symbol, tp_price))
+                            except Exception:
+                                pass
+                                
+                            try:
+                                tp_order_type = getattr(self.config, 'EXCHANGE_TP_ORDER_TYPE', 'TAKE_PROFIT_MARKET')
+                                tp_order = self.exchange.exchange.create_order(
+                                    symbol=symbol,
+                                    type=tp_order_type,
+                                    side=sl_side,
+                                    amount=quantity,
+                                    price=None if tp_order_type == 'TAKE_PROFIT_MARKET' else tp_price,
+                                    params={'stopPrice': tp_price, 'reduceOnly': True} if tp_order_type == 'TAKE_PROFIT_MARKET' else {'reduceOnly': True}
+                                )
+                                tp_order_id = tp_order.get('id') if tp_order else None
+                                self.logger.info(f"🎯 HARD TP PLACED: {sl_side.upper()} {symbol} @ {tp_price} (ID: {tp_order_id})")
+                            except Exception as tp_e:
+                                self.logger.warning(f"⚠️ Failed to place hard Take Profit on exchange: {tp_e}. Bot safety logic still active.")
+                        
+                        # 4. Save both order IDs to the DB (Trade Manager)
+                        if sl_order_id or tp_order_id:
+                            self.trade_manager.db.update_trade_order_ids(
+                                position['trade_id'],
+                                sl_order_id=sl_order_id,
+                                tp_order_id=tp_order_id
                             )
-                            self.logger.info(f"🛡️ HARD STOP PLACED: {sl_side.upper()} {symbol} @ {sl_price}")
-                        except Exception as sl_e:
-                            self.logger.warning(f"⚠️ Failed to place hard Stop Loss on exchange: {sl_e}. Bot safety logic still active.")
+                            # Update in-memory reference too
+                            position['sl_order_id'] = sl_order_id
+                            position['tp_order_id'] = tp_order_id
                             
                     except Exception as e:
                         self.logger.error(f"🚨 LIVE ENTRY ATTEMPT FAILED for {symbol}: {e}")
@@ -872,6 +1005,76 @@ class PaperTradingEngine:
             if position['symbol'] != symbol:
                 continue
 
+            # --- [PHASE 15.3: EXCHANGE-SIDE SL/TP POLLING] ---
+            # If we placed exchange orders, check their status FIRST before software checks
+            exchange_exit_triggered = False
+            exchange_exit_reason = None
+            filled_order = None
+            
+            if self.mode == 'live' and getattr(self.config, 'ENABLE_EXCHANGE_STOPS', False):
+                sl_id = position.get('sl_order_id')
+                tp_id = position.get('tp_order_id')
+                
+                if sl_id or tp_id:
+                    try:
+                        # 1. Check SL
+                        if sl_id:
+                            sl_status = self.exchange.exchange.fetch_order(sl_id, symbol)
+                            if sl_status.get('status') == 'closed':
+                                exchange_exit_triggered = True
+                                exchange_exit_reason = 'stop_loss'
+                                filled_order = sl_status
+                                # Cancel orphan TP
+                                if tp_id:
+                                    try: self.exchange.exchange.cancel_order(tp_id, symbol)
+                                    except: pass
+                        
+                        # 2. Check TP (if SL didn't fill)
+                        if not exchange_exit_triggered and tp_id:
+                            tp_status = self.exchange.exchange.fetch_order(tp_id, symbol)
+                            if tp_status.get('status') == 'closed':
+                                exchange_exit_triggered = True
+                                exchange_exit_reason = 'take_profit'
+                                filled_order = tp_status
+                                # Cancel orphan SL
+                                if sl_id:
+                                    try: self.exchange.exchange.cancel_order(sl_id, symbol)
+                                    except: pass
+                                    
+                        # 3. If either filled on exchange, bypass software checks and record exit
+                        if exchange_exit_triggered:
+                            self.logger.info(f"⚡ EXCHANGE-SIDE EXIT DETECTED: {symbol} hit {exchange_exit_reason}")
+                            try:
+                                # Ensure both IDs are cleared in DB
+                                self.trade_manager.db.update_trade_order_ids(position['trade_id'], sl_order_id=None, tp_order_id=None)
+                            except Exception as e:
+                                self.logger.warning(f"Failed to clear order IDs for {symbol}: {e}")
+                                
+                            exit_result = self.trade_manager.record_exit(
+                                symbol=symbol,
+                                trade_id=position['trade_id'],
+                                reason=exchange_exit_reason,
+                                current_price=filled_order.get('average') or filled_order.get('price') or current_price,
+                                order_response=filled_order
+                            )
+                            
+                            if exit_result and exit_result.get('verified'):
+                                self.total_capital += exit_result.get('capital_return', 0)
+                                is_win = exit_result['net_pnl'] > 0
+                                self.risk_manager.record_trade_result(is_win, exit_result['net_pnl'])
+                                if self.total_capital > self.peak_balance:
+                                    self.peak_balance = self.total_capital
+                                    self.risk_manager.update_peak_balance(self.total_capital)
+                                    if hasattr(self.logger, 'db'):
+                                        self.logger.db.set_setting('peak_balance', self.total_capital)
+                            
+                            closed_positions.append(position_key)
+                            continue # Skip the rest of the loop for this position
+                            
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Failed to poll exchange orders for {symbol}: {e}. Falling back to software check.")
+
+            # --- SOFTWARE EXIT CHECKS (Fallback) ---
             # Check for failed previous exits (PENDING_EXIT)
             is_pending_retry = position.get('status') == 'PENDING_EXIT'
             should_exit, reason = self.check_position_exit(position, current_price)
@@ -1815,6 +2018,9 @@ class ApexHunterBot:
                             'trailing_tp_peak_price': metadata.get('trailing_tp_peak_price', None),
                             'trailing_tp_trough_price': metadata.get('trailing_tp_trough_price', None),
                             'trailing_tp_activation_price': metadata.get('trailing_tp_activation_price', None),
+                            # Exchange-Side SL/TP persistence (Phase 15)
+                            'sl_order_id': db_trade.get('sl_order_id'),
+                            'tp_order_id': db_trade.get('tp_order_id')
                         }
                         
                         # Add back to active memory

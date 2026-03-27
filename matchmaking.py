@@ -23,6 +23,11 @@ class ClosedTradeMatcher:
         self.logger = MongoLogger(self.config)
         self.db = SQLiteManager(self.config)
         self.exchange = CCXTExchangeClient(self.config, self.logger)
+        self.stats = {
+            'total': 0, 'ghosts': 0, 'desyncs': 0, 
+            'sl_hits': 0, 'tp_hits': 0, 
+            'sl_devs': [], 'tp_devs': []
+        }
         
     def get_db_closed_trades(self) -> List[Dict[str, Any]]:
         """Fetch trades marked as CLOSED in SQLite."""
@@ -62,11 +67,11 @@ class ClosedTradeMatcher:
         
         # --- TABLE 1: STRICT VERIFICATION ---
         print("\n📊 TABLE 1: STRICT VERIFICATION (Closed Trades: Binance vs Database)")
-        h1 = ["Symbol", "Entry ID", "Side", "Margin($)", "Size", "Lev B|DB", "Entry B|DB", "Exit B|DB", "SL(DB)", "TP(DB)", "SL Hit?", "TP Hit?", "ROE%", "Status"]
-        w1 = [13, 11, 5, 8, 10, 8, 15, 15, 8, 8, 8, 8, 8, 16]
-        print("-" * sum(w1) + "---" * 13)
+        h1 = ["Symbol", "Side", "Entry B|DB", "Exit B|DB", "SL(DB)", "TP(DB)", "SL Hit?", "TP Hit?", "ROE%", "SL Dev", "TP Dev", "Status"]
+        w1 = [13, 5, 15, 15, 8, 8, 8, 8, 8, 7, 7, 16]
+        print("-" * sum(w1) + "---" * 12)
         print(self.format_row(h1, w1))
-        print("-" * sum(w1) + "---" * 13)
+        print("-" * sum(w1) + "---" * 12)
 
         for trade in db_trades:
             sym = trade['symbol']
@@ -130,19 +135,64 @@ class ClosedTradeMatcher:
                 actual_lev = float(b_lev_str) if b_lev_str != 'N/A' else float(db_lev)
                 roe_pct = ((b_exit / b_entry) - 1) * 100 * side_mult * actual_lev
 
+            # Calculate SL/TP Deviation (Slippage)
+            sl_dev, tp_dev = 0.0, 0.0
+            if "Yes" in sl_hit and db_sl > 0 and b_exit > 0:
+                if side == 'BUY': sl_dev = ((b_exit / db_sl) - 1) * 100
+                else: sl_dev = ((db_sl / b_exit) - 1) * 100
+            
+            if "Yes" in tp_hit and db_tp > 0 and b_exit > 0:
+                if side == 'BUY': tp_dev = ((b_exit / db_tp) - 1) * 100
+                else: tp_dev = ((db_tp / b_exit) - 1) * 100
+
             # Status logic
             status = "✅ VERIFIED"
             if not entry_id: status = "GHOST ENTRY"
             elif not exit_candidates: status = "NO BINANCE EXIT"
             elif entry_order and abs(db_coins - b_size) > (b_size * 0.01 + 0.0001): status = "❌ SIZE DESYNC"
-            
+
+            # Stats tracking
+            self.stats['total'] += 1
+            if not entry_id: self.stats['ghosts'] += 1
+            if "Yes" in sl_hit:
+                self.stats['sl_hits'] += 1
+                self.stats['sl_devs'].append(sl_dev)
+            if "Yes" in tp_hit:
+                self.stats['tp_hits'] += 1
+                self.stats['tp_devs'].append(tp_dev)
+            if status == "❌ SIZE DESYNC": self.stats['desyncs'] += 1
+
             print(self.format_row([
-                sym, short_id, side, f"{db_margin:.1f}", f"{b_size:.1f}|{db_coins:.1f}", 
-                f"{b_lev_str}|{db_lev}", f"{b_entry:.4f}|{db_entry:.4f}", f"{b_exit:.4f}|{db_exit:.4f}",
-                f"{db_sl:.4f}", f"{db_tp:.4f}", sl_hit, tp_hit, f"{roe_pct:.1f}%", status
+                sym, side, f"{b_entry:.4f}|{db_entry:.4f}", f"{b_exit:.4f}|{db_exit:.4f}",
+                f"{db_sl:.4f}", f"{db_tp:.4f}", sl_hit, tp_hit, f"{roe_pct:.1f}%", 
+                f"{sl_dev:.1f}%", f"{tp_dev:.1f}%", status
             ], w1))
 
         print(f"\n{'='*140}")
+        print("📊 EXECUTION SUMMARY")
+        print(f"{'='*140}")
+        avg_sl_dev = sum(self.stats['sl_devs']) / len(self.stats['sl_devs']) if self.stats['sl_devs'] else 0
+        avg_tp_dev = sum(self.stats['tp_devs']) / len(self.stats['tp_devs']) if self.stats['tp_devs'] else 0
+        
+        print(f"Total Trades Analyzed: {self.stats['total']}")
+        print(f"Ghost Trades (No ID): {self.stats['ghosts']}")
+        print(f"Size Desyncs:         {self.stats['desyncs']}")
+        print(f"Stop Loss Hits:       {self.stats['sl_hits']}")
+        print(f"Take Profit Hits:     {self.stats['tp_hits']}")
+        print(f"Avg SL Slippage:      {avg_sl_dev:.2f}%")
+        print(f"Avg TP Slippage:      {avg_tp_dev:.2f}%")
+        
+        if abs(avg_sl_dev) < 0.5:
+            print("\n✅ STOP LOSS PERFORMANCE: Working like a charm.")
+        else:
+            print("\n⚠️ STOP LOSS PERFORMANCE: Significant slippage detected.")
+
+        if abs(avg_tp_dev) < 0.5:
+            print("✅ TAKE PROFIT PERFORMANCE: Working like a charm.")
+        else:
+            print("⚠️ TAKE PROFIT PERFORMANCE: Deviation detected.")
+
+        print(f"{'='*140}\n")
         print("🏁 MATCHMAKING COMPLETED")
         print(f"{'='*140}\n")
 

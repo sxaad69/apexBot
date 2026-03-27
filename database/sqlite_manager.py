@@ -60,7 +60,9 @@ class SQLiteManager:
                 capital_at_exit REAL,
                 reason TEXT,
                 metadata TEXT,
-                exchange_order_id TEXT
+                exchange_order_id TEXT,
+                sl_order_id TEXT,
+                tp_order_id TEXT
             )
         ''')
         
@@ -98,6 +100,14 @@ class SQLiteManager:
             if 'exchange_order_id' not in columns:
                 print("🔧 Migrating database: Adding 'exchange_order_id' column...")
                 cursor.execute("ALTER TABLE trades ADD COLUMN exchange_order_id TEXT")
+            
+            if 'sl_order_id' not in columns:
+                print("🔧 Migrating database: Adding 'sl_order_id' column...")
+                cursor.execute("ALTER TABLE trades ADD COLUMN sl_order_id TEXT")
+                
+            if 'tp_order_id' not in columns:
+                print("🔧 Migrating database: Adding 'tp_order_id' column...")
+                cursor.execute("ALTER TABLE trades ADD COLUMN tp_order_id TEXT")
             
             conn.commit()
         except Exception as e:
@@ -275,16 +285,18 @@ class SQLiteManager:
         """Fetch trades from the database, optionally filtered by status"""
         try:
             conn = self._get_connection(self.main_db)
-            cursor = conn.cursor()
-            query = "SELECT * FROM trades"
-            params = []
-            if status:
-                query += " WHERE status = ?"
-                params.append(status)
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-            conn.close()
-            return [dict(row) for row in rows]
+            try:
+                cursor = conn.cursor()
+                query = "SELECT * FROM trades"
+                params = []
+                if status:
+                    query += " WHERE status = ?"
+                    params.append(status)
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+            finally:
+                conn.close()
         except Exception as e:
             print(f"❌ SQLite get_trades error: {e}")
             return []

@@ -104,6 +104,16 @@ class TrailingStopLayer:
         symbol = trade['symbol']
         trade_id = trade['trade_id']
         try:
+            # 0. Cancel orphan TP order on exchange first (before market close) to prevent re-open
+            if self.exchange and self.mode == 'live' and getattr(self.config, 'ENABLE_EXCHANGE_STOPS', False):
+                tp_id = trade.get('tp_order_id')
+                if tp_id:
+                    try:
+                        self.exchange.exchange.cancel_order(tp_id, symbol)
+                        self.logger.info(f"🛡️ Cancelled orphan TP order {tp_id} for {symbol} (trailing SL hit)")
+                    except Exception as tp_cancel_e:
+                        self.logger.warning(f"⚠️ Could not cancel orphan TP for {symbol}: {tp_cancel_e}")
+
             # 1. Fire Exchange API Call (Only in LIVE mode)
             close_order = None
             if self.exchange and self.mode == 'live':
@@ -224,8 +234,7 @@ class TrailingStopLayer:
                 from datetime import datetime
                 meta = trade['metadata']
                 meta_dict = json.loads(meta) if isinstance(meta, str) else (meta or {})
-                if new_sl_id and new_sl_id != "error":
-                    meta_dict['exchange_sl_id'] = new_sl_id
+                # Note: We still save history to metadata, but exchange ID is handled in DB row
                 
                 meta_dict['trailing_sl_history'] = meta_dict.get('trailing_sl_history', []) + [{
                     'price': new_stop,
@@ -258,9 +267,8 @@ class TrailingStopLayer:
                 return mock_order_id
             else:
                 # Live Trading Sync
-                # Check if exchange-side stops are enabled (Default to False as requested)
+                # 1. Verify feature is enabled
                 if not getattr(self.config, 'ENABLE_EXCHANGE_STOPS', False):
-                    self.logger.debug(f"Exchange-side stops disabled. Using software loop for {symbol}.")
                     return None
 
                 if not self.exchange:
@@ -268,15 +276,33 @@ class TrailingStopLayer:
                     
                 import json
                 trade_dict = dict(trade)
-                meta = trade_dict.get('metadata')
-                meta_dict = json.loads(meta) if isinstance(meta, str) else (meta or {})
-                exchange_sl_id = meta_dict.get('exchange_sl_id')
+                meta_dict = json.loads(trade_dict.get('metadata', "{}")) if isinstance(trade_dict.get('metadata'), str) else (trade_dict.get('metadata') or {})
                 
-                # 2. Cancel Old Stop Loss order on exchange if one exists
+                # Retrieve current SL order ID from database column
+                exchange_sl_id = trade_dict.get('sl_order_id')
+                
+                # 2. Add Cancel-then-Verify Logic for Old Order
                 if exchange_sl_id:
                     try:
-                        self.exchange.cancel_order(exchange_sl_id, symbol)
+                        self.exchange.exchange.cancel_order(exchange_sl_id, symbol)
                     except Exception as e:
+                        # Cancel failed. Check if Binance already filled the SL order
+                        try:
+                            old_order = self.exchange.exchange.fetch_order(exchange_sl_id, symbol)
+                            if old_order.get('status') == 'closed':
+                                self.logger.info(f"🛡️ [RACE DETECTED] SL already filled for {symbol} during ratchet. Recording exit.")
+                                
+                                # Clean up orphan TP
+                                tp_id = trade_dict.get('tp_order_id')
+                                if tp_id:
+                                    try: self.exchange.exchange.cancel_order(tp_id, symbol)
+                                    except: pass
+                                    
+                                # Using dynamic import since risk layer doesn't naturally have TradeManager
+                                # Alternative: pass the TradeManager down or assume main wrapper handles the exit eventually
+                                # Since we return 'error', the loop skips update and main.py polling will catch this anyway.
+                                return "error"
+                        except: pass
                         self.logger.warning(f"Failed to cancel old stop loss {exchange_sl_id} for {symbol}: {e}")
                 
                 # 3. Create New Stop Market Order
@@ -311,8 +337,14 @@ class TrailingStopLayer:
                 )
                 
                 if new_order and 'id' in new_order:
-                    self.logger.debug(f"[Live] Updated Exchange Stop Loss for {symbol} to {new_stop_price} (ID: {new_order['id']})")
-                    return new_order['id']
+                    new_id = new_order['id']
+                    self.logger.debug(f"[Live] Updated Exchange Stop Loss for {symbol} to {new_stop_price} (ID: {new_id})")
+                    # Save the new ID to DB column
+                    self.db.update_trade_order_ids(trade_id, sl_order_id=new_id)
+                    
+                    # Update strictly in-memory state of the trade wrapper dictionary reference 
+                    trade['sl_order_id'] = new_id
+                    return new_id
                 return None
                 
         except Exception as e:
