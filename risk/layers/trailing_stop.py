@@ -38,15 +38,16 @@ class TrailingStopLayer:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            # Fetch all currently open trades from SQLite memory
+            # Fetch all currently open trades from SQLite
             cursor.execute("SELECT * FROM trades WHERE status = 'OPEN'")
-            open_trades = cursor.fetchall()
+            open_trades = [dict(row) for row in cursor.fetchall()]
+            conn.close()
             
-            for trade in open_trades:
+            for trade_dict in open_trades:
                 # --- FIX: Isolate each trade in its own try/except so one bad record
                 # --- never prevents SL checks from running on subsequent trades.
                 try:
-                    symbol = trade['symbol']
+                    symbol = trade_dict['symbol']
                     # self.logger.debug(f"[TrailingStopLayer] Evaluating {symbol}...")
                     if symbol not in live_tickers:
                         # try fuzzy match for colon suffix
@@ -60,7 +61,6 @@ class TrailingStopLayer:
                         current_price = live_tickers[symbol]
                     
                     # --- FIX: Guard against malformed records with entry_price = 0
-                    trade_dict = dict(trade)
                     entry_price = trade_dict.get('entry_price')
                     if not entry_price or entry_price == 0:
                         self.logger.warning(f"⚠️ Skipping {symbol} (trade {trade_dict.get('trade_id')[:8]}) — entry_price is 0/None. Possible zombie record.")
@@ -80,32 +80,26 @@ class TrailingStopLayer:
                     
                     # 1. Trailing Stop Ratchet Logic (Phase 61: Always evaluate for activation if not active)
                     if is_new_peak or not trade_dict.get('trailing_stop_price'):
-                        self._evaluate_and_update_stop(trade_dict, highest_price, lowest_price, current_price, cursor)
+                        self._evaluate_and_update_stop(trade_dict, highest_price, lowest_price, current_price)
                         
                     # 2. Trigger Trailing Stop Exit Logic
                     current_stop = trade_dict.get('trailing_stop_price') or trade_dict.get('stop_loss')
                     if current_stop:
                         if trade_dict['side'] == 'buy' and current_price <= current_stop:
                             self.logger.system(f"🚨 Trailing Stop HIT for {symbol} (Long). Executing Market Close.")
-                            self._trigger_close_position(trade_dict, current_price, cursor)
+                            self._trigger_close_position(trade_dict, current_price)
                         elif trade_dict['side'] == 'sell' and current_price >= current_stop:
                             self.logger.system(f"🚨 Trailing Stop HIT for {symbol} (Short). Executing Market Close.")
-                            self._trigger_close_position(trade_dict, current_price, cursor)
+                            self._trigger_close_position(trade_dict, current_price)
 
                 except Exception as trade_err:
-                    symbol_name = "Unknown"
-                    try:
-                        symbol_name = trade['symbol'] if isinstance(trade, (dict, sqlite3.Row)) else "?"
-                    except: pass
+                    symbol_name = trade_dict.get('symbol', 'Unknown')
                     self.logger.error(f"🚨 Error evaluating SL for {symbol_name}: {trade_err}")
-                    
-            conn.commit()
-            conn.close()
             
         except Exception as e:
             self.logger.error(f"Error processing trailing stops: {e}")
 
-    def _trigger_close_position(self, trade, current_price, cursor):
+    def _trigger_close_position(self, trade, current_price):
         """Fires a market close via CCXT and marks the SQLite row closed."""
         symbol = trade['symbol']
         trade_id = trade['trade_id']
@@ -135,15 +129,13 @@ class TrailingStopLayer:
                         del self.engine.positions[position_key]
                         self.logger.info(f"💰 CAPITAL RECOVERED: ${exit_result['capital_return']:.2f}")
             else:
-                # Fallback for paper mode without trade_manager (not recommended)
-                exit_time = __import__('datetime').datetime.utcnow().isoformat()
-                cursor.execute("UPDATE trades SET status = 'CLOSED', exit_price = ?, exit_time = ?, reason = 'trailing_stop' WHERE trade_id = ?",
-                               (current_price, exit_time, trade_id))
+                # Fallback for paper mode (In final versions, this should always go through self.trade_manager.record_exit)
+                pass
             
         except Exception as e:
             self.logger.error(f"🚨 Failed to close position {symbol} during Trailing Stop hit! {e}")
 
-    def _evaluate_and_update_stop(self, trade, highest_price, lowest_price, current_price, cursor):
+    def _evaluate_and_update_stop(self, trade, highest_price, lowest_price, current_price):
         """Calculates trailing distance and pushes API update if needed."""
         entry_price = trade['entry_price']
         side = trade['side']
@@ -179,8 +171,10 @@ class TrailingStopLayer:
         # Has it reached Activation threshold?
         if profit_pct < activation_pct:
             # We must still simply update SQLite's watermark so we don't lose progress
-            cursor.execute("UPDATE trades SET highest_price = ?, lowest_price = ? WHERE trade_id = ?", 
-                           (highest_price, lowest_price, trade_id))
+            self.db.update_trade_metadata(trade_id, {
+                'highest_price': highest_price,
+                'lowest_price': lowest_price
+            })
             return
             
         # 2. Calculate new trailing stop floor (with Fee-Safety Floor)
@@ -209,8 +203,12 @@ class TrailingStopLayer:
                     'time': datetime.utcnow().isoformat()
                 }]
                     
-                cursor.execute("UPDATE trades SET highest_price = ?, trailing_stop_price = ?, stop_loss = ?, metadata = ? WHERE trade_id = ?", 
-                               (highest_price, new_stop, new_stop, json.dumps(meta_dict), trade_id))
+                self.db.update_trade_metadata(trade_id, {
+                    'highest_price': highest_price,
+                    'trailing_stop_price': new_stop,
+                    'stop_loss': new_stop,
+                    'metadata': meta_dict
+                })
                 self.logger.system(f"Trailing Stop RATCHETED to {new_stop:.4f} for {symbol} (Profit: {profit_pct:.2f}%)")
         else:
             new_stop = peak_price * (1 + (trail_dist_pct / 100.0))
@@ -234,8 +232,12 @@ class TrailingStopLayer:
                     'time': datetime.utcnow().isoformat()
                 }]
                     
-                cursor.execute("UPDATE trades SET lowest_price = ?, trailing_stop_price = ?, stop_loss = ?, metadata = ? WHERE trade_id = ?", 
-                               (lowest_price, new_stop, new_stop, json.dumps(meta_dict), trade_id))
+                self.db.update_trade_metadata(trade_id, {
+                    'lowest_price': lowest_price,
+                    'trailing_stop_price': new_stop,
+                    'stop_loss': new_stop,
+                    'metadata': meta_dict
+                })
                 self.logger.system(f"Trailing Stop RATCHETED to {new_stop:.4f} for {symbol} (Profit: {profit_pct:.2f}%)")
 
     def _move_stop_loss_on_exchange(self, trade, new_stop_price):

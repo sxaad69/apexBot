@@ -83,7 +83,8 @@ class PositionSizingLayer:
         # Calculate actual risk percentage for logging and tracking
         adjusted_percent = (position_size / available_capital * 100) if available_capital > 0 else 0
         
-        # Update trade parameters
+        # Update trade parameters (Directly override 'size' for main.py execution)
+        trade_params['size'] = position_size
         trade_params['position_size'] = position_size
         trade_params['risk_percent'] = adjusted_percent
         
