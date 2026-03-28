@@ -816,6 +816,14 @@ class PaperTradingEngine:
                         # Calculate quantity for CCXT (Margin * Leverage / Price)
                         quantity = (size * leverage) / entry_price
                         
+                        # SAFETY: Ensure total order value (quantity * price) roughly matches intended risk
+                        total_value = quantity * entry_price
+                        max_allowed_value = (size * leverage) * 1.1 # 10% buffer for slippage
+                        if total_value > max_allowed_value:
+                            error_msg = f"❌ FORCED ABORT: Calculated value ${total_value:.2f} exceeds safety limit ${max_allowed_value:.2f}"
+                            self.logger.critical(error_msg)
+                            raise ValueError(error_msg)
+                        
                         # Format precision to fix "minimum amount precision" errors
                         try:
                             quantity = float(self.exchange.exchange.amount_to_precision(symbol, quantity))

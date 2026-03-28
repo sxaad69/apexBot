@@ -51,6 +51,7 @@ class RiskManager:
 
         # Pass trade through each layer sequentially
         approved_params = trade_params.copy()
+        confidence = trade_params.get('confidence', 0.0)
 
         for layer in self.layers:
             layer_name = layer.__class__.__name__
@@ -60,8 +61,6 @@ class RiskManager:
             if result is None:
                 # Trade rejected by this layer
                 reason = "Blocked by risk component"
-                # Try to get specific reason from logger context if possible (though logger doesn't return info)
-                # For forensics, we'll log the layer name as the primary differentiator
                 
                 self.logger.warning(f"Risk evaluation: {layer_name} rejected {symbol} - trade blocked")
                 
@@ -91,8 +90,12 @@ class RiskManager:
             else:
                 self.logger.debug(f"Risk evaluation: {layer_name} approved {symbol}")
                 approved_params = result
+                # Ensure confidence persists if layer returns a fresh dict
+                if 'confidence' not in approved_params:
+                    approved_params['confidence'] = confidence
 
         # All layers approved
+        approved_params['confidence'] = confidence
         self.logger.debug(f"Risk evaluation: Trade approved through all {len(self.layers)} risk layers for {symbol}")
         return approved_params
     
