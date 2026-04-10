@@ -66,8 +66,13 @@ class LeverageControlLayer:
         leverage_from_conf = atr_safe_max * conf_scale
 
         # --- Step 3: Apply all caps ---
+        # Strategy-specific leverage cap (e.g. A5 limited to 5x)
+        strategy_max = abs_max_leverage
+        if "A5" in strategy:
+            strategy_max = getattr(self.config, 'A5_MAX_LEVERAGE', 5)
+
         drawdown_max = self._get_drawdown_adjusted_max(current_drawdown)
-        final_leverage = int(min(leverage_from_conf, abs_max_leverage, drawdown_max))
+        final_leverage = int(min(leverage_from_conf, abs_max_leverage, strategy_max, drawdown_max))
         final_leverage = max(final_leverage, 1)  # Always at least 1x
 
         # Log the full calculation for transparency

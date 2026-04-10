@@ -33,7 +33,7 @@ class ClosedTradeMatcher:
         """Fetch trades marked as CLOSED in SQLite."""
         conn = self.db._get_connection(self.db.main_db)
         cursor = conn.cursor()
-        query = "SELECT * FROM trades WHERE status = 'CLOSED' ORDER BY exit_time DESC LIMIT 100"
+        query = "SELECT * FROM trades WHERE status = 'CLOSED' ORDER BY exit_time DESC"
         cursor.execute(query)
         rows = cursor.fetchall()
         conn.close()
@@ -45,7 +45,7 @@ class ClosedTradeMatcher:
         for sym in symbols:
             try:
                 # fetch_orders fetches all orders (open and closed) for the symbol
-                orders = self.exchange.exchange.fetch_closed_orders(sym, limit=100)
+                orders = self.exchange.exchange.fetch_closed_orders(sym, limit=500)
                 orders_by_sym[sym] = orders
             except Exception as e:
                 print(f"Error fetching orders for {sym}: {e}")

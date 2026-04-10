@@ -30,8 +30,8 @@ class StrategyA5(BaseStrategy):
         # Conviction requirements (adaptive based on session)
         self.testing_mode = getattr(config, 'TESTING_MODE', False)
         # Tightened thresholds based on performance audit to reach 10% Daily ROI
-        self.base_confidence_threshold = 0.65 if self.testing_mode else 0.80
-        self.peak_confidence_threshold = 0.75 if self.testing_mode else 0.90
+        self.base_confidence_threshold = 0.70 if self.testing_mode else 0.85
+        self.peak_confidence_threshold = 0.80 if self.testing_mode else 0.95
         self.min_orderbook_imbalance = 0.20 if self.testing_mode else 0.35
         self.min_whale_value = 2000 if self.testing_mode else 50000
         self.volume_multiplier = 1.0 if self.testing_mode else 1.5
@@ -237,9 +237,9 @@ class StrategyA5(BaseStrategy):
             self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{filter_reason.upper()}", {"filter_reason": filter_reason})
             return None
 
-        # 3. Strict ADX Filter (Added to match A3/A6 requirements)
+        # 3. Market Awareness Filter - lower ADX to 15 to catch trends early
         adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
-        if adx_val < 30:
+        if adx_val < 15:
             self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
             return None
 

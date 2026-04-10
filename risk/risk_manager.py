@@ -13,10 +13,11 @@ class RiskManager:
     Evaluates trades through all 11 risk layers sequentially
     """
     
-    def __init__(self, config, logger, db_manager=None):
+    def __init__(self, config, logger, db_manager=None, profit_ratchet=None):
         self.config = config
         self.logger = logger
         self.db = db_manager
+        self.profit_ratchet = profit_ratchet
         
         # Initialize all layers in order
         self.layers = [
@@ -48,6 +49,18 @@ class RiskManager:
         """
 
         symbol = trade_params.get('symbol', 'Unknown')
+        
+        # --- LAYER 0: GLOBAL PROFIT RATCHET GUARD ---
+        if self._is_ratchet_locked():
+            self.logger.warning(f"🚫 Risk evaluation: BLOCKED by Portfolio Profit Ratchet (Liquidation or Cooldown active)")
+            if self.db:
+                self.db.log_rejection({
+                    'symbol': symbol,
+                    'strategy': trade_params.get('strategy', 'Unknown'),
+                    'reason': "BLOCKED_BY_RATCHET_COOLDOWN",
+                    'layer': "GlobalRatchet"
+                })
+            return None
 
         # Pass trade through each layer sequentially
         approved_params = trade_params.copy()
@@ -118,3 +131,29 @@ class RiskManager:
     def update_peak_balance(self, current_balance: float):
         """Update peak balance for drawdown calculation"""
         self.layers[4].update_peak(current_balance)  # MaximumDrawdownLayer
+
+    def _is_ratchet_locked(self) -> bool:
+        """Checks if the bot is currently in a profit-ratchet cooldown or liquidation state.
+        
+        When profit_ratchet is injected, its is_locked() already handles both the
+        active-liquidation flag AND the DB cooldown check — no need to double-read DB.
+        The DB-only fallback path handles bot restarts when no live ratchet is present.
+        """
+        # Path 1: Live instance available (covers active liquidation + DB cooldown in one call)
+        if self.profit_ratchet is not None:
+            return self.profit_ratchet.is_locked()
+
+        # Path 2: No live instance — fall back to DB (e.g. in scripts, forensic tools, after restart)
+        if not self.db:
+            return False
+            
+        try:
+            from datetime import datetime
+            cooldown_val = self.db.get_setting('portfolio_ratchet_cooldown_until')
+            if cooldown_val:
+                until = datetime.fromisoformat(cooldown_val)
+                if datetime.utcnow() < until:
+                    return True
+        except:
+            pass
+        return False

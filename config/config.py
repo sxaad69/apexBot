@@ -99,7 +99,12 @@ class Config:
         self.INITIAL_CAPITAL = self.FUTURES_VIRTUAL_CAPITAL
         self.POSITION_SIZE_PERCENT = self.FUTURES_POSITION_SIZE_PERCENT
         self.MAX_LEVERAGE = self.FUTURES_MAX_LEVERAGE
-        self.GLOBAL_STOP_LOSS_ROE = float(os.getenv('GLOBAL_STOP_LOSS_ROE', '20.0'))
+        # Strategy-Specific Overrides (The "Breathing Room" Knobs)
+        self.A5_MAX_LEVERAGE = int(os.getenv('A5_MAX_LEVERAGE', '5'))
+        self.A5_STOP_LOSS_ROE = float(os.getenv('A5_STOP_LOSS_ROE', '15.0'))
+        
+        # GLOBAL ROE Shield (The "Safety Guard")
+        self.GLOBAL_STOP_LOSS_ROE = float(os.getenv('GLOBAL_STOP_LOSS_ROE', '5.0'))
         self.MAX_EQUITY_RISK_PERCENT = float(os.getenv('MAX_EQUITY_RISK_PERCENT', '20.0'))
         self.TAKE_PROFIT_PERCENT = self.FUTURES_TAKE_PROFIT_PERCENT
         self.MAX_DAILY_LOSS_PERCENT = self.FUTURES_MAX_DAILY_LOSS_PERCENT
@@ -313,6 +318,14 @@ class Config:
             'change_this_password'
         )
         self.MAX_API_ERRORS_PER_HOUR = int(os.getenv('MAX_API_ERRORS_PER_HOUR', '10'))
+
+        # ===== Portfolio Profit Ratchet (Phase: Gains Lock) =====
+        self.PROFIT_RATCHET_ENABLED = self._str_to_bool(os.getenv('PROFIT_RATCHET_ENABLED', 'true'))
+        self.PROFIT_RATCHET_ACTIVATION = float(os.getenv('PROFIT_RATCHET_ACTIVATION', '6.0'))
+        self.PROFIT_RATCHET_TRAILING = float(os.getenv('PROFIT_RATCHET_TRAILING', '1.0'))
+        self.PROFIT_RATCHET_FLOOR = float(os.getenv('PROFIT_RATCHET_FLOOR', '1.0'))
+        self.PROFIT_RATCHET_COOLDOWN = int(os.getenv('PROFIT_RATCHET_COOLDOWN', '5'))
+        self.PROFIT_RATCHET_SLIPPAGE_BUFFER = float(os.getenv('PROFIT_RATCHET_SLIPPAGE_BUFFER', '0.2'))
     
     def _validate_configuration(self):
         """Validate critical configuration values"""

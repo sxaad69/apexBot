@@ -19,9 +19,10 @@ class TradeManager:
         self.active_positions = {} 
 
     def record_entry(self, symbol: str, strategy_name: str, side: str, size: float, 
-                     leverage: int, stop_loss: float, take_profit: float, 
-                     order_response: Optional[Dict] = None, planned_price: float = 0,
-                     skip_verification: bool = False, confidence: float = 0.0):
+                      leverage: int, stop_loss: float, take_profit: float, 
+                      order_response: Optional[Dict] = None, planned_price: float = 0,
+                      skip_verification: bool = False, confidence: float = 0.0,
+                      stop_loss_roe: float = 5.0):
         """
         Grounded Entry Recorder with Post-Entry Verification.
         Only marks trade as OPEN if exchange confirms position is > 0.
@@ -75,7 +76,8 @@ class TradeManager:
             'lowest_price': entry_price,
             'metadata': json.dumps(order_response) if order_response else "{}",
             'exchange_order_id': order_response.get('id') if order_response else None,
-            'confidence': confidence
+            'confidence': confidence,
+            'stop_loss_roe': stop_loss_roe
         }
 
         # 3. Persist to SQLite

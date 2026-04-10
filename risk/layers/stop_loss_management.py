@@ -14,10 +14,14 @@ class StopLossManagementLayer:
         # 1. Strategy-Specific Override (High Priority)
         target_sl_roe = trade_params.get('target_sl_roe')
         
-        # 2. Global ROE Fallback (Master Safety Net)
+        # 2. Strategy-Specific Config Override (Med Priority)
         if target_sl_roe is None:
-            target_sl_roe = getattr(self.config, 'GLOBAL_STOP_LOSS_ROE', 5.0)
-            self.logger.debug(f"Applied Global 5% ROE Stop Loss for Strategy: {trade_params.get('strategy', 'Unknown')}")
+            strategy_tag = trade_params.get('strategy', '')
+            if "A5" in strategy_tag:
+                target_sl_roe = getattr(self.config, 'A5_STOP_LOSS_ROE', 15.0)
+            else:
+                target_sl_roe = getattr(self.config, 'GLOBAL_STOP_LOSS_ROE', 5.0)
+                self.logger.debug(f"Applied Global {target_sl_roe}% ROE Stop Loss for Strategy: {strategy_tag}")
 
         # 3. Calculate Price Move based on Leverage
         final_sl_percent = abs(target_sl_roe) / leverage
@@ -36,6 +40,7 @@ class StopLossManagementLayer:
         
         trade_params['stop_loss'] = stop_loss_price
         trade_params['stop_loss_percent'] = final_sl_percent
+        trade_params['stop_loss_roe'] = target_sl_roe
         
         self.logger.debug(f"Stop Loss set: {final_sl_percent:.2f}% (Price: {stop_loss_price:.2f}) | Leverage: {leverage}x")
         

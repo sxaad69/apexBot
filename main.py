@@ -23,6 +23,7 @@ from core.spot_logger import SpotLogger
 from core.spot_trading_engine import SpotTradingEngine
 from risk.layers.trailing_stop import TrailingStopLayer
 from risk.layers.portfolio_circuit_breaker import PortfolioCircuitBreaker
+from risk.layers.portfolio_profit_ratchet import PortfolioProfitRatchet
 from core.trade_manager import TradeManager
 
 
@@ -67,8 +68,13 @@ class PaperTradingEngine:
         # IMPORTANT: Update the config's primary Initial Capital for risk layers
         self.config.INITIAL_CAPITAL = self.total_capital
 
-        # Initialize risk manager (11 layers) - Now accurately aware of capital
-        self.risk_manager = RiskManager(config, logger, db_manager=logger.db if hasattr(logger, 'db') else None)
+        # Initialize and Inject Portfolio Profit Ratchet
+        self.profit_ratchet = PortfolioProfitRatchet(
+            config, self.logger.db, self.exchange, self.logger, self.telegram
+        )
+
+        # Initialize risk manager (11 layers) - Now accurately aware of capital and live ratchet
+        self.risk_manager = RiskManager(config, logger, db_manager=logger.db if hasattr(logger, 'db') else None, profit_ratchet=self.profit_ratchet)
 
         # Initialize strategies
         self.strategies = []
@@ -98,6 +104,8 @@ class PaperTradingEngine:
             ]
         
         # Inject exchange client into strategies for microstructure analysis (A5)
+        
+        # (Initialization moved up to inject into RiskManager)
         for strategy in self.strategies:
             strategy.exchange_client = self.exchange
         
@@ -868,7 +876,8 @@ class PaperTradingEngine:
                             take_profit=approved_params['take_profit'],
                             order_response=order,
                             planned_price=entry_price,
-                            confidence=approved_params.get('confidence', 0.0)
+                            confidence=approved_params.get('confidence', 0.0),
+                            stop_loss_roe=approved_params.get('stop_loss_roe', 5.0)
                         )
                         
                         # Use grounded info for SL placement if filled
@@ -952,7 +961,8 @@ class PaperTradingEngine:
                         stop_loss=approved_params['stop_loss'],
                         take_profit=approved_params['take_profit'],
                         planned_price=entry_price,
-                        confidence=approved_params.get('confidence', 0.0)
+                        confidence=approved_params.get('confidence', 0.0),
+                        stop_loss_roe=approved_params.get('stop_loss_roe', 5.0)
                     )
                 
                 # Update Capital accounting
@@ -2047,6 +2057,34 @@ class ApexHunterBot:
         # Setup signal handler for graceful shutdown
         signal.signal(signal.SIGINT, self.signal_handler)
 
+        # --- [PHASE: PROFIT RATCHET BACKGROUND MONITOR] ---
+        # Since the bot is synchronous, we run the Async Ratchet Monitor in a background thread
+        import threading
+        import asyncio
+
+        def run_ratchet_monitor(ratchet):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(ratchet.monitor_loop())
+            except Exception as e:
+                print(f"🚨 Ratchet Monitor Thread Error: {e}")
+            finally:
+                loop.close()
+
+        self.ratchet_thread = None
+        if self.config.PROFIT_RATCHET_ENABLED:
+            self.ratchet_thread = threading.Thread(
+                target=run_ratchet_monitor,
+                args=(self.engine.profit_ratchet,),
+                name="RatchetMonitor",
+                daemon=True  # Dies automatically when main process exits
+            )
+            self.ratchet_thread.start()
+            self.logger.info("📡 Portfolio Profit Ratchet Monitor started in background thread.")
+        else:
+            self.logger.info("🔇 Portfolio Profit Ratchet disabled via config. Skipping monitor.")
+
         # Startup reconciliation handled in __init__ (Phase 14)
 
         try:
@@ -2185,6 +2223,11 @@ class ApexHunterBot:
     def shutdown(self):
         """Graceful shutdown"""
         print("\n🛑 Shutting down...")
+
+        # Signal the ratchet monitor to stop cleanly before the loop closes
+        if hasattr(self, 'engine') and hasattr(self.engine, 'profit_ratchet'):
+            self.engine.profit_ratchet.stop_event.set()
+            self.logger.info("🛡️ Ratchet monitor stop signal sent.")
 
         # Print summary
         if hasattr(self.engine, 'print_summary'):

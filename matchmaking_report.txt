@@ -1,0 +1,131 @@
+🏦 SQLite Unified Storage active (EXCLUISVE MODE)
+
+============================================================================================================================================
+🔍 APEX HUNTER CLOSED TRADES MATCHMAKING - 2026-03-28 11:49:20 UTC
+============================================================================================================================================
+
+Fetching Binance order history for 81 symbols... this may take a moment.
+
+📊 TABLE 1: STRICT VERIFICATION (Closed Trades: Binance vs Database)
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+Symbol        | Side  | Entry B|DB      | Exit B|DB       | SL(DB)   | TP(DB)   | SL Hit?  | TP Hit?  | ROE%     | SL Dev  | TP Dev  | Status          
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+MOVE/USDT:USD | BUY   | 0.0178|0.0178   | 0.0179|0.0179   | 0.0174   | 0.0179   | No       | Yes(Prox | 5.6%     | 0.0%    | -0.0%   | ✅ VERIFIED      
+EPT/USDT:USDT | SELL  | 0.0009|0.0009   | 0.0009|0.0009   | 0.0009   | 0.0008   | No       | No       | -0.9%    | 0.0%    | 0.0%    | ✅ VERIFIED      
+DOT/USDT:USDT | SELL  | 1.2770|1.2770   | 1.3030|1.3030   | 1.3025   | 1.2652   | Yes(Prox | No       | -2.0%    | -0.0%   | 0.0%    | ✅ VERIFIED      
+WIF/USDT:USDT | SELL  | 0.1702|0.1702   | 0.1742|0.1742   | 0.1736   | 0.1658   | Yes(Prox | No       | -2.4%    | -0.3%   | 0.0%    | ✅ VERIFIED      
+COTI/USDT:USD | BUY   | 0.0122|0.0122   | 0.0123|0.0123   | 0.0123   | 0.0123   | Yes(Prox | No       | 3.3%     | -0.2%   | 0.0%    | ✅ VERIFIED      
+PROVE/USDT:US | SELL  | 0.2626|0.2626   | 0.2538|0.2538   | 0.2537   | 0.2472   | Yes(Prox | No       | 3.4%     | -0.0%   | 0.0%    | ✅ VERIFIED      
+PYTH/USDT:USD | BUY   | 0.0373|0.0373   | 0.0375|0.0375   | 0.0366   | 0.0375   | No       | Yes(Prox | 5.9%     | 0.0%    | 0.0%    | ✅ VERIFIED      
+IMX/USDT:USDT | SELL  | 0.1429|0.1429   | 0.1438|0.1438   | 0.1436   | 0.1410   | Yes(Prox | No       | -6.3%    | -0.1%   | 0.0%    | ✅ VERIFIED      
+XPL/USDT:USDT | BUY   | 0.0887|0.0887   | 0.0895|0.0895   | 0.0868   | 0.0895   | No       | Yes(Prox | 0.9%     | 0.0%    | 0.0%    | ✅ VERIFIED      
+MERL/USDT:USD | SELL  | 0.0242|0.0242   | 0.0248|0.0248   | 0.0247   | 0.0241   | Yes(Prox | No       | -23.1%   | -0.3%   | 0.0%    | ✅ VERIFIED      
+DYDX/USDT:USD | BUY   | 0.0910|0.0910   | 0.0910|0.0910   | 0.0918   | 0.0932   | Yes(Prox | No       | 0.0%     | -0.8%   | 0.0%    | ❌ SIZE DESYNC   
+IO/USDT:USDT  | SELL  | 0.1053|0.1053   | 0.1062|0.1062   | 0.1059   | 0.1046   | Yes(Prox | No       | -8.4%    | -0.2%   | 0.0%    | ✅ VERIFIED      
+FORTH/USDT:US | SELL  | 0.3740|0.3740   | 0.4060|0.4060   | 0.3759   | 0.3581   | Yes(Prox | No       | -85.6%   | -7.4%   | 0.0%    | ✅ VERIFIED      
+RDNT/USDT:USD | BUY   | 0.0044|0.0044   | 0.0043|0.0043   | 0.0044   | 0.0048   | Yes(Prox | No       | -6.3%    | -0.1%   | 0.0%    | ✅ VERIFIED      
+COW/USDT:USDT | BUY   | 0.1921|0.1921   | 0.1940|0.1940   | 0.1932   | 0.1938   | Yes(Prox | No       | 9.9%     | 0.4%    | 0.0%    | ✅ VERIFIED      
+BABY/USDT:USD | BUY   | 0.0125|0.0125   | 0.0126|0.0126   | 0.0126   | 0.0126   | Yes(Prox | No       | 7.2%     | -0.1%   | 0.0%    | ✅ VERIFIED      
+SKYAI/USDT:US | BUY   | 0.0638|0.0638   | 0.0642|0.0642   | 0.0643   | 0.0645   | Yes(Prox | No       | 6.0%     | -0.1%   | 0.0%    | ✅ VERIFIED      
+RONIN/USDT:US | BUY   | 0.0862|0.0862   | 0.0871|0.0871   | 0.0844   | 0.0868   | No       | Yes(Prox | 1.0%     | 0.0%    | 0.4%    | ✅ VERIFIED      
+BB/USDT:USDT  | SELL  | 0.0229|0.0229   | 0.0230|0.0230   | 0.0230   | 0.0225   | Yes(Prox | No       | -7.0%    | -0.2%   | 0.0%    | ✅ VERIFIED      
+VELODROME/USD | SELL  | 0.0138|0.0138   | 0.0139|0.0139   | 0.0139   | 0.0138   | Yes(Prox | No       | -6.5%    | -0.0%   | 0.0%    | ✅ VERIFIED      
+SPACE/USDT:US | SELL  | 0.0055|0.0055   | 0.0055|0.0055   | 0.0055   | 0.0055   | Yes(Prox | No       | 0.2%     | -0.3%   | 0.0%    | ✅ VERIFIED      
+XRP/USDT:USDT | BUY   | 1.3237|1.3237   | 1.3314|1.3314   | 1.2971   | 1.3300   | No       | Yes(Prox | 5.8%     | 0.0%    | 0.1%    | ✅ VERIFIED      
+PUMPBTC/USDT: | SELL  | 0.0151|0.0151   | 0.0152|0.0152   | 0.0152   | 0.0150   | Yes(Prox | No       | -6.6%    | -0.1%   | 0.0%    | ✅ VERIFIED      
+PHA/USDT:USDT | BUY   | 0.0346|0.0346   | 0.0344|0.0344   | 0.0344   | 0.0351   | Yes(Prox | No       | -5.8%    | -0.0%   | 0.0%    | ✅ VERIFIED      
+FIL/USDT:USDT | BUY   | 0.8250|0.8250   | 0.8190|0.8190   | 0.8209   | 0.8346   | Yes(Prox | No       | -7.3%    | -0.2%   | 0.0%    | ✅ VERIFIED      
+TNSR/USDT:USD | BUY   | 0.0380|0.0380   | 0.0378|0.0378   | 0.0378   | 0.0382   | Yes(Prox | No       | -6.1%    | -0.1%   | 0.0%    | ✅ VERIFIED      
+BULLA/USDT:US | BUY   | 0.0052|0.0052   | 0.0052|0.0052   | 0.0052   | 0.0053   | Yes(Prox | No       | -7.7%    | -0.1%   | 0.0%    | ✅ VERIFIED      
+KAVA/USDT:USD | SELL  | 0.0516|0.0516   | 0.0511|0.0511   | 0.0513   | 0.0511   | Yes(Prox | No       | 9.7%     | 0.4%    | 0.0%    | ✅ VERIFIED      
+FHE/USDT:USDT | BUY   | 0.0176|0.0176   | 0.0178|0.0178   | 0.0175   | 0.0177   | No       | Yes(Prox | 11.9%    | 0.0%    | 0.6%    | ✅ VERIFIED      
+SWELL/USDT:US | SELL  | 0.0012|0.0012   | 0.0012|0.0012   | 0.0012   | 0.0012   | Yes(Prox | No       | -12.8%   | -0.7%   | 0.0%    | ✅ VERIFIED      
+SSV/USDT:USDT | BUY   | 2.2020|2.2020   | 2.2140|2.2140   | 2.2105   | 2.2195   | Yes(Prox | No       | 5.4%     | 0.2%    | 0.0%    | ✅ VERIFIED      
+RSR/USDT:USDT | SELL  | 0.0016|0.0016   | 0.0016|0.0016   | 0.0016   | 0.0016   | Yes(Prox | No       | 6.8%     | 0.3%    | 0.0%    | ✅ VERIFIED      
+KMNO/USDT:USD | SELL  | 0.0170|0.0170   | 0.0173|0.0173   | 0.0173   | 0.0168   | Yes(Prox | No       | -19.4%   | -0.1%   | 0.0%    | ✅ VERIFIED      
+MAGMA/USDT:US | SELL  | 0.1281|0.1281   | 0.1279|0.1279   | 0.1275   | 0.1252   | Yes(Prox | No       | 1.2%     | -0.3%   | 0.0%    | ✅ VERIFIED      
+ON/USDT:USDT  | SELL  | 0.1655|0.1655   | 0.1666|0.1666   | 0.1623   | 0.1562   | Yes(Prox | No       | -5.3%    | -2.6%   | 0.0%    | ❌ SIZE DESYNC   
+GUN/USDT:USDT | SELL  | 0.0168|0.0168   | 0.0169|0.0169   | 0.0169   | 0.0166   | Yes(Prox | No       | -7.1%    | -0.2%   | 0.0%    | ✅ VERIFIED      
+APR/USDT:USDT | SELL  | 0.1554|0.1554   | 0.1544|0.1544   | 0.1543   | 0.1532   | Yes(Prox | No       | 6.4%     | -0.0%   | 0.0%    | ✅ VERIFIED      
+ONDO/USDT:USD | BUY   | 0.2644|0.2644   | 0.2656|0.2656   | 0.2658   | 0.2676   | Yes(Prox | No       | 4.5%     | -0.1%   | 0.0%    | ✅ VERIFIED      
+币安人生/USDT:USD | SELL  | 0.0409|0.0409   | 0.0405|0.0405   | 0.0407   | 0.0406   | Yes(Prox | No       | 9.5%     | 0.4%    | 0.0%    | ✅ VERIFIED      
+WLD/USDT:USDT | SELL  | 0.2489|0.2489   | 0.2507|0.2507   | 0.2501   | 0.2442   | Yes(Prox | No       | -7.2%    | -0.2%   | 0.0%    | ✅ VERIFIED      
+ESPORTS/USDT: | BUY   | 0.3637|0.3637   | 0.3678|0.3678   | 0.3617   | 0.3670   | No       | Yes(Prox | 11.1%    | 0.0%    | 0.2%    | ✅ VERIFIED      
+TOWNS/USDT:US | SELL  | 0.0037|0.0037   | 0.0037|0.0037   | 0.0037   | 0.0036   | Yes(Prox | No       | -5.5%    | -0.0%   | 0.0%    | ✅ VERIFIED      
+JTO/USDT:USDT | SELL  | 0.2971|0.2971   | 0.2962|0.2962   | 0.2959   | 0.2933   | Yes(Prox | No       | 3.0%     | -0.1%   | 0.0%    | ✅ VERIFIED      
+CETUS/USDT:US | SELL  | 0.0250|0.0250   | 0.0252|0.0252   | 0.0251   | 0.0246   | Yes(Prox | No       | -10.4%   | -0.3%   | 0.0%    | ✅ VERIFIED      
+BCH/USDT:USDT | BUY   | 474.1000|474.10 | 471.2200|471.22 | 471.7195 | 476.9669 | Yes(Prox | No       | -6.1%    | -0.1%   | 0.0%    | ✅ VERIFIED      
+XAN/USDT:USDT | SELL  | 0.0088|0.0088   | 0.0087|0.0087   | 0.0089   | 0.0088   | No       | Yes(Prox | 14.7%    | 0.0%    | 0.8%    | ✅ VERIFIED      
+BR/USDT:USDT  | SELL  | 0.1272|0.1272   | 0.1256|0.1256   | 0.1250   | 0.1214   | Yes(Prox | No       | 12.1%    | -0.5%   | 0.0%    | ✅ VERIFIED      
+AKT/USDT:USDT | SELL  | 0.5031|0.5031   | 0.4997|0.4997   | 0.4986   | 0.4929   | Yes(Prox | No       | 6.8%     | -0.2%   | 0.0%    | ✅ VERIFIED      
+FET/USDT:USDT | SELL  | 0.2276|0.2276   | 0.2249|0.2249   | 0.2287   | 0.2249   | No       | Yes(Prox | 11.9%    | 0.0%    | -0.0%   | ✅ VERIFIED      
+BANK/USDT:USD | SELL  | 0.0413|0.0413   | 0.0415|0.0415   | 0.0415   | 0.0406   | Yes(Prox | No       | -5.6%    | -0.1%   | 0.0%    | ✅ VERIFIED      
+GRIFFAIN/USDT | SELL  | 0.0107|0.0107   | 0.0106|0.0106   | 0.0106   | 0.0106   | Yes(Prox | No       | 7.5%     | -0.0%   | 0.0%    | ✅ VERIFIED      
+SYN/USDT:USDT | BUY   | 0.0475|0.0475   | 0.0471|0.0471   | 0.0472   | 0.0480   | Yes(Prox | No       | -9.0%    | -0.3%   | 0.0%    | ✅ VERIFIED      
+PTB/USDT:USDT | SELL  | 0.0017|0.0017   | 0.0017|0.0017   | 0.0017   | 0.0016   | Yes(Prox | No       | -10.5%   | -0.1%   | 0.0%    | ✅ VERIFIED      
+RENDER/USDT:U | SELL  | 1.6380|1.6380   | 1.6190|1.6190   | 1.6301   | 1.6253   | No       | Yes(Prox | 11.6%    | 0.0%    | 0.4%    | ✅ VERIFIED      
+EUL/USDT:USDT | SELL  | 0.7790|0.7790   | 0.7690|0.7690   | 0.7729   | 0.7689   | No       | Yes(Prox | 12.8%    | 0.0%    | -0.0%   | ✅ VERIFIED      
+TA/USDT:USDT  | SELL  | 0.0671|0.0671   | 0.0678|0.0678   | 0.0664   | 0.0647   | Yes(Prox | No       | -10.6%   | -2.1%   | 0.0%    | ❌ SIZE DESYNC   
+SIGN/USDT:USD | SELL  | 0.0322|0.0322   | 0.0320|0.0320   | 0.0319   | 0.0317   | Yes(Prox | No       | 8.1%     | -0.1%   | 0.0%    | ✅ VERIFIED      
+CYS/USDT:USDT | SELL  | 0.3792|0.3792   | 0.3795|0.3795   | 0.3816   | 0.3640   | No       | No       | -0.8%    | 0.0%    | 0.0%    | ✅ VERIFIED      
+CROSS/USDT:US | SELL  | 0.0657|0.0657   | 0.0663|0.0663   | 0.0661   | 0.0651   | Yes(Prox | No       | -8.8%    | -0.2%   | 0.0%    | ✅ VERIFIED      
+SKYAI/USDT:US | SELL  | 0.0629|0.0629   | 0.0633|0.0633   | 0.0632   | 0.0617   | Yes(Prox | No       | -6.0%    | -0.1%   | 0.0%    | ✅ VERIFIED      
+AGT/USDT:USDT | BUY   | 0.0063|0.0063   | 0.0064|0.0064   | 0.0063   | 0.0064   | No       | Yes(Prox | 12.1%    | 0.0%    | 0.1%    | ✅ VERIFIED      
+AEVO/USDT:USD | BUY   | 0.0235|0.0235   | 0.0234|0.0234   | 0.0234   | 0.0236   | Yes(Prox | No       | -6.0%    | -0.1%   | 0.0%    | ✅ VERIFIED      
+ICNT/USDT:USD | SELL  | 0.4422|0.4422   | 0.4460|0.4460   | 0.4443   | 0.4319   | Yes(Prox | No       | -8.6%    | -0.4%   | 0.0%    | ✅ VERIFIED      
+CYS/USDT:USDT | BUY   | 0.3863|0.3863   | 0.3792|0.3792   | 0.3828   | 0.3939   | Yes(Prox | No       | -18.4%   | -0.9%   | 0.0%    | ✅ VERIFIED      
+M/USDT:USDT   | BUY   | 2.1875|2.1875   | 2.1755|2.1755   | 2.1762   | 2.2152   | Yes(Prox | No       | -5.5%    | -0.0%   | 0.0%    | ✅ VERIFIED      
+MAGMA/USDT:US | SELL  | 0.1270|0.1270   | 0.1281|0.1281   | 0.1279   | 0.1244   | Yes(Prox | No       | -8.2%    | -0.1%   | 0.0%    | ✅ VERIFIED      
+JCT/USDT:USDT | SELL  | 0.0030|0.0030   | 0.0030|0.0030   | 0.0030   | 0.0030   | Yes(Prox | No       | -7.0%    | -0.2%   | 0.0%    | ✅ VERIFIED      
+4/USDT:USDT   | SELL  | 0.0127|0.0127   | 0.0127|0.0127   | 0.0128   | 0.0117   | No       | No       | -2.4%    | 0.0%    | 0.0%    | ✅ VERIFIED      
+CETUS/USDT:US | SELL  | 0.0251|0.0251   | 0.0249|0.0249   | 0.0248   | 0.0247   | Yes(Prox | No       | 11.5%    | -0.2%   | 0.0%    | ✅ VERIFIED      
+ICNT/USDT:USD | SELL  | 0.4396|0.4396   | 0.4423|0.4423   | 0.4420   | 0.4282   | Yes(Prox | No       | -6.1%    | -0.1%   | 0.0%    | ✅ VERIFIED      
+VELVET/USDT:U | SELL  | 0.0793|0.0793   | 0.0796|0.0796   | 0.0790   | 0.0784   | Yes(Prox | No       | -3.2%    | -0.7%   | 0.0%    | ✅ VERIFIED      
+DYDX/USDT:USD | BUY   | 0.0910|0.0910   | 0.0900|0.0900   | 0.0905   | 0.0942   | Yes(Prox | No       | -11.0%   | -0.6%   | 0.0%    | ✅ VERIFIED      
+PLAY/USDT:USD | BUY   | 0.0372|0.0372   | 0.0369|0.0369   | 0.0370   | 0.0377   | Yes(Prox | No       | -5.9%    | -0.1%   | 0.0%    | ✅ VERIFIED      
+APR/USDT:USDT | BUY   | 0.1568|0.1568   | 0.1554|0.1554   | 0.1559   | 0.1583   | Yes(Prox | No       | -9.1%    | -0.4%   | 0.0%    | ✅ VERIFIED      
+ILV/USDT:USDT | SELL  | 3.3450|3.3450   | 3.3680|3.3680   | 3.3637   | 3.3108   | Yes(Prox | No       | -6.9%    | -0.1%   | 0.0%    | ✅ VERIFIED      
+M/USDT:USDT   | BUY   | 2.1830|2.1830   | 2.1693|2.1693   | 2.1701   | 2.2095   | Yes(Prox | No       | -6.3%    | -0.0%   | 0.0%    | ✅ VERIFIED      
+APR/USDT:USDT | SELL  | 0.1535|0.1535   | 0.1568|0.1568   | 0.1565   | 0.1519   | Yes(Prox | No       | -21.5%   | -0.1%   | 0.0%    | ✅ VERIFIED      
+ARIA/USDT:USD | BUY   | 0.3451|0.3451   | 0.3453|0.3453   | 0.3471   | 0.3547   | Yes(Prox | No       | 0.6%     | -0.5%   | 0.0%    | ✅ VERIFIED      
+DUSK/USDT:USD | SELL  | 0.1089|0.1089   | 0.1114|0.1114   | 0.1110   | 0.1071   | Yes(Prox | No       | -2.4%    | -0.3%   | 0.0%    | ✅ VERIFIED      
+4/USDT:USDT   | SELL  | 0.0128|0.0128   | 0.0131|0.0131   | 0.0128   | 0.0119   | Yes(Prox | No       | -13.6%   | -1.7%   | 0.0%    | ✅ VERIFIED      
+GRASS/USDT:US | BUY   | 0.3007|0.3007   | 0.2973|0.2973   | 0.2987   | 0.3030   | Yes(Prox | No       | -11.3%   | -0.5%   | 0.0%    | ✅ VERIFIED      
+SPACE/USDT:US | BUY   | 0.0056|0.0056   | 0.0055|0.0055   | 0.0056   | 0.0057   | Yes(Prox | No       | -14.4%   | -0.8%   | 0.0%    | ✅ VERIFIED      
+VELVET/USDT:U | SELL  | 0.0811|0.0811   | 0.0795|0.0795   | 0.0798   | 0.0795   | Yes(Prox | No       | 19.6%    | 0.5%    | 0.0%    | ✅ VERIFIED      
+LAB/USDT:USDT | SELL  | 0.2038|0.2038   | 0.2054|0.2054   | 0.2048   | 0.1994   | Yes(Prox | No       | -8.2%    | -0.3%   | 0.0%    | ✅ VERIFIED      
+BANK/USDT:USD | SELL  | 0.0423|0.0423   | 0.0419|0.0419   | 0.0418   | 0.0416   | Yes(Prox | No       | 9.9%     | -0.1%   | 0.0%    | ✅ VERIFIED      
+ANKR/USDT:USD | BUY   | 0.0051|0.0051   | 0.0051|0.0051   | 0.0051   | 0.0052   | Yes(Prox | No       | 0.0%     | -0.5%   | 0.0%    | ✅ VERIFIED      
+NAORIS/USDT:U | BUY   | 0.0654|0.0654   | 0.0650|0.0650   | 0.0651   | 0.0663   | Yes(Prox | No       | -6.1%    | -0.0%   | 0.0%    | ✅ VERIFIED      
+GWEI/USDT:USD | BUY   | 0.0406|0.0406   | 0.0403|0.0403   | 0.0404   | 0.0414   | Yes(Prox | No       | -7.9%    | -0.3%   | 0.0%    | ✅ VERIFIED      
+ICNT/USDT:USD | BUY   | 0.4472|0.4472   | 0.4420|0.4420   | 0.4446   | 0.4544   | Yes(Prox | No       | -11.6%   | -0.6%   | 0.0%    | ✅ VERIFIED      
+XNY/USDT:USDT | SELL  | 0.0069|0.0069   | 0.0067|0.0067   | 0.0067   | 0.0065   | Yes(Prox | No       | 30.7%    | 0.1%    | 0.0%    | ✅ VERIFIED      
+PLAY/USDT:USD | BUY   | 0.0364|0.0364   | 0.0368|0.0368   | 0.0369   | 0.0372   | Yes(Prox | No       | 9.9%     | -0.3%   | 0.0%    | ✅ VERIFIED      
+GRIFFAIN/USDT | SELL  | 0.0109|0.0109   | 0.0107|0.0107   | 0.0107   | 0.0107   | Yes(Prox | No       | 12.9%    | -0.3%   | 0.0%    | ✅ VERIFIED      
+AXS/USDT:USDT | BUY   | 1.1090|1.1090   | 1.1150|1.1150   | 1.0868   | 1.1200   | No       | Yes(Prox | 0.5%     | 0.0%    | -0.4%   | ✅ VERIFIED      
+PHA/USDT:USDT | SELL  | 0.0347|0.0347   | 0.0346|0.0346   | 0.0345   | 0.0341   | Yes(Prox | No       | 0.6%     | -0.3%   | 0.0%    | ✅ VERIFIED      
+BANANAS31/USD | BUY   | 0.0129|0.0129   | 0.0130|0.0130   | 0.0130   | 0.0131   | Yes(Prox | No       | 1.0%     | -0.3%   | 0.0%    | ✅ VERIFIED      
+MAGMA/USDT:US | BUY   | 0.1289|0.1289   | 0.1292|0.1292   | 0.1298   | 0.1303   | Yes(Prox | No       | 2.0%     | -0.5%   | 0.0%    | ✅ VERIFIED      
+M/USDT:USDT   | SELL  | 2.1725|2.1725   | 2.1553|2.1553   | 2.1488   | 2.1178   | Yes(Prox | No       | 7.9%     | -0.3%   | 0.0%    | ✅ VERIFIED      
+ONT/USDT:USDT | BUY   | 0.0495|0.0495   | 0.0496|0.0496   | 0.0498   | 0.0500   | Yes(Prox | No       | 2.0%     | -0.4%   | 0.0%    | ✅ VERIFIED      
+CUDIS/USDT:US | SELL  | 0.0085|0.0085   | 0.0085|0.0085   | 0.0085   | 0.0083   | Yes(Prox | No       | -3.5%    | 0.0%    | 0.0%    | ✅ VERIFIED      
+UB/USDT:USDT  | SELL  | 0.0269|0.0269   | 0.0272|0.0272   | 0.0271   | 0.0259   | Yes(Prox | No       | -10.8%   | -0.3%   | 0.0%    | ✅ VERIFIED      
+
+============================================================================================================================================
+📊 EXECUTION SUMMARY
+============================================================================================================================================
+Total Trades Analyzed: 100
+Ghost Trades (No ID): 0
+Size Desyncs:         3
+Stop Loss Hits:       84
+Take Profit Hits:     13
+Avg SL Slippage:      -0.35%
+Avg TP Slippage:      0.17%
+
+✅ STOP LOSS PERFORMANCE: Working like a charm.
+✅ TAKE PROFIT PERFORMANCE: Working like a charm.
+============================================================================================================================================
+
+🏁 MATCHMAKING COMPLETED
+============================================================================================================================================
+

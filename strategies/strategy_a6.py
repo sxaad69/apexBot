@@ -8,6 +8,7 @@ from typing import Dict, Optional
 import ccxt.pro
 import asyncio
 import threading
+import os
 
 from .base_strategy import BaseStrategy
 from .filters import get_strategy_filters
@@ -24,7 +25,9 @@ class StrategyA6(BaseStrategy):
 
         self.testing_mode = getattr(config, 'TESTING_MODE', False)
         
-        self.imbalance_threshold = 0.40  
+        # Configuration
+        self.imbalance_threshold = 0.04  # Set to 4% for high-frequency Testnet signals
+        self.min_order_value = float(os.getenv("MIN_FUTURES_ORDER_VALUE", 100))
         self.atr_sl_mult = 1.0
         self.atr_tp_mult = 3.0
         self.filters = get_strategy_filters(config)
@@ -58,7 +61,13 @@ class StrategyA6(BaseStrategy):
         """Asynchronous stream: spawns one concurrent task per monitored symbol.
         This replaces the slow sequential for-loop with true parallel streaming.
         """
-        exchange = ccxt.pro.binance({'enableRateLimit': True})
+        exchange = ccxt.pro.binance({
+            'enableRateLimit': True,
+            'options': {'defaultType': 'future'}
+        })
+        if getattr(self.config, 'EXCHANGE_ENVIRONMENT', 'production').lower() == 'testnet':
+            exchange.set_sandbox_mode(True)
+            self.logger.info("[A6 WSS] Testnet Sandbox Mode Enabled")
         active_tasks = {}  # symbol → asyncio.Task
 
         while True:
@@ -132,23 +141,30 @@ class StrategyA6(BaseStrategy):
         """
         if len(df) < 20: return None
 
-        should_trade, reason = self.filters.should_trade_symbol(df, symbol, self.name)
-        if not should_trade:
-            self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{reason.upper()}", {"filter_reason": reason})
+        # 1. Stablecoin Filter (Always check)
+        if not self.filters._check_stablecoin_filter(symbol):
             return None
 
-        # Calculate ADX for strict filtering
+        # 2. ADX Filter (A6 Specific: 15 instead of Global 25)
         if 'adx' not in df.columns:
             df = self.calculate_adx(df)
             
         adx_val = df['adx'].iloc[-1]
-        if adx_val < 15:  # Lowered from 30 to catch early orderbook walls
+        if adx_val < 15:
             self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
+            return None
+
+        # 3. Volume Check
+        if not self.filters._check_minimum_volume(df):
             return None
 
         # Fetch instantly from local RAM (no Binance HTTP Ping needed)
         imbalance = self.fetch_imbalance(symbol)
         
+        if imbalance == 0.0:
+            self.logger.debug(f"[{self.name}] {symbol}: Waiting for WebSocket data...")
+            return None
+
         side = None
         if imbalance >= self.imbalance_threshold:
             side = 'buy'
@@ -158,7 +174,7 @@ class StrategyA6(BaseStrategy):
             self.logger.info(f"[{self.name}] {symbol} MASSIVE ASK WALL DETECTED! Imbalance: {imbalance*100:.1f}%")
             
         if not side:
-            self.log_strategy_skip(symbol, "IMBALANCE_INSUFFICIENT", {"imbalance": imbalance, "threshold": self.imbalance_threshold})
+            self.logger.debug(f"[{self.name}] {symbol} scanning... Imbalance: {imbalance*100:.1f}% (Threshold: {self.imbalance_threshold*100:.1f}%)")
             return None
 
         df_atr = self.calculate_atr(df)

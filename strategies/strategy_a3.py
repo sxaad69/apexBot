@@ -34,9 +34,9 @@ class StrategyA3(BaseStrategy):
         # Volume spike threshold
         self.volume_spike_mult = 1.5
 
-        # Balanced stops for scalping (tighter for higher win rate)
-        self.atr_sl_mult = 1.2   # Tighter stop for cleaner entries
-        self.atr_tp_mult = 2.5   # Faster profit lock-in (more wins)
+        # Balanced stops for scalping (slightly wider for earlier entry survival)
+        self.atr_sl_mult = 1.8   # Wider stop to survive initial volatility
+        self.atr_tp_mult = 3.5   # Higher TP for better R:R
 
         # Strategy-Specific SL ROE (Fixed Target)
         self.target_sl_roe = getattr(config, 'STRATEGY_A3_SL_ROE', 5.0)
@@ -138,9 +138,9 @@ class StrategyA3(BaseStrategy):
             self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{reason.upper()}", {"filter_reason": reason})
             return None
 
-        # Strict ADX filter — only trade in high-velocity conditions
+        # Entry ADX filter - lower to 15 to catch trends early
         adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
-        if adx_val < 30:
+        if adx_val < 15:
             self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
             return None
 

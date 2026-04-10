@@ -43,13 +43,15 @@ class StrategyFilters:
         if not self._check_stablecoin_filter(symbol):
             return False, "Symbol is a stablecoin (Global Exclusion)"
 
-        # 1. ADX Trend Filter
-        if not self._check_adx_filter(df):
-            return False, f"ADX < {self.adx_min} (weak trend)"
+        # 1. ADX Trend Filter (Bypassed for A6 which uses its own 15 ADX limit)
+        if strategy_name != "A6: Orderbook WSS":
+            if not self._check_adx_filter(df):
+                return False, f"ADX < {self.adx_min} (weak trend)"
 
-        # 2. Volume Filter
-        if not self._check_volume_filter(df):
-            return False, f"Volume < {self.volume_multiplier}x average"
+        # 2. Volume Filter (Bypassed for A6 which is volume-neutral)
+        if strategy_name != "A6: Orderbook WSS":
+            if not self._check_volume_filter(df):
+                return False, f"Volume < {self.volume_multiplier}x average"
 
         # 3. Minimum Volume USD
         if not self._check_minimum_volume(df):

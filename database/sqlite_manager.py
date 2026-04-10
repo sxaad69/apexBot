@@ -62,7 +62,9 @@ class SQLiteManager:
                 metadata TEXT,
                 exchange_order_id TEXT,
                 sl_order_id TEXT,
-                tp_order_id TEXT
+                tp_order_id TEXT,
+                confidence REAL,
+                stop_loss_roe REAL
             )
         ''')
         
@@ -108,6 +110,10 @@ class SQLiteManager:
             if 'tp_order_id' not in columns:
                 print("🔧 Migrating database: Adding 'tp_order_id' column...")
                 cursor.execute("ALTER TABLE trades ADD COLUMN tp_order_id TEXT")
+            
+            if 'confidence' not in columns:
+                print("🔧 Migrating database: Adding 'confidence' column...")
+                cursor.execute("ALTER TABLE trades ADD COLUMN confidence REAL")
             
             conn.commit()
         except Exception as e:
@@ -159,6 +165,18 @@ class SQLiteManager:
                 positions_closed INTEGER,
                 cooldown_minutes INTEGER,
                 cooldown_until TEXT
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS portfolio_ratchets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                activation_roe REAL,
+                peak_roe REAL,
+                exit_roe REAL,
+                total_pnl REAL,
+                positions_closed INTEGER,
+                metadata TEXT
             )
         ''')
         conn.commit()
@@ -318,8 +336,8 @@ class SQLiteManager:
                     trade_id, symbol, market_type, strategy, side, leverage, size,
                     entry_price, entry_time, stop_loss, take_profit, 
                     highest_price, lowest_price,
-                    capital_at_entry, status, metadata, exchange_order_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)
+                    capital_at_entry, status, metadata, exchange_order_id, confidence, stop_loss_roe
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)
             ''', (
                 trade_data.get('trade_id'),
                 trade_data.get('symbol'),
@@ -336,7 +354,9 @@ class SQLiteManager:
                 trade_data.get('lowest_price') or trade_data.get('entry_price'),
                 trade_data.get('capital_at_entry', 0.0),
                 metadata,
-                trade_data.get('exchange_order_id')
+                trade_data.get('exchange_order_id'),
+                trade_data.get('confidence', 0.0),
+                trade_data.get('stop_loss_roe', 5.0)
             ))
             conn.commit()
             conn.close()
@@ -567,3 +587,27 @@ class SQLiteManager:
             print(f"Error saving active positions to SQLite: {e}")
         finally:
             conn.close()
+    def record_portfolio_ratchet(self, data: Dict[str, Any]) -> bool:
+        """Log a portfolio ratchet/liquidation event"""
+        try:
+            conn = self._get_connection(self.main_db)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO portfolio_ratchets (
+                    timestamp, activation_roe, peak_roe, exit_roe, total_pnl, positions_closed, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                datetime.utcnow().isoformat(),
+                data.get('activation_roe'),
+                data.get('peak_roe'),
+                data.get('exit_roe'),
+                data.get('total_pnl'),
+                data.get('positions_closed'),
+                json.dumps(data.get('metadata', {}))
+            ))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"❌ SQLite record_portfolio_ratchet error: {e}")
+            return False
