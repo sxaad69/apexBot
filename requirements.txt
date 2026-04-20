@@ -12,6 +12,7 @@ websockets==12.0
 
 # Exchange Integration (Optional - if you want to use CCXT instead of custom client)
 ccxt==4.2.25
+ccxtpro==1.0.0
 
 # Cryptography for API signatures
 cryptography==41.0.7
@@ -22,7 +23,7 @@ pandas==2.1.4
 numpy==1.26.2
 
 # Telegram Bot
-python-telegram-bot==20.7
+# python-telegram-bot removed (Bot uses requests directly)
 
 # Async Support
 aiohttp==3.9.1

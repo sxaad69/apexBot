@@ -39,6 +39,11 @@ class PaperTradingEngine:
         self.logger = logger
         self.telegram = telegram
         self.mode = mode
+        
+        # Parallel Execution Architecture properties
+        import threading
+        self.recent_liquidations = {}
+        self.trade_lock = threading.Lock()
 
         # Initialize exchange for market data
         self.exchange = CCXTExchangeClient(config, logger, config.FUTURES_EXCHANGE)
@@ -642,6 +647,15 @@ class PaperTradingEngine:
     def execute_paper_trade(self, signal, strategy_name, symbol):
         """Simulate trade execution with risk validation"""
         
+        # 0. Concurrent Cooldown Matrix Restriction
+        import time
+        cooldown_minutes = getattr(self.config, 'FUTURES_SYMBOL_COOLDOWN_MINUTES', 15)
+        last_liquidation = self.recent_liquidations.get(symbol, 0)
+        elapsed_minutes = (time.time() - last_liquidation) / 60
+        if elapsed_minutes < cooldown_minutes:
+            self.logger.warning(f"🚫 [COOLDOWN REJECTED] {symbol} hit an exit {elapsed_minutes:.1f}m ago. Under {cooldown_minutes}m cooling off period.")
+            return
+
         # 1. Triple-Check Global Symbol Guard (Phase 28)
         # Prevent taking multiple positions on the same coin across different strategies
         
@@ -950,27 +964,32 @@ class PaperTradingEngine:
                         return
 
                 # --- UNIFIED POSITION TRACKING ---
-                if self.mode == 'paper':
-                    # Record entry via TradeManager (handles DB persistence)
-                    position = self.trade_manager.record_entry(
-                        symbol=symbol,
-                        strategy_name=strategy_name,
-                        side=approved_params['side'],
-                        size=size,
-                        leverage=leverage,
-                        stop_loss=approved_params['stop_loss'],
-                        take_profit=approved_params['take_profit'],
-                        planned_price=entry_price,
-                        confidence=approved_params.get('confidence', 0.0),
-                        stop_loss_roe=approved_params.get('stop_loss_roe', 5.0)
-                    )
-                
-                # Update Capital accounting
-                fee_percent = getattr(self.config, 'FUTURES_FEE_PERCENT', 0.04) / 100
-                entry_fee = size * fee_percent
-                self.total_capital -= (size + entry_fee)
-
-                self.positions[position_key] = position
+                with self.trade_lock:
+                    if self.mode == 'paper':
+                        # Record entry via TradeManager (handles DB persistence)
+                        position = self.trade_manager.record_entry(
+                            symbol=symbol,
+                            strategy_name=strategy_name,
+                            side=approved_params['side'],
+                            size=size,
+                            leverage=leverage,
+                            stop_loss=approved_params['stop_loss'],
+                            take_profit=approved_params['take_profit'],
+                            planned_price=entry_price,
+                            confidence=approved_params.get('confidence', 0.0),
+                            stop_loss_roe=approved_params.get('stop_loss_roe', 5.0)
+                        )
+                    
+                    # Update Capital accounting ONLY if it's a valid position
+                    if 'symbol' not in position:
+                        self.logger.error(f"🚨 ATOMIC BOOKING FAILED: Trade manager returned invalid position object for {symbol}: {position}. Rejecting.")
+                        return
+                        
+                    fee_percent = getattr(self.config, 'FUTURES_FEE_PERCENT', 0.04) / 100
+                    entry_fee = size * fee_percent
+                    self.total_capital -= (size + entry_fee)
+    
+                    self.positions[position_key] = position
                 
                 self.logger.info(f"[{strategy_name}] {symbol} BALANCE DEDUCTED: ${size + entry_fee:.2f} (Entry: ${size:.2f} + Fee: ${entry_fee:.2f})")
                 self.logger.info(f"[{strategy_name}] {symbol} ENTRY {signal['side'].upper()} @ ${position['entry_price']:.2f} (Leverage: {leverage}x) ✅ Risk Approved")
@@ -1084,6 +1103,8 @@ class PaperTradingEngine:
                                     if hasattr(self.logger, 'db'):
                                         self.logger.db.set_setting('peak_balance', self.total_capital)
                             
+                            import time
+                            self.recent_liquidations[symbol] = time.time()
                             closed_positions.append(position_key)
                             continue # Skip the rest of the loop for this position
                             
@@ -1149,6 +1170,8 @@ class PaperTradingEngine:
                             self.logger.db.set_setting('peak_balance', self.total_capital)
                 
                 # Remove from memory loop
+                import time
+                self.recent_liquidations[symbol] = time.time()
                 closed_positions.append(position_key)
                 continue
                 # (Legacy code removed)
@@ -1209,9 +1232,34 @@ class PaperTradingEngine:
         for position_key in closed_positions:
             del self.positions[position_key]
     
-    def run_cycle(self, symbol='BTC/USDT'):
+    def run_cycle(self, symbol='BTC/USDT', global_positions=None, exit_only=False, entry_only=False):
         """Run one trading cycle for a specific symbol"""
-        # Fetch market data
+        mark_price = None
+        # --- PHASE 1: HIGH-SPEED VIRTUAL EXITS ---
+        if not entry_only:
+            # 100% latency-free stop loss checks using the global markPrice
+            if global_positions is not None:
+                # Match strict symbol ("BTC/USDT") or Binance format ("BTCUSDT")
+                matched_pos = next((p for p in global_positions if p.get('symbol') == symbol or p.get('info', {}).get('symbol') == symbol.replace('/', '')), None)
+                if matched_pos:
+                    mark_price = float(matched_pos.get('markPrice', matched_pos.get('info', {}).get('markPrice', 0)))
+
+            if mark_price and mark_price > 0:
+                self.current_prices[symbol] = mark_price
+                
+                # Fireboard Isolation for Exits
+                try:
+                    self.update_trailing_stops(symbol, mark_price)
+                    self.update_trailing_take_profit(symbol, mark_price)
+                    self.check_exits(symbol, mark_price)
+                except Exception as e:
+                    self.logger.error(f"🚨 Module Isolation: Exit calculation failed for {symbol}: {e}", exc_info=True)
+
+        if exit_only:
+            return
+
+        # --- PHASE 2: ALGORITHMIC STRATEGY ENTRY ---
+        # Fetch market data (Blocks on API Call)
         df = self.fetch_market_data(symbol)
 
         if df is None or len(df) == 0:
@@ -1221,14 +1269,15 @@ class PaperTradingEngine:
         current_price = df.iloc[-1]['close']
         self.current_prices[symbol] = current_price
 
-        # Update trailing stops for existing positions
-        self.update_trailing_stops(symbol, current_price)
+        # Fallback check exits just in case global polling missed it or it wasn't open yet
+        if not mark_price and not entry_only:
+            try:
+                self.update_trailing_stops(symbol, current_price)
+                self.update_trailing_take_profit(symbol, current_price)
+                self.check_exits(symbol, current_price)
+            except Exception as e:
+                self.logger.error(f"🚨 Module Isolation: Fallback Exit calculation failed for {symbol}: {e}", exc_info=True)
 
-        # Update trailing take profit for existing positions
-        self.update_trailing_take_profit(symbol, current_price)
-
-        # Check exits first for this symbol
-        self.check_exits(symbol, current_price)
 
         # Check for new signals
         # Only if not in circuit breaker cooldown
@@ -1958,11 +2007,26 @@ class ApexHunterBot:
     
     def _sync_open_trades(self):
         """
-        Durable Core (Phase 14): Startup Phase.
-        1. Hydrates memory (positions) from SQLite. 
-        2. Reconciles with Exchange to mark 'Ghost Trades' CLOSED if they finished while bot was down.
+        Exchange-First Architecture: Startup Phase.
+        1. Grabs Global Position State from Exchange (The absolute truth).
+        2. Drops DB Ghost Trades that aren't on the exchange.
+        3. ADOPTS Exchange trades that aren't in the DB.
+        4. Hydrates synced memory.
         """
         try:
+            # 1. Fetch Global Exchange State ONCE
+            global_positions = []
+            if self.mode == 'live' or getattr(self.config, 'FUTURES_STRICT_SYNC', False):
+                try:
+                    self.logger.info("🌐 Fetching Global Positions from Exchange for absolute sync...")
+                    ex_positions = self.engine.exchange.get_positions()
+                    global_positions = [p for p in ex_positions if abs(float(p.get('contracts', 0) or 0)) > 0]
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Exchange sync failed on startup: {e}. Falling back to DB state.")
+                    # Keep empty list if failed so we don't accidentally close all DB trades, 
+                    # but wait, if it fails we might close valid DB trades because list is empty!
+                    global_positions = None # None means API failed, distinguish from [] which means 0 positions
+
             conn = self.logger.db._get_connection(self.logger.db.main_db)
             try:
                 cursor = conn.cursor()
@@ -1971,36 +2035,38 @@ class ApexHunterBot:
                 cursor.execute("SELECT * FROM trades WHERE status IN ('OPEN', 'PENDING_EXIT')")
                 db_trades = cursor.fetchall()
                 
-                if not db_trades:
-                    return
+                global_symbols = {}
+                if global_positions is not None:
+                    # Map standard "BTC/USDT" and binance "BTCUSDT" formats for safety
+                    global_symbols = {
+                        p.get('symbol', '').replace('/', ''): p 
+                        for p in global_positions
+                    }
                     
-                self.logger.info(f"🔄 Hydrating and Reconciling {len(db_trades)} trades...")
+                self.logger.info(f"🔄 Reconciling {len(db_trades)} DB trades against Global State...")
                 
+                # --- PHASE 2: GARBAGE COLLECTION (Drop Ghost Trades) ---
                 for db_trade in db_trades:
                     symbol = db_trade['symbol']
+                    clean_symbol = symbol.replace('/', '')
                     trade_id = db_trade['trade_id']
                     strategy_name = db_trade['strategy']
                     position_key = f"{strategy_name}:{symbol}"
                     
-                    # Check actual exchange positions for LIVE mode or if specifically requested
                     is_closed_on_exchange = False
-                    if self.mode == 'live' or getattr(self.config, 'FUTURES_STRICT_SYNC', False):
-                        try:
-                            ex_positions = self.engine.exchange.get_positions(symbol)
-                            active_ex_pos = next((p for p in ex_positions if float(p.get('contracts', 0)) > 0), None)
-                            if not active_ex_pos:
-                                is_closed_on_exchange = True
-                        except Exception as exchange_e:
-                            self.logger.warning(f"⚠️ Reconciliation partially skipped for {symbol}: {exchange_e}")
+                    if global_positions is not None:
+                        if clean_symbol not in global_symbols:
+                            is_closed_on_exchange = True
 
                     if is_closed_on_exchange:
-                        self.logger.warning(f"👻 Ghost Trade detected! {symbol} ({strategy_name}) closed while bot was offline.")
+                        self.logger.warning(f"👻 Garbage Collection: {symbol} ({strategy_name}) is missing from Exchange. Closing in local DB.")
                         exit_time = datetime.utcnow().isoformat()
                         cursor.execute("UPDATE trades SET status = 'CLOSED', exit_time = ?, reason = 'exchange_closed_offline' WHERE trade_id = ?",
                                      (exit_time, trade_id))
                         self.logger.info(f"✅ Synced {symbol} as CLOSED.")
                     else:
                         # HYDRATE into engine memory
+
                         import json
                         from datetime import datetime as dt
                         
@@ -2043,12 +2109,82 @@ class ApexHunterBot:
                         # Add back to active memory
                         self.engine.positions[position_key] = position
                         self.logger.info(f"🔌 HYDRATED position: {position_key} (ID: {trade_id[:8]}...)")
+
+                # --- PHASE 3: ADOPTION (Import untracked Exchange positions) ---
+                if global_positions is not None:
+                    db_symbols = {d['symbol'].replace('/', '') for d in db_trades}
+                    for g_pos in global_positions:
+                        g_sym = g_pos.get('symbol', '').replace('/', '')
+                        if not g_sym or g_sym in db_symbols:
+                            continue
+                            
+                        self.logger.warning(f"🛸 ADOPTION: Untracked live position found on Exchange for {g_sym}! Adopting into Engine.")
+                        try:
+                            side = 'sell' if float(g_pos.get('contracts', 0) or 0) < 0 else 'buy'
+                            entry_price = float(g_pos.get('entryPrice', 0))
+                            contracts_size = abs(float(g_pos.get('contracts', 0)))
+                            notional_value = contracts_size * entry_price
+                            
+                            # Automatically record it using trade manager 
+                            # Convert to standard format with slash if possible (Binance symbol repair)
+                            standard_symbol = g_pos.get('symbol')
+                            if not '/' in standard_symbol:
+                                standard_symbol = standard_symbol.replace('USDT', '/USDT')
+                            
+                            adopted_pos = self.engine.trade_manager.record_entry(
+                                symbol=standard_symbol,
+                                strategy_name='MANUAL_ADOPT',
+                                side=side,
+                                size=notional_value,
+                                leverage=int(g_pos.get('leverage', 1)),
+                                stop_loss=None,
+                                take_profit=None,
+                                order_response=g_pos,
+                                planned_price=entry_price
+                            )
+                            # Ensure tracking is mounted in memory
+                            if adopted_pos:
+                                self.engine.positions[f"MANUAL_ADOPT:{standard_symbol}"] = adopted_pos
+                                self.logger.info(f"🧬 Successfully adopted {standard_symbol} into active tracking matrix.")
+                        except Exception as e:
+                            self.logger.error(f"Failed to adopt unmatched position {g_sym}: {e}", exc_info=True)
                         
                 conn.commit()
             finally:
                 conn.close()
         except Exception as e:
             self.logger.error(f"Failed to run Startup Hydration/Reconciliation: {e}")
+
+    def _run_priority_exit_thread(self):
+        """Continuous dedicated Risk Engine thread guarantees 0ms stops."""
+        import time
+        self.logger.info("🛡️ Priority Exit Sentinel Thread activated.")
+        while self.running:
+            try:
+                # 1. Fetch Global Data once
+                global_positions = None
+                if self.mode == 'live' or getattr(self.config, 'FUTURES_STRICT_SYNC', False):
+                    try:
+                        ex_positions = self.engine.exchange.get_positions()
+                        global_positions = [p for p in ex_positions if abs(float(p.get('contracts', 0) or 0)) > 0]
+                    except Exception as e:
+                        # Log lightly to avoid WSS burst spam
+                        pass
+
+                # 2. Iterate Memory instantly
+                active_symbols = list(set([p['symbol'] for p in self.engine.positions.values()]))
+                for symbol in active_symbols:
+                    if not self.running: break
+                    try:
+                        self.engine.run_cycle(symbol, global_positions=global_positions, exit_only=True)
+                    except Exception as e:
+                        self.logger.error(f"🚨 CRITICAL: Exit Fireboard failure for {symbol}", exc_info=True)
+                        
+            except Exception as e:
+                self.logger.error(f"Priority Exit Thread Error: {e}", exc_info=True)
+            
+            # Sleep to strictly enforce Cooldown matrix and API constraints (2000ms delay)
+            time.sleep(2)
 
     def run(self, interval=60):
         """Run the bot"""
@@ -2085,6 +2221,14 @@ class ApexHunterBot:
         else:
             self.logger.info("🔇 Portfolio Profit Ratchet disabled via config. Skipping monitor.")
 
+        # --- PARALLEL RISK ENGINE START ---
+        self.sentinel_thread = threading.Thread(
+            target=self._run_priority_exit_thread,
+            name="PriorityExitSentinel",
+            daemon=True
+        )
+        self.sentinel_thread.start()
+
         # Startup reconciliation handled in __init__ (Phase 14)
 
         try:
@@ -2105,14 +2249,23 @@ class ApexHunterBot:
 
 
 
-                # Run cycle for each trading pair
-                for symbol in pairs:
-                    if not self.running:
-                        break
-                    try:
-                        self.engine.run_cycle(symbol)
-                    except Exception as e:
-                        self.logger.error(f"🚨 CRITICAL: Symbol Cycle Failed for {symbol}", exc_info=True)
+                # --- GLOBAL EXCHANGE STATE FETCH (Exchange-First Architecture) ---
+                global_positions = None
+                # --- DISCOVERY LOOP (Concurrent sweeps) ---
+                import concurrent.futures
+                max_workers = getattr(self.config, 'DISCOVERY_MAX_WORKERS', 5)
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = []
+                    for symbol in pairs:
+                        if not self.running:
+                            break
+                        # Feed global positions but restrict to entry processing only
+                        future = executor.submit(self.engine.run_cycle, symbol, global_positions=global_positions, entry_only=True)
+                        futures.append(future)
+                        
+                    # Wait for completion of this concurrent batch to prevent unbounded memory growth
+                    concurrent.futures.wait(futures)
 
                 # Run spot analysis if enabled
                 try:

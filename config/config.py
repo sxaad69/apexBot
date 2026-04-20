@@ -111,6 +111,10 @@ class Config:
         self.MAX_DRAWDOWN_PERCENT = self.FUTURES_MAX_DRAWDOWN_PERCENT
         self.MAX_OPEN_POSITIONS = self.FUTURES_MAX_OPEN_POSITIONS
         
+        # Parallel Execution & Safety Cooldown Configurations
+        self.FUTURES_SYMBOL_COOLDOWN_MINUTES = int(os.getenv('FUTURES_SYMBOL_COOLDOWN_MINUTES', '15'))
+        self.DISCOVERY_MAX_WORKERS = int(os.getenv('DISCOVERY_MAX_WORKERS', '5'))
+        
         # Core Mode & Currency (Synched)
         self.TRADING_MODE = os.getenv('TRADING_MODE', 'live' if self.EXCHANGE_ENVIRONMENT == 'testnet' else 'simulation')
         self.BASE_CURRENCY = os.getenv('BASE_CURRENCY', 'USDT')
@@ -330,10 +334,17 @@ class Config:
     def _validate_configuration(self):
         """Validate critical configuration values"""
         
-        # Validate KuCoin credentials
+        # Validate Exchange Credentials (Only for active exchanges)
         if self.TRADING_MODE == 'live':
-            if not self.KUCOIN_API_KEY or not self.KUCOIN_API_SECRET or not self.KUCOIN_API_PASSPHRASE:
-                raise ValueError("KuCoin API credentials are required for live trading")
+            # KuCoin Validation
+            if any(ex == 'kucoin' for ex in [self.EXCHANGE, self.FUTURES_EXCHANGE, self.SPOT_EXCHANGE]):
+                if not self.KUCOIN_API_KEY or not self.KUCOIN_API_SECRET or not self.KUCOIN_API_PASSPHRASE:
+                    raise ValueError("KuCoin API credentials are required for live KuCoin trading")
+            
+            # Binance Validation
+            if any(ex == 'binance' for ex in [self.EXCHANGE, self.FUTURES_EXCHANGE, self.SPOT_EXCHANGE]):
+                if not self.BINANCE_API_KEY or not self.BINANCE_API_SECRET:
+                    raise ValueError("Binance API credentials are required for live Binance trading")
         
         # Validate Telegram credentials if notifications enabled
         if self.TELEGRAM_NOTIFICATIONS:
