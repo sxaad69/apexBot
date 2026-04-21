@@ -155,6 +155,10 @@ class PortfolioProfitRatchet:
 
     def is_locked(self) -> bool:
         """Check if trading is currently blocked by the ratchet liquidation or cooldown"""
+        # If ratchet is disabled entirely, never block trading
+        if not self.enabled:
+            return False
+            
         # 1. Active liquidation check
         if self.is_liquidating:
             return True

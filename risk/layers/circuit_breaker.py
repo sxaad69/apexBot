@@ -22,6 +22,9 @@ class CircuitBreakerLayer:
     
     def record_trade_result(self, is_win: bool):
         """Record trade result for consecutive loss tracking"""
+        # Respect the global circuit breaker disable flag
+        if not self.config.ENABLE_CIRCUIT_BREAKER:
+            return
         if is_win:
             self.consecutive_losses = 0
         else:
@@ -32,6 +35,8 @@ class CircuitBreakerLayer:
     
     def record_critical_failure(self, reason: str):
         """Record a critical failure and trigger halt"""
+        if not self.config.ENABLE_CIRCUIT_BREAKER:
+            return
         if self.config.TRADE_FAILURE_HALT_HOURS > 0:
             self._trigger_halt(f"Critical failure: {reason}")
     

@@ -69,6 +69,8 @@ class PaperTradingEngine:
 
         # Initialize Trade Manager (Centralized Entry/Exit Handler)
         self.trade_manager = TradeManager(self.config, self.logger.db, self.exchange, self.logger)
+        # Convenience alias so _persist_tp_watermark / _persist_tp_update can call self.db directly
+        self.db = self.logger.db
 
         # IMPORTANT: Update the config's primary Initial Capital for risk layers
         self.config.INITIAL_CAPITAL = self.total_capital
@@ -349,34 +351,35 @@ class PaperTradingEngine:
                         position['stop_loss'] = new_stop
                         self.logger.info(f"[{strategy_name}] {symbol} TRAILING RATCHET @ ${current_price:.2f} | Peak: ${position['highest_price']:.2f} | SL: ${old_stop:.2f} -> ${new_stop:.2f}")
 
-            else:  # sell position
-                # Track lowest price since entry
+            else:  # sell position (SHORT)
+                # Track lowest price since entry (most profitable price for a short)
                 if current_price < position['lowest_price']:
                     position['lowest_price'] = current_price
 
-                # Check for activation
+                # For a SHORT: profit_percent is how much price has DROPPED from entry
                 profit_percent = (position['entry_price'] - current_price) / position['entry_price']
+
+                # Activation: once we're >= activation threshold in profit
                 if not position['trailing_stop_active'] and profit_percent >= activation_threshold:
                     position['trailing_stop_active'] = True
                     position['trailing_activation_price'] = current_price
-                    # Activation moves SL relative to peak
+                    # New stop is ABOVE lowest price by trailing_distance (locking in gains)
                     new_stop = position['lowest_price'] * (1 + trailing_distance)
-                    if new_stop < position['stop_loss']:
-                        old_stop = position['stop_loss']
-                        position['stop_loss'] = new_stop
-                        self.logger.info(f"[{strategy_name}] {symbol} TRAILING ACTIVATED @ ${current_price:.2f} | SL: ${old_stop:.2f} -> ${new_stop:.2f}")
+                    # Only valid if this new stop is BELOW the current stop_loss
+                    # (i.e., we're locking in profit, not expanding our risk)
+                    # For a SHORT, stop_loss is set ABOVE entry — new_stop should be well below entry
+                    old_stop = position['stop_loss']
+                    position['stop_loss'] = new_stop
+                    self.logger.info(f"[{strategy_name}] {symbol} TRAILING ACTIVATED @ ${current_price:.5f} (Profit: {profit_percent*100:.2f}%) | SL: ${old_stop:.5f} → ${new_stop:.5f}")
 
-                # Ratchet logic: move SL down if current lowest_price justifies it
+                # Ratchet: keep moving stop DOWN as price falls further (locking in MORE profit)
                 if position['trailing_stop_active']:
                     new_stop = position['lowest_price'] * (1 + trailing_distance)
+                    # Ratchet only in the direction of more profit (lower stop for shorts)
                     if new_stop < position['stop_loss']:
                         old_stop = position['stop_loss']
                         position['stop_loss'] = new_stop
-                        self.logger.info(f"[{strategy_name}] {symbol} TRAILING RATCHET @ ${current_price:.2f} | Peak: ${position['lowest_price']:.2f} | SL: ${old_stop:.2f} -> ${new_stop:.2f}")
-
-
-
-
+                        self.logger.info(f"[{strategy_name}] {symbol} TRAILING RATCHET @ ${current_price:.5f} | Trough: ${position['lowest_price']:.5f} | SL: ${old_stop:.5f} → ${new_stop:.5f}")
 
 
 

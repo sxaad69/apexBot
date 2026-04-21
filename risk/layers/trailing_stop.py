@@ -222,11 +222,18 @@ class TrailingStopLayer:
                 self.logger.system(f"Trailing Stop RATCHETED to {new_stop:.4f} for {symbol} (Profit: {profit_pct:.2f}%)")
         else:
             new_stop = peak_price * (1 + (trail_dist_pct / 100.0))
-            # Ensure new stop never rises above a "Safe Breakeven" after fees for Shorts
-            safe_breakeven = entry_price * (1 - (fee_floor_pct / 100.0))
-            new_stop = min(new_stop, safe_breakeven)
+            # For a SHORT in profit (price well below entry), the trailing stop should:
+            # 1. Chase price DOWN (stop moves down as price falls)
+            # 2. Never go ABOVE entry (that would mean we're giving back ALL profits)
+            # The safe floor prevents the stop from drifting above entry into loss zone
+            # entry_price * (1 + fee_floor) = the price above entry where we start losing (including fees)
+            safe_entry_floor = entry_price * (1 + (fee_floor_pct / 100.0))
+            # Cap: stop must never go ABOVE entry+fees (the hard loss zone)
+            # new_stop for SHORT is above current price but below entry — min caps only if calculation drifts above entry
+            new_stop = min(new_stop, entry_price)  # Hard cap: never exit above entry (that's a guaranteed loss)
             
-            # Ratchet only (never move stop up for Shorts)
+            # Ratchet only (never move stop DOWN for Shorts after ratcheting up)
+            # For shorts: "up" in stop price = less profit preserved; "down" = more profit locked
             if current_stop is None or new_stop < current_stop:
                 new_sl_id = self._move_stop_loss_on_exchange(trade, new_stop)
                 
@@ -234,7 +241,6 @@ class TrailingStopLayer:
                 from datetime import datetime
                 meta = trade['metadata']
                 meta_dict = json.loads(meta) if isinstance(meta, str) else (meta or {})
-                # Note: We still save history to metadata, but exchange ID is handled in DB row
                 
                 meta_dict['trailing_sl_history'] = meta_dict.get('trailing_sl_history', []) + [{
                     'price': new_stop,
@@ -247,7 +253,8 @@ class TrailingStopLayer:
                     'stop_loss': new_stop,
                     'metadata': meta_dict
                 })
-                self.logger.system(f"Trailing Stop RATCHETED to {new_stop:.4f} for {symbol} (Profit: {profit_pct:.2f}%)")
+                self.logger.system(f"Trailing Stop RATCHETED to {new_stop:.6f} for {symbol} (Profit: {profit_pct:.2f}%, Entry: {entry_price:.6f})")
+
 
     def _move_stop_loss_on_exchange(self, trade, new_stop_price):
         """Actually sends API requests to Binance to cancel the old stop and place a new one."""
