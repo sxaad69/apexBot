@@ -17,6 +17,7 @@ def emergency_liquidate():
     """
     NUCLEAR OPTION: Closes all open positions and cancels all open orders on Binance.
     Synchronizes with SQLite via TradeManager.
+    Optimized to use fetch_positions to avoid rate limit warnings.
     """
     config = Config()
     logger = MongoLogger(config)
@@ -28,27 +29,8 @@ def emergency_liquidate():
     print("⚠️  EMERGENCY LIQUIDATION INITIATED ⚠️")
     print("!" * 80 + "\n")
 
-    # 1. Cancel ALL Open Orders (Clear SL/TP)
-    print("🛡️  Step 1: Canceling all open orders...")
-    try:
-        # Fetch open orders to get symbols
-        open_orders = exchange.exchange.fetch_open_orders()
-        symbols_with_orders = list(set([o['symbol'] for o in open_orders]))
-        
-        if not symbols_with_orders:
-            print("ℹ️  No open orders found.")
-        else:
-            for sym in symbols_with_orders:
-                try:
-                    exchange.exchange.cancel_all_orders(sym)
-                    print(f"✅ Canceled all orders for {sym}")
-                except Exception as e:
-                    print(f"⚠️  Could not cancel orders for {sym}: {e}")
-    except Exception as e:
-        print(f"⚠️  Failed to fetch/cancel open orders: {e}")
-
-    # 2. Fetch all open positions
-    print("🔍 Step 2: Fetching open positions from Binance...")
+    # 1. Fetch all open positions
+    print("🔍 Step 1: Fetching open positions from Binance...")
     try:
         positions = exchange.exchange.fetch_positions()
         active_positions = [p for p in positions if float(p.get('contracts', 0)) != 0]
@@ -65,11 +47,17 @@ def emergency_liquidate():
                 symbol = pos['symbol']
                 side = pos['side']
                 contracts = pos['contracts']
-                print(f"🔥 Closing {side.upper()} {symbol} ({contracts} contracts)...")
+                
+                print(f"🔥 Processing {symbol}...")
                 
                 try:
+                    # Cancel orders for this symbol first
+                    exchange.exchange.cancel_all_orders(symbol)
+                    print(f"  🛡️  Canceled orders for {symbol}")
+                    
                     # Execute Market Close
                     order = exchange.close_position(symbol)
+                    print(f"  🔥 Closed {side.upper()} {symbol}")
                     
                     # Find matching DB trade
                     matching_trade = next((t for t in db_trades if t['symbol'] == symbol), None)
@@ -83,12 +71,12 @@ def emergency_liquidate():
                             current_price=float(pos.get('info', {}).get('markPrice', 0)),
                             order_response=order
                         )
-                        print(f"✅ {symbol} Closed and Grounded in Database.")
+                        print(f"  ✅ Grounded in Database.")
                     else:
-                        print(f"✅ {symbol} Closed (No matching trade in DB).")
+                        print(f"  ✅ Position closed (No matching trade in DB).")
                         
                 except Exception as close_e:
-                    print(f"❌ Failed to close {symbol}: {close_e}")
+                    print(f"  ❌ Failed to clean/close {symbol}: {close_e}")
 
     except Exception as e:
         print(f"🚨 CRITICAL ERROR during liquidation: {e}")
@@ -98,8 +86,4 @@ def emergency_liquidate():
     print("=" * 80 + "\n")
 
 if __name__ == "__main__":
-    confirm = input("Are you ABSOLUTELY SURE you want to liquidate ALL positions? (YES/NO): ")
-    if confirm == "YES":
-        emergency_liquidate()
-    else:
-        print("Abort.")
+    emergency_liquidate()

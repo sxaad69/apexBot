@@ -127,7 +127,7 @@ class StrategyA3(BaseStrategy):
         df = self.calculate_indicators(df)
 
         if len(df) < 25:
-            return None
+            return self.set_rejection("INSUFFICIENT_DATA")
 
         # Calculate ADX
         df = self.calculate_adx(df)
@@ -170,7 +170,7 @@ class StrategyA3(BaseStrategy):
                 signal_direction = breakout_dir
             elif signal_direction != breakout_dir:
                 # Conflicting signals - skip
-                return None
+                return self.set_rejection("CONFLICTING_SIGNALS")
 
         # 3. Volume spike
         if current['volume_ratio'] >= self.volume_spike_mult:

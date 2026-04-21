@@ -75,9 +75,14 @@ class PaperTradingEngine:
         # IMPORTANT: Update the config's primary Initial Capital for risk layers
         self.config.INITIAL_CAPITAL = self.total_capital
 
-        # Initialize and Inject Portfolio Profit Ratchet
+        # Initialize Profit Ratchet (Global Trailing Stop)
         self.profit_ratchet = PortfolioProfitRatchet(
-            config, self.logger.db, self.exchange, self.logger, self.telegram
+            config, 
+            self.logger.db if hasattr(self.logger, 'db') else None,
+            self.exchange, 
+            logger, 
+            telegram,
+            trade_manager=self.trade_manager
         )
 
         # Initialize risk manager (11 layers) - Now accurately aware of capital and live ratchet
@@ -1285,6 +1290,8 @@ class PaperTradingEngine:
         # Check for new signals
         # Only if not in circuit breaker cooldown
         in_cooldown = False
+        rejections = {}
+        
         if hasattr(self, 'portfolio_circuit_breaker') and self.portfolio_circuit_breaker:
             in_cooldown = self.portfolio_circuit_breaker.is_in_cooldown()
             
@@ -1296,43 +1303,21 @@ class PaperTradingEngine:
                 if position_key in self.positions:
                     continue
 
+                # Clear previous rejection
+                strategy.last_rejection = None
+                
                 # Generate signal
                 signal = strategy.generate_signal(df)
 
                 if signal:
                     self.execute_paper_trade(signal, strategy.name, symbol)
+                elif hasattr(strategy, 'last_rejection') and strategy.last_rejection:
+                    rejections[strategy.name] = strategy.last_rejection
 
         # Collect and save market analysis data for dashboard
         self._collect_market_analysis_data(symbol, df, current_price)
 
-        # Check if it's time to send hourly report
-        self._check_and_send_hourly_report()
-
-        # Save current active positions for dashboard with live prices
-        self.logger.save_active_positions(self.positions, self.current_prices)
-
-        # Log status with high-precision price and per-position profit % (Phase 31)
-        total_pnl = self.total_capital - getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
-        symbol_positions = [p for p in self.positions.values() if p['symbol'] == symbol]
-        profit_parts = []
-        for p in symbol_positions:
-            entry = p['entry_price']
-            if entry and entry > 0:
-                if p['side'] == 'buy':
-                    pct = (current_price - entry) / entry * 100
-                else:
-                    pct = (entry - current_price) / entry * 100
-                trailing_tag = ' [TTP]' if p.get('trailing_tp_active') else ''
-                profit_parts.append(f"{p['strategy'].split(':')[0]}: {pct:+.2f}%{trailing_tag}")
-        profit_str = ' | '.join(profit_parts) if profit_parts else ''
-        self.logger.info(f"{symbol} | Price: ${current_price:.5f} | "
-                        f"{profit_str} | Open: {len(self.positions)} | Total P&L: ${total_pnl:+.2f}")
-
-        # Debug: Log strategy analysis summary
-        for strategy in self.strategies:
-            position_key = f"{strategy.name}:{symbol}"
-            has_position = position_key in self.positions
-            self.logger.debug(f"Strategy {strategy.name}: {'HAS POSITION' if has_position else 'AVAILABLE'} for {symbol}")
+        return {'symbol': symbol, 'rejections': rejections}
 
     def _collect_market_analysis_data(self, symbol, df, current_price):
         """Collect and save market analysis data for dashboard"""
@@ -2256,7 +2241,16 @@ class ApexHunterBot:
                 global_positions = None
                 # --- DISCOVERY LOOP (Concurrent sweeps) ---
                 import concurrent.futures
+                import time
                 max_workers = getattr(self.config, 'DISCOVERY_MAX_WORKERS', 5)
+                
+                sweep_start_time = time.time()
+                sweep_stats = {
+                    'symbols_scanned': 0,
+                    'entries_executed': 0,
+                    'strategy_rejections': {},
+                    'risk_rejections': {}
+                }
                 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
                     futures = []
@@ -2269,6 +2263,39 @@ class ApexHunterBot:
                         
                     # Wait for completion of this concurrent batch to prevent unbounded memory growth
                     concurrent.futures.wait(futures)
+
+                    # Aggregate results
+                    for future in futures:
+                        try:
+                            result = future.result()
+                            if result and isinstance(result, dict) and 'rejections' in result:
+                                sym = result.get('symbol')
+                                sweep_stats['symbols_scanned'] += 1
+                                for strategy_name, reason in result['rejections'].items():
+                                    if strategy_name not in sweep_stats['strategy_rejections']:
+                                        sweep_stats['strategy_rejections'][strategy_name] = {}
+                                    if reason not in sweep_stats['strategy_rejections'][strategy_name]:
+                                        sweep_stats['strategy_rejections'][strategy_name][reason] = []
+                                    sweep_stats['strategy_rejections'][strategy_name][reason].append(sym)
+                        except Exception as e:
+                            self.logger.error(f"Error getting future result: {e}")
+                            
+                sweep_stats['duration_sec'] = time.time() - sweep_start_time
+                
+                # Check if it's time to send hourly report
+                self.engine._check_and_send_hourly_report()
+
+                # Save current active positions for dashboard with live prices
+                self.logger.save_active_positions(self.engine.positions, self.engine.current_prices)
+
+                # Log status with high-precision price and per-position profit %
+                total_pnl = self.engine.total_capital - getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
+                open_positions = len(self.engine.positions)
+                self.logger.info(f"Sweep Complete | Open: {open_positions} | Total P&L: ${total_pnl:+.2f}")
+                
+                # Log the sweep summary to DB
+                if hasattr(self.logger, 'log_sweep_summary'):
+                    self.logger.log_sweep_summary(sweep_stats)
 
                 # Run spot analysis if enabled
                 try:

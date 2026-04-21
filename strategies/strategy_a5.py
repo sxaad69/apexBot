@@ -218,7 +218,7 @@ class StrategyA5(BaseStrategy):
         Now trades 24/7 with session-based confidence adjustments
         """
         if len(df) < 25:
-            return None
+            return self.set_rejection("INSUFFICIENT_DATA")
 
         current_price = df['close'].iloc[-1]
 
@@ -303,10 +303,10 @@ class StrategyA5(BaseStrategy):
         if signal_side and whale_data['count'] >= 2:
             whale_bias = 'buy' if whale_data['net_pressure'] > 0 else 'sell'
             if signal_side != whale_bias:
-                return None  # Conflicting whale flow
+                return self.set_rejection("CONFLICTING_WHALE_FLOW")
 
         if not signal_side:
-            return None
+            return self.set_rejection("NO_CLEAR_SIGNAL_SIDE")
 
         # 9. Calculate ATR-based dynamic stops
         stop_loss, take_profit = self.get_dynamic_stops(df, signal_side, self.atr_sl_mult, self.atr_tp_mult)

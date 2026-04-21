@@ -17,8 +17,10 @@ class StopLossManagementLayer:
         # 2. Strategy-Specific Config Override (Med Priority)
         if target_sl_roe is None:
             strategy_tag = trade_params.get('strategy', '')
-            if "A5" in strategy_tag:
-                target_sl_roe = getattr(self.config, 'A5_STOP_LOSS_ROE', 15.0)
+            if "A5" in strategy_tag or "A6" in strategy_tag:
+                # Institutional strategies (A5/A6) use wider ROE stops for breathing room
+                override_key = f"{strategy_tag.split(':')[0]}_STOP_LOSS_ROE"
+                target_sl_roe = getattr(self.config, override_key, 15.0)
             else:
                 target_sl_roe = getattr(self.config, 'GLOBAL_STOP_LOSS_ROE', 5.0)
                 self.logger.debug(f"Applied Global {target_sl_roe}% ROE Stop Loss for Strategy: {strategy_tag}")

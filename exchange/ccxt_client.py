@@ -73,6 +73,7 @@ class CCXTExchangeClient(BaseExchangeClient):
                 'enableRateLimit': True,
                 'options': {
                     'defaultType': 'future',  # Use futures by default
+                    'warnOnFetchOpenOrdersWithoutSymbol': False,
                 }
             }
             

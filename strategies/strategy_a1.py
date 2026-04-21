@@ -63,7 +63,7 @@ class StrategyA1(BaseStrategy):
 
         if len(df) < 30:
             self.logger.debug(f"Insufficient data: {len(df)} candles < 30 required")
-            return None
+            return self.set_rejection("INSUFFICIENT_DATA")
 
         # Calculate ADX for filters
         df = self.calculate_adx(df)
@@ -89,7 +89,7 @@ class StrategyA1(BaseStrategy):
         bearish_crossover = current['ema_fast'] < current['ema_slow'] and previous['ema_fast'] >= previous['ema_slow']
 
         if not (bullish_crossover or bearish_crossover):
-            return None
+            return self.set_rejection("NO_CROSSOVER")
 
         # Determine signal direction
         side = 'buy' if bullish_crossover else 'sell'
@@ -106,7 +106,7 @@ class StrategyA1(BaseStrategy):
         # MACD confirmation - must agree with crossover direction
         if not self.get_macd_confirmation(df, side):
             self.logger.debug(f"[{self.name}] {symbol}: EMA crossover but no MACD confirmation")
-            return None
+            return self.set_rejection("NO_MACD_CONFIRMATION")
 
         # Calculate dynamic stops based on ATR
         stop_loss, take_profit = self.get_dynamic_stops(df, side, self.atr_sl_mult, self.atr_tp_mult)

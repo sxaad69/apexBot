@@ -118,7 +118,7 @@ class StrategyA4(BaseStrategy):
         df = self.calculate_indicators(df)
 
         if len(df) < 210:  # Need 200+ for major EMA
-            return None
+            return self.set_rejection("INSUFFICIENT_DATA")
 
         # Calculate ADX
         df = self.calculate_adx(df)
@@ -145,7 +145,7 @@ class StrategyA4(BaseStrategy):
                         previous['ema_fast'] >= previous['ema_slow'])
 
         if not (bullish_cross or bearish_cross):
-            return None
+            return self.set_rejection("NO_CROSSOVER")
 
         cross_direction = 'buy' if bullish_cross else 'sell'
 
@@ -160,12 +160,12 @@ class StrategyA4(BaseStrategy):
 
         if cross_direction != trend_direction:
             self.logger.debug(f"[{self.name}] {symbol}: Cross direction conflicts with trend")
-            return None
+            return self.set_rejection("CROSS_AGAINST_TREND")
 
         # MACD confirmation
         if not self.get_macd_confirmation(df, cross_direction):
             self.logger.debug(f"[{self.name}] {symbol}: No MACD confirmation")
-            return None
+            return self.set_rejection("NO_MACD_CONFIRMATION")
 
         # Calculate wider stops for trend trading
         stop_loss, take_profit = self.get_dynamic_stops(df, cross_direction, self.atr_sl_mult, self.atr_tp_mult)

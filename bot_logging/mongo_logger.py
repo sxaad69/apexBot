@@ -350,6 +350,32 @@ class MongoLogger(Logger):
         """Log debug message to console/file (DB debug logging removed)"""
         super().debug(message, **kwargs)
 
+    def log_sweep_summary(self, sweep_stats: Dict[str, Any]):
+        """
+        Log aggregated sweep statistics to SQLite.
+        Saves disk space by writing one row per minute instead of thousands.
+        """
+        if not self.log_to_db or not self.sqlite_enabled:
+            return
+
+        try:
+            document = {
+                'timestamp': datetime.utcnow().isoformat() + "Z",
+                'sweep_duration_sec': sweep_stats.get('duration_sec', 0),
+                'symbols_scanned': sweep_stats.get('symbols_scanned', 0),
+                'entries_executed': sweep_stats.get('entries_executed', 0),
+                'strategy_rejections': sweep_stats.get('strategy_rejections', {}),
+                'risk_rejections': sweep_stats.get('risk_rejections', {})
+            }
+            
+            # Use log_activity to store the sweep summary
+            self.db.log_activity('sweep_summary', 'SYSTEM', f"Sweep Complete: {document['symbols_scanned']} symbols scanned.", document)
+            
+            # Log high-level summary to console
+            self.info(f"🧹 SWEEP COMPLETE | {document['symbols_scanned']} symbols | {document['entries_executed']} entries | duration: {document['sweep_duration_sec']:.1f}s")
+        except Exception as e:
+            self.error(f"Failed to log sweep summary: {e}")
+
     def _get_layer_number(self, layer_name: str) -> int:
         """Get risk layer number from name"""
         layer_map = {

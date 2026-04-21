@@ -129,7 +129,7 @@ class StrategyA2(BaseStrategy):
         df = self.calculate_indicators(df)
 
         if len(df) < 30:
-            return None
+            return self.set_rejection("INSUFFICIENT_DATA")
 
         # Calculate ADX for filters
         df = self.calculate_adx(df)
@@ -158,7 +158,7 @@ class StrategyA2(BaseStrategy):
                         previous['ema_fast'] >= previous['ema_slow'])
 
         if not (bullish_cross or bearish_cross):
-            return None
+            return self.set_rejection("NO_CROSSOVER")
 
         side = 'buy' if bullish_cross else 'sell'
 
@@ -167,7 +167,7 @@ class StrategyA2(BaseStrategy):
 
         if not rsi_confirmed:
             self.logger.debug(f"[{self.name}] {symbol}: EMA cross but RSI momentum not confirmed")
-            return None
+            return self.set_rejection("NO_RSI_CONFIRMATION")
 
         # Calculate dynamic stops
         stop_loss, take_profit = self.get_dynamic_stops(df, side, self.atr_sl_mult, self.atr_tp_mult)
