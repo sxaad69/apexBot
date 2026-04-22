@@ -104,16 +104,14 @@ class StrategyA4(BaseStrategy):
 
     def generate_signal(self, df: pd.DataFrame, symbol: str = 'BTC/USDT') -> Optional[Dict]:
         """
-        Generate high-quality trend following signals
+        Trend-Continuation Signal (Redesigned from strict crossover-only).
 
-        Entry Conditions (ALL required):
-        1. EMA crossover (9 crosses 21)
-        2. EMAs aligned (9 > 21 > 50 for longs, opposite for shorts)
-        3. MACD momentum confirmation
-        4. ADX > 30 (strong trend only)
-        5. Trend Strength must be 'strong' (above 200 EMA)
-
-        This is the most selective strategy - quality over quantity.
+        Entry Conditions:
+        - LONG: EMA 9 > 21 > 50, price > EMA-200, MACD bullish, ADX > 25
+        - SHORT: EMA 9 < 21 < 50, price < EMA-200, MACD bearish, ADX > 30
+        
+        This fires on trend-continuation, not just the moment of crossover,
+        dramatically increasing trade frequency while maintaining quality.
         """
         df = self.calculate_indicators(df)
 
@@ -129,65 +127,70 @@ class StrategyA4(BaseStrategy):
             self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{reason.upper()}", {"filter_reason": reason})
             return None
 
-        # Strict ADX filter — only enter high-strength trends
-        adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
-        if adx_val < 30:
-            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
-            return None
-
         current = df.iloc[-1]
-        previous = df.iloc[-2]
+        adx_val = current['adx'] if 'adx' in df.columns else 0
 
-        # Check for EMA crossover
-        bullish_cross = (current['ema_fast'] > current['ema_slow'] and
-                        previous['ema_fast'] <= previous['ema_slow'])
-        bearish_cross = (current['ema_fast'] < current['ema_slow'] and
-                        previous['ema_fast'] >= previous['ema_slow'])
+        # Determine current alignment direction
+        bullish_aligned = (
+            current['ema_fast'] > current['ema_slow'] and
+            current['ema_slow'] > current['ema_trend'] and
+            current['close'] > current['ema_trend']
+        )
+        bearish_aligned = (
+            current['ema_fast'] < current['ema_slow'] and
+            current['ema_slow'] < current['ema_trend'] and
+            current['close'] < current['ema_trend']
+        )
 
-        if not (bullish_cross or bearish_cross):
-            return self.set_rejection("NO_CROSSOVER")
+        if not (bullish_aligned or bearish_aligned):
+            return self.set_rejection("NO_EMA_ALIGNMENT")
 
-        cross_direction = 'buy' if bullish_cross else 'sell'
-
-        # Check trend alignment
-        is_aligned, trend_direction, trend_strength = self.check_trend_alignment(df)
-
-        # Only accept strong trend alignment (not moderate)
-        # This prevents entering on weak, uncertain moves
-        if not is_aligned or trend_strength != 'strong':
-            self.log_strategy_skip(symbol, "TREND_ALIGNMENT_WEAK", {"is_aligned": is_aligned, "strength": trend_strength})
-            return None
-
-        if cross_direction != trend_direction:
-            self.logger.debug(f"[{self.name}] {symbol}: Cross direction conflicts with trend")
-            return self.set_rejection("CROSS_AGAINST_TREND")
+        # Determine direction and apply directional ADX/strength filters
+        if bullish_aligned:
+            side = 'buy'
+            # Longs: ADX > 25, price > EMA-200, moderate trend ok
+            if adx_val < 25:
+                self.log_strategy_skip(symbol, "ADX_LOW", {"adx": round(adx_val, 2), "required": 25})
+                return None
+            if current['close'] < current['ema_major']:
+                self.log_strategy_skip(symbol, "EMA200_GUARD_LONG", {})
+                return None
+        else:
+            side = 'sell'
+            # Shorts: ADX > 30, price < EMA-200, strong trend only
+            if adx_val < 30:
+                self.log_strategy_skip(symbol, "ADX_LOW_SHORT", {"adx": round(adx_val, 2), "required": 30})
+                return None
+            if current['close'] > current['ema_major']:
+                self.log_strategy_skip(symbol, "EMA200_GUARD_SHORT", {})
+                return None
 
         # MACD confirmation
-        if not self.get_macd_confirmation(df, cross_direction):
-            self.logger.debug(f"[{self.name}] {symbol}: No MACD confirmation")
+        if not self.get_macd_confirmation(df, side):
             return self.set_rejection("NO_MACD_CONFIRMATION")
 
         # Calculate wider stops for trend trading
-        stop_loss, take_profit = self.get_dynamic_stops(df, cross_direction, self.atr_sl_mult, self.atr_tp_mult)
+        stop_loss, take_profit = self.get_dynamic_stops(df, side, self.atr_sl_mult, self.atr_tp_mult)
 
-        # Dynamic confidence based on ADX strength (not fixed 0.90)
-        # ADX 30-40: moderate (0.70), ADX 40-50: strong (0.80), ADX 50+: elite (0.90)
+        # Dynamic confidence based on ADX strength
         if adx_val >= 50:
-            confidence = 0.90  # Extremely strong trend - unlock opportunity reserve
+            confidence = 0.90
         elif adx_val >= 40:
-            confidence = 0.80  # Strong trend - normal allocation
+            confidence = 0.80
         else:
-            confidence = 0.70  # Minimum qualifying trend - cautious allocation
+            confidence = 0.72
 
-        # Bonus: strong alignment above 200 EMA boosts confidence slightly
-        if trend_strength == 'strong':
+        # Bonus for strong alignment above 200 EMA
+        above_major = current['close'] > current['ema_major']
+        below_major = current['close'] < current['ema_major']
+        if (side == 'buy' and above_major) or (side == 'sell' and below_major):
             confidence = min(confidence + 0.05, 0.95)
 
-        self.logger.debug(f"[{self.name}] {symbol}: {cross_direction.upper()} - ADX {adx_val:.1f} → Confidence {confidence:.2f}")
+        self.logger.debug(f"[{self.name}] {symbol}: {side.upper()} — ADX {adx_val:.1f} → Confidence {confidence:.2f}")
 
         return {
             'symbol': symbol,
-            'side': cross_direction,
+            'side': side,
             'entry_price': current['close'],
             'stop_loss': stop_loss,
             'take_profit': take_profit,
@@ -198,10 +201,9 @@ class StrategyA4(BaseStrategy):
                 'ema_slow': current['ema_slow'],
                 'ema_trend': current['ema_trend'],
                 'ema_major': current['ema_major'],
-                'trend_strength': trend_strength,
                 'macd': current['macd'],
                 'macd_histogram': current['macd_histogram'],
                 'atr': current['atr'],
-                'adx': current['adx']
+                'adx': adx_val
             }
         }

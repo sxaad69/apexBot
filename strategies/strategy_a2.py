@@ -51,6 +51,7 @@ class StrategyA2(BaseStrategy):
         # EMAs
         df['ema_fast'] = df['close'].ewm(span=self.ema_fast, adjust=False).mean()
         df['ema_slow'] = df['close'].ewm(span=self.ema_slow, adjust=False).mean()
+        df['ema_major'] = df['close'].ewm(span=200, adjust=False).mean()  # Major trend filter
 
         # RSI with smoothing
         delta = df['close'].diff()
@@ -140,11 +141,12 @@ class StrategyA2(BaseStrategy):
             self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{reason.upper()}", {"filter_reason": reason})
             return None
 
-        # 2. Strict ADX Trend Filter (Specialized for A2 to reduce chop losses)
-        # Even in TESTING_MODE, we require at least ADX 25 for this crossover strategy
+        # 2. Directional ADX Filter — Longs need less trend strength than Shorts
+        # Longs: ADX > 20 (catch trends early), Shorts: ADX > 25 (require stronger trend)
         adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
-        if adx_val < 25:
-            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
+        _adx_min = 20  # will adjust after we know direction
+        if adx_val < 20:
+            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": round(adx_val, 2)})
             return None
 
         current = df.iloc[-1]
@@ -162,6 +164,15 @@ class StrategyA2(BaseStrategy):
 
         side = 'buy' if bullish_cross else 'sell'
 
+        # EMA-200 Trend Guard — only short when price < EMA-200 (avoid shorting bull trends)
+        current = df.iloc[-1]
+        if side == 'sell' and current['close'] > current['ema_major']:
+            self.log_strategy_skip(symbol, "EMA200_GUARD_SHORT", {"price": round(current['close'], 6), "ema200": round(current['ema_major'], 6)})
+            return None
+        # Also enforce stricter ADX for shorts
+        if side == 'sell' and adx_val < 25:
+            self.log_strategy_skip(symbol, "ADX_LOW_SHORT", {"adx": round(adx_val, 2), "required": 25})
+            return None
         # Check RSI momentum confirmation
         rsi_confirmed, rsi_strength = self.check_rsi_momentum(df, side)
 

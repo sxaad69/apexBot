@@ -50,11 +50,14 @@ class StrategyA6(BaseStrategy):
 
         # Session-based confidence floors (UTC hours)
         self.sessions = {
-            'asia':    {'start': 0,  'end': 8,  'confidence_floor': 0.75, 'confidence_boost': 0.00},
-            'europe':  {'start': 8,  'end': 14, 'confidence_floor': 0.75, 'confidence_boost': 0.05},
+            'asia':    {'start': 0,  'end': 8,  'confidence_floor': 0.82, 'confidence_boost': 0.00},
+            'europe':  {'start': 8,  'end': 14, 'confidence_floor': 0.78, 'confidence_boost': 0.05},
             'us_peak': {'start': 14, 'end': 21, 'confidence_floor': 0.85, 'confidence_boost': 0.10},
-            'us_late': {'start': 21, 'end': 24, 'confidence_floor': 0.75, 'confidence_boost': 0.00},
+            'us_late': {'start': 21, 'end': 24, 'confidence_floor': 0.82, 'confidence_boost': 0.00},
         }
+
+        # Separate (stricter) imbalance threshold for short entries
+        self.short_imbalance_threshold = 0.35
 
         self.min_order_value = float(os.getenv("MIN_FUTURES_ORDER_VALUE", 100))
         self.filters = get_strategy_filters(config)
@@ -348,7 +351,7 @@ class StrategyA6(BaseStrategy):
             )
             return None
 
-        # 11. Determine direction with TREND FILTER
+        # 11. Determine direction with TREND FILTER + Short Penalty
         side = None
         if imbalance >= self.imbalance_threshold:
             if trend_bias != 'bullish':
@@ -358,6 +361,10 @@ class StrategyA6(BaseStrategy):
         elif imbalance <= -self.imbalance_threshold:
             if trend_bias != 'bearish':
                 return self.set_rejection("TREND_MISMATCH_BULLISH")
+            # Shorts require stricter imbalance (35% vs 25% for longs)
+            if abs(imbalance) < self.short_imbalance_threshold:
+                self.log_strategy_skip(symbol, "SHORT_IMBALANCE_INSUFFICIENT", {"imbalance": round(imbalance*100, 1), "required": self.short_imbalance_threshold*100})
+                return None
             side = 'sell'
             self.logger.info(f"[{self.name}] {symbol} MASSIVE ASK WALL: {imbalance*100:.1f}% | Conf: {confidence:.2f} | Regime: {regime}")
 

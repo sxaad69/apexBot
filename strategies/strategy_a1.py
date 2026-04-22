@@ -26,8 +26,8 @@ class StrategyA1(BaseStrategy):
         self.ema_slow = 21
 
         # ATR multipliers for dynamic stops
-        self.atr_sl_mult = 1.5  # Stop loss = 1.5x ATR
-        self.atr_tp_mult = 3.0  # Take profit = 3x ATR (2:1 R:R)
+        self.atr_sl_mult = 2.0  # Stop loss = 2.0x ATR (more room to breathe)
+        self.atr_tp_mult = 4.0  # Take profit = 4x ATR (better R:R)
 
         # Universal filters for all strategies
         self.filters = get_strategy_filters(config)
@@ -77,11 +77,15 @@ class StrategyA1(BaseStrategy):
             self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{reason.upper()}", {"filter_reason": reason})
             return None
 
-        # 2. Strict ADX Trend Filter (Specialized for A1 to reduce chop losses)
-        # Even in TESTING_MODE, we require at least ADX 25 for this crossover strategy
+        # 2. Directional ADX Filter — Longs need less trend strength than Shorts
+        # Longs: ADX > 22 (moderate trend ok), Shorts: ADX > 30 (strong trend only)
         adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
-        if adx_val < 30:
-            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
+
+        # Determine crossover direction first to apply directional ADX
+        _bullish = df['close'].ewm(span=self.ema_fast, adjust=False).mean().iloc[-1] > df['close'].ewm(span=self.ema_slow, adjust=False).mean().iloc[-1]
+        _adx_min = 22 if _bullish else 30
+        if adx_val < _adx_min:
+            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": round(adx_val, 2), "required": _adx_min})
             return None
 
         # 3. Check for EMA crossover (must happen before trend guard — we need 'side')

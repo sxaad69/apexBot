@@ -299,6 +299,14 @@ class StrategyA5(BaseStrategy):
         elif orderbook_imbalance < -self.min_orderbook_imbalance:
             signal_side = 'sell'
 
+        # EMA-200 Trend Guard — only short when price < EMA-200
+        if signal_side == 'sell':
+            if len(df) >= 200:
+                ema_200 = df['close'].ewm(span=200, adjust=False).mean().iloc[-1]
+                if df['close'].iloc[-1] > ema_200:
+                    self.log_strategy_skip(symbol, "EMA200_GUARD_SHORT", {"price": round(df['close'].iloc[-1], 6), "ema200": round(ema_200, 6)})
+                    return None
+
         # Confirm with whale data (if available and significant)
         if signal_side and whale_data['count'] >= 2:
             whale_bias = 'buy' if whale_data['net_pressure'] > 0 else 'sell'

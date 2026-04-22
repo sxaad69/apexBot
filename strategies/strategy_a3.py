@@ -75,6 +75,9 @@ class StrategyA3(BaseStrategy):
         # ATR for stops
         df = self.calculate_atr(df)
 
+        # EMA-200 for major trend filter
+        df['ema_major'] = df['close'].ewm(span=200, adjust=False).mean()
+
         return df
 
     def detect_squeeze_breakout(self, df: pd.DataFrame) -> tuple:
@@ -138,10 +141,10 @@ class StrategyA3(BaseStrategy):
             self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{reason.upper()}", {"filter_reason": reason})
             return None
 
-        # Entry ADX filter - lower to 15 to catch trends early
+        # Entry ADX filter - directional: Longs > 15, Shorts > 22 (tighter to avoid chop)
         adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
         if adx_val < 15:
-            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
+            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": round(adx_val, 2)})
             return None
 
         current = df.iloc[-1]
@@ -180,6 +183,21 @@ class StrategyA3(BaseStrategy):
         if confirmations < 2 or signal_direction is None:
             if confirmations == 1:
                 self.log_strategy_skip(symbol, "CONFIRMATION_INSUFFICIENT", {"confirmations": confirmations, "dir": signal_direction})
+            return None
+
+        # EMA-200 Trend Guard — prevent trading against the major trend
+        current_price = df['close'].iloc[-1]
+        ema_major = df['ema_major'].iloc[-1]
+        if signal_direction == 'buy' and current_price < ema_major:
+            self.log_strategy_skip(symbol, "EMA200_GUARD_LONG", {"price": round(current_price, 6), "ema200": round(ema_major, 6)})
+            return None
+        if signal_direction == 'sell' and current_price > ema_major:
+            self.log_strategy_skip(symbol, "EMA200_GUARD_SHORT", {"price": round(current_price, 6), "ema200": round(ema_major, 6)})
+            return None
+
+        # Extra ADX check for Shorts — require stronger trend before shorting
+        if signal_direction == 'sell' and adx_val < 22:
+            self.log_strategy_skip(symbol, "ADX_LOW_SHORT", {"adx": round(adx_val, 2), "required": 22})
             return None
 
         # Calculate tight scalping stops
