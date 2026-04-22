@@ -46,7 +46,7 @@ class StrategyA6(BaseStrategy):
 
         # ATR multipliers: 2.5x stop gives more room vs 2.0x which was being suffocated
         self.atr_sl_mult = 2.5
-        self.atr_tp_mult = 5.0
+        self.atr_tp_mult = 15.0
 
         # Session-based confidence floors (UTC hours)
         self.sessions = {

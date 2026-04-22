@@ -34,7 +34,7 @@ class StrategyA4(BaseStrategy):
 
         # Wider stops for trend riding (let winners run)
         self.atr_sl_mult = 2.0   # Wider stop for trend trades
-        self.atr_tp_mult = 4.0   # 2:1 R:R with room to run
+        self.atr_tp_mult = 15.0  # Let winners run, trailing TP handles exit
 
         # Universal filters
         self.filters = get_strategy_filters(config)
