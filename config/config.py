@@ -42,7 +42,7 @@ class Config:
         self.SPOT_EXCHANGE = os.getenv('SPOT_EXCHANGE', 'binance').lower()
         
         # Arbitrage mode
-        self.ARBITRAGE_MODE = os.getenv('ARBITRAGE_MODE', 'select').lower()
+        self.ARBITRAGE_MODE = 'select'.lower()
         
         # Legacy KuCoin-specific (backward compatibility)
         # Exchange environment is now set globally via EXCHANGE_ENVIRONMENT
@@ -72,200 +72,200 @@ class Config:
         self.GATE_API_SECRET = os.getenv('GATE_API_SECRET', '')
         
         # ===== Master Trading Controls (Triple Safety Lock) =====
-        self.FUTURES_TRADING_ENABLED = os.getenv('FUTURES_TRADING_ENABLED', 'no').lower()
-        self.SPOT_TRADING_ENABLED = os.getenv('SPOT_TRADING_ENABLED', 'no').lower()
-        self.ARBITRAGE_TRADING_ENABLED = os.getenv('ARBITRAGE_TRADING_ENABLED', 'no').lower()
+        self.FUTURES_TRADING_ENABLED = 'true'.lower()
+        self.SPOT_TRADING_ENABLED = 'false'.lower()
+        self.ARBITRAGE_TRADING_ENABLED = 'false'.lower()
         
         # ===== Futures Trading Configuration (Primary) =====
-        self.FUTURES_TRADING_ENABLED = self._str_to_bool(os.getenv('FUTURES_TRADING_ENABLED', 'true'))
-        self.FUTURES_VIRTUAL_CAPITAL = float(os.getenv('FUTURES_VIRTUAL_CAPITAL', '100'))
-        self.FUTURES_POSITION_SIZE_PERCENT = float(os.getenv('FUTURES_POSITION_SIZE_PERCENT', '10'))
-        self.FUTURES_MAX_LEVERAGE = int(os.getenv('FUTURES_MAX_LEVERAGE', '20'))
-        self.FUTURES_TAKE_PROFIT_PERCENT = float(os.getenv('FUTURES_TAKE_PROFIT_PERCENT', '10'))
-        self.FUTURES_MAX_DAILY_LOSS_PERCENT = float(os.getenv('FUTURES_MAX_DAILY_LOSS_PERCENT', '5'))
-        self.FUTURES_MAX_DRAWDOWN_PERCENT = float(os.getenv('FUTURES_MAX_DRAWDOWN_PERCENT', '70'))
-        self.FUTURES_MAX_OPEN_POSITIONS = int(os.getenv('FUTURES_MAX_OPEN_POSITIONS', '8'))
+        self.FUTURES_TRADING_ENABLED = self._str_to_bool('true')
+        self.FUTURES_VIRTUAL_CAPITAL = float('5000')
+        self.FUTURES_POSITION_SIZE_PERCENT = float('2')
+        self.FUTURES_MAX_LEVERAGE = int('10')
+        self.FUTURES_TAKE_PROFIT_PERCENT = float('10')
+        self.FUTURES_MAX_DAILY_LOSS_PERCENT = float('5')
+        self.FUTURES_MAX_DRAWDOWN_PERCENT = float('70')
+        self.FUTURES_MAX_OPEN_POSITIONS = int('15')
 
         # Market Discovery Sync
-        self.FUTURES_PAIRS = os.getenv('FUTURES_PAIRS', 'auto')
-        self.FUTURES_AUTO_TOP_N = int(os.getenv('FUTURES_AUTO_TOP_N', '200'))
-        self.FUTURES_AUTO_MIN_VOLUME = float(os.getenv('FUTURES_AUTO_MIN_VOLUME', '500000'))
+        self.FUTURES_PAIRS = 'auto'
+        self.FUTURES_AUTO_TOP_N = int('200')
+        self.FUTURES_AUTO_MIN_VOLUME = float('500000')
         
         # Position Boundary Sync
-        self.MIN_POSITION_SIZE = float(os.getenv('MIN_POSITION_SIZE', '10.0'))
-        self.MAX_POSITION_SIZE = float(os.getenv('MAX_POSITION_SIZE', '1000.0'))
+        self.MIN_POSITION_SIZE = float('10.0')
+        self.MAX_POSITION_SIZE = float('30')
 
         # ===== Global Synchronization (For Legacy/Risk Layers compatibility) =====
         self.INITIAL_CAPITAL = self.FUTURES_VIRTUAL_CAPITAL
         self.POSITION_SIZE_PERCENT = self.FUTURES_POSITION_SIZE_PERCENT
         self.MAX_LEVERAGE = self.FUTURES_MAX_LEVERAGE
         # Strategy-Specific Overrides (The "Breathing Room" Knobs)
-        self.A5_MAX_LEVERAGE = int(os.getenv('A5_MAX_LEVERAGE', '5'))
-        self.A5_STOP_LOSS_ROE = float(os.getenv('A5_STOP_LOSS_ROE', '15.0'))
-        self.A6_STOP_LOSS_ROE = float(os.getenv('A6_STOP_LOSS_ROE', '15.0'))
+        self.A5_MAX_LEVERAGE = int('5')
+        self.A5_STOP_LOSS_ROE = float('5.0')
+        self.A6_STOP_LOSS_ROE = float('5.0')
         
         # GLOBAL ROE Shield (The "Safety Guard")
-        self.GLOBAL_STOP_LOSS_ROE = float(os.getenv('GLOBAL_STOP_LOSS_ROE', '5.0'))
-        self.MAX_EQUITY_RISK_PERCENT = float(os.getenv('MAX_EQUITY_RISK_PERCENT', '20.0'))
+        self.GLOBAL_STOP_LOSS_ROE = float('5.0')
+        self.MAX_EQUITY_RISK_PERCENT = float('5.0')
         self.TAKE_PROFIT_PERCENT = self.FUTURES_TAKE_PROFIT_PERCENT
         self.MAX_DAILY_LOSS_PERCENT = self.FUTURES_MAX_DAILY_LOSS_PERCENT
         self.MAX_DRAWDOWN_PERCENT = self.FUTURES_MAX_DRAWDOWN_PERCENT
         self.MAX_OPEN_POSITIONS = self.FUTURES_MAX_OPEN_POSITIONS
         
         # Parallel Execution & Safety Cooldown Configurations
-        self.FUTURES_SYMBOL_COOLDOWN_MINUTES = int(os.getenv('FUTURES_SYMBOL_COOLDOWN_MINUTES', '15'))
-        self.DISCOVERY_MAX_WORKERS = int(os.getenv('DISCOVERY_MAX_WORKERS', '5'))
+        self.FUTURES_SYMBOL_COOLDOWN_MINUTES = int('15')
+        self.DISCOVERY_MAX_WORKERS = int('5')
         
         # Core Mode & Currency (Synched)
         self.TRADING_MODE = os.getenv('TRADING_MODE', 'live' if self.EXCHANGE_ENVIRONMENT == 'testnet' else 'simulation')
-        self.BASE_CURRENCY = os.getenv('BASE_CURRENCY', 'USDT')
-        trading_pairs_str = os.getenv('TRADING_PAIRS', 'BTC/USDT,ETH/USDT,SOL/USDT')
+        self.BASE_CURRENCY = 'USDT'
+        trading_pairs_str = 'BTC/USDT,ETH/USDT,SOL/USDT'
         self.TRADING_PAIRS = [p.strip() for p in trading_pairs_str.split(',')]
         
         # Margin configuration (Phase 32)
-        self.FUTURES_MARGIN_MODE = os.getenv('FUTURES_MARGIN_MODE', 'ISOLATED').upper()
+        self.FUTURES_MARGIN_MODE = 'ISOLATED'.upper()
         
         # Risk Layer Sync (Fixes technical debt from Phase 45)
         self.MAX_LEVERAGE_ABSOLUTE = self.FUTURES_MAX_LEVERAGE
 
         # ===== Spot Trading Configuration =====
-        self.ENABLE_SPOT_TRADING = self._str_to_bool(os.getenv('ENABLE_SPOT_TRADING', 'false'))
-        self.ENABLE_SPOT_LOGGER = self._str_to_bool(os.getenv('ENABLE_SPOT_LOGGER', 'true'))
-        self.SPOT_VIRTUAL_CAPITAL = float(os.getenv('SPOT_VIRTUAL_CAPITAL', '100'))
-        self.SPOT_POSITION_SIZE_PERCENT = float(os.getenv('SPOT_POSITION_SIZE_PERCENT', '10'))
-        self.SPOT_STOP_LOSS_PERCENT = float(os.getenv('SPOT_STOP_LOSS_PERCENT', '2'))
-        self.SPOT_TAKE_PROFIT_PERCENT = float(os.getenv('SPOT_TAKE_PROFIT_PERCENT', '4'))
-        self.SPOT_USE_FULL_RISK_SYSTEM = self._str_to_bool(os.getenv('SPOT_USE_FULL_RISK_SYSTEM', 'true'))
-        self.SPOT_MAX_DAILY_LOSS_PERCENT = float(os.getenv('SPOT_MAX_DAILY_LOSS_PERCENT', '5'))
-        self.SPOT_MAX_DRAWDOWN_PERCENT = float(os.getenv('SPOT_MAX_DRAWDOWN_PERCENT', '15'))
-        spot_pairs_str = os.getenv('SPOT_PAIRS', 'BTC/USDT,ETH/USDT,SOL/USDT')
+        self.ENABLE_SPOT_TRADING = self._str_to_bool('false')
+        self.ENABLE_SPOT_LOGGER = self._str_to_bool('true')
+        self.SPOT_VIRTUAL_CAPITAL = float('100')
+        self.SPOT_POSITION_SIZE_PERCENT = float('10')
+        self.SPOT_STOP_LOSS_PERCENT = float('2')
+        self.SPOT_TAKE_PROFIT_PERCENT = float('4')
+        self.SPOT_USE_FULL_RISK_SYSTEM = self._str_to_bool('true')
+        self.SPOT_MAX_DAILY_LOSS_PERCENT = float('5')
+        self.SPOT_MAX_DRAWDOWN_PERCENT = float('15')
+        spot_pairs_str = 'BTC/USDT,ETH/USDT,SOL/USDT'
         self.SPOT_PAIRS = [pair.strip() for pair in spot_pairs_str.split(',')]
-        self.SPOT_TELEGRAM_NOTIFICATIONS = self._str_to_bool(os.getenv('SPOT_TELEGRAM_NOTIFICATIONS', 'true'))
-        self.SPOT_LOG_SIGNALS = self._str_to_bool(os.getenv('SPOT_LOG_SIGNALS', 'true'))
-        self.SPOT_DAILY_SUMMARY = self._str_to_bool(os.getenv('SPOT_DAILY_SUMMARY', 'true'))
-        self.SPOT_DAILY_SUMMARY_TIME = os.getenv('SPOT_DAILY_SUMMARY_TIME', '00:00')
+        self.SPOT_TELEGRAM_NOTIFICATIONS = self._str_to_bool('true')
+        self.SPOT_LOG_SIGNALS = self._str_to_bool('true')
+        self.SPOT_DAILY_SUMMARY = self._str_to_bool('true')
+        self.SPOT_DAILY_SUMMARY_TIME = '00:00'
         
         # ===== Arbitrage Scanner Configuration =====
-        self.ENABLE_ARBITRAGE_SCANNER = self._str_to_bool(os.getenv('ENABLE_ARBITRAGE_SCANNER', 'true'))
-        self.ARBITRAGE_VIRTUAL_CAPITAL = float(os.getenv('ARBITRAGE_VIRTUAL_CAPITAL', '100'))
-        self.ARBITRAGE_SIMPLE = self._str_to_bool(os.getenv('ARBITRAGE_SIMPLE', 'true'))
-        self.ARBITRAGE_TRIANGULAR = self._str_to_bool(os.getenv('ARBITRAGE_TRIANGULAR', 'true'))
-        self.ARBITRAGE_CROSS_TRIANGULAR = self._str_to_bool(os.getenv('ARBITRAGE_CROSS_TRIANGULAR', 'false'))
-        self.ARBITRAGE_MIN_PROFIT_PERCENT = float(os.getenv('ARBITRAGE_MIN_PROFIT_PERCENT', '2.0'))
-        self.ARBITRAGE_CHECK_INTERVAL = int(os.getenv('ARBITRAGE_CHECK_INTERVAL', '30'))
-        self.ARBITRAGE_INCLUDE_ALL_FEES = self._str_to_bool(os.getenv('ARBITRAGE_INCLUDE_ALL_FEES', 'true'))
-        self.ARBITRAGE_MIN_VOLUME = float(os.getenv('ARBITRAGE_MIN_VOLUME', '10000'))
-        self.ARBITRAGE_EXCHANGES = os.getenv('ARBITRAGE_EXCHANGES', 'binance,kucoin,bybit,okx,gate,huobi,kraken,coinbase,bitget,mexc')
-        arb_pairs_str = os.getenv('ARBITRAGE_PAIRS', 'BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,XRP/USDT')
+        self.ENABLE_ARBITRAGE_SCANNER = self._str_to_bool('true')
+        self.ARBITRAGE_VIRTUAL_CAPITAL = float('100')
+        self.ARBITRAGE_SIMPLE = self._str_to_bool('true')
+        self.ARBITRAGE_TRIANGULAR = self._str_to_bool('true')
+        self.ARBITRAGE_CROSS_TRIANGULAR = self._str_to_bool('false')
+        self.ARBITRAGE_MIN_PROFIT_PERCENT = float('2.0')
+        self.ARBITRAGE_CHECK_INTERVAL = int('30')
+        self.ARBITRAGE_INCLUDE_ALL_FEES = self._str_to_bool('true')
+        self.ARBITRAGE_MIN_VOLUME = float('10000')
+        self.ARBITRAGE_EXCHANGES = 'binance,kucoin,bybit,okx,gate,huobi,kraken,coinbase,bitget,mexc'
+        arb_pairs_str = 'BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,XRP/USDT'
         self.ARBITRAGE_PAIRS = [pair.strip() for pair in arb_pairs_str.split(',')]
-        self.ARBITRAGE_TELEGRAM_NOTIFICATIONS = self._str_to_bool(os.getenv('ARBITRAGE_TELEGRAM_NOTIFICATIONS', 'true'))
-        self.ARBITRAGE_LOG_TOP_N_PER_HOUR = int(os.getenv('ARBITRAGE_LOG_TOP_N_PER_HOUR', '5'))
-        self.ARBITRAGE_DAILY_SUMMARY = self._str_to_bool(os.getenv('ARBITRAGE_DAILY_SUMMARY', 'true'))
-        self.ARBITRAGE_DAILY_SUMMARY_TIME = os.getenv('ARBITRAGE_DAILY_SUMMARY_TIME', '00:00')
+        self.ARBITRAGE_TELEGRAM_NOTIFICATIONS = self._str_to_bool('true')
+        self.ARBITRAGE_LOG_TOP_N_PER_HOUR = int('5')
+        self.ARBITRAGE_DAILY_SUMMARY = self._str_to_bool('true')
+        self.ARBITRAGE_DAILY_SUMMARY_TIME = '00:00'
         
         # (Legacy overrides REMOVED to prevent FUTURES_* settings from being overwritten)
         # self.POSITION_SIZE_PERCENT, self.MAX_LEVERAGE, etc are now managed in the Global section above
         
         # ===== Strategy Selection Configuration =====
-        self.STRATEGY_A1_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A1_ENABLED', 'true'))
-        self.STRATEGY_A2_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A2_ENABLED', 'false'))
-        self.STRATEGY_A3_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A3_ENABLED', 'true'))
-        self.STRATEGY_A4_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A4_ENABLED', 'true'))
-        self.STRATEGY_A5_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A5_ENABLED', 'false'))
-        self.STRATEGY_A6_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A6_ENABLED', 'false'))
+        self.STRATEGY_A1_ENABLED = self._str_to_bool('false')
+        self.STRATEGY_A2_ENABLED = self._str_to_bool('false')
+        self.STRATEGY_A3_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A4_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A5_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A6_ENABLED = self._str_to_bool('true')
         
         # Strategy-specific Risk Overrides
-        self.STRATEGY_A3_SL_ROE = float(os.getenv('STRATEGY_A3_SL_ROE', '2.0'))
+        self.STRATEGY_A3_SL_ROE = float('5.0')
         
         # ===== Fee Configuration (Simulation) =====
-        self.FUTURES_FEE_PERCENT = float(os.getenv('FUTURES_FEE_PERCENT', '0.04'))
-        self.SPOT_FEE_PERCENT = float(os.getenv('SPOT_FEE_PERCENT', '0.1'))
+        self.FUTURES_FEE_PERCENT = float('0.04')
+        self.SPOT_FEE_PERCENT = float('0.1')
         
         # ===== Risk Management Configuration =====
-        self.TRAILING_STOP_ACTIVATION = float(os.getenv('TRAILING_STOP_ACTIVATION', '5'))
-        self.TRAILING_STOP_DISTANCE = float(os.getenv('TRAILING_STOP_DISTANCE', '2'))
+        self.TRAILING_STOP_ACTIVATION = float('5')
+        self.TRAILING_STOP_DISTANCE = float('2')
 
         # Trailing Take Profit Configuration (Phase 53: Leverage-Aware)
-        self.TRAILING_TP_ENABLED = self._str_to_bool(os.getenv('TRAILING_TP_ENABLED', 'true'))
-        self.TRAILING_TP_ACTIVATION = float(os.getenv('TRAILING_TP_ACTIVATION', '3'))  # Fallback price move %
-        self.TRAILING_TP_DISTANCE = float(os.getenv('TRAILING_TP_DISTANCE', '1.5'))    # Fallback price move %
+        self.TRAILING_TP_ENABLED = self._str_to_bool('true')
+        self.TRAILING_TP_ACTIVATION = float('1.0')  # Fallback price move %
+        self.TRAILING_TP_DISTANCE = float('1.5')    # Fallback price move %
         
         # New ROE-based Targets (Scales with leverage)
-        self.TRAILING_TARGET_ROE = float(os.getenv('TRAILING_TARGET_ROE', '6.0'))      # Target 6% ROE to start trailing
-        self.TRAILING_CAPTURE_ROE = float(os.getenv('TRAILING_CAPTURE_ROE', '2.5'))    # Gap of 2.5% ROE from peak
+        self.TRAILING_TARGET_ROE = float('6.0')      # Target 6% ROE to start trailing
+        self.TRAILING_CAPTURE_ROE = float('2.5')    # Gap of 2.5% ROE from peak
 
         # Exchange-Side Execution
-        self.ENABLE_EXCHANGE_STOPS = self._str_to_bool(os.getenv('ENABLE_EXCHANGE_STOPS', 'false'))
-        self.EXCHANGE_TP_ORDER_TYPE = os.getenv('EXCHANGE_TP_ORDER_TYPE', 'TAKE_PROFIT_MARKET')
+        self.ENABLE_EXCHANGE_STOPS = self._str_to_bool('false')
+        self.EXCHANGE_TP_ORDER_TYPE = 'TAKE_PROFIT_MARKET'
 
-        self.MAX_DAILY_LOSS_PERCENT = float(os.getenv('MAX_DAILY_LOSS_PERCENT', '5'))
-        self.MAX_DRAWDOWN_PERCENT = float(os.getenv('MAX_DRAWDOWN_PERCENT', '15'))
+        self.MAX_DAILY_LOSS_PERCENT = float('15')
+        self.MAX_DRAWDOWN_PERCENT = float('10')
         
         # ===== Tiered Risk Management (Phase 14) =====
-        self.TIERED_RISK_ENABLED = self._str_to_bool(os.getenv('TIERED_RISK_ENABLED', 'true'))
-        self.NORMAL_SIGNAL_THRESHOLD = float(os.getenv('NORMAL_SIGNAL_THRESHOLD', '50.0'))
-        self.ELITE_SIGNAL_THRESHOLD = float(os.getenv('ELITE_SIGNAL_THRESHOLD', '70.0'))
-        self.ELITE_CONFIDENCE_LEVEL = float(os.getenv('ELITE_CONFIDENCE_LEVEL', '0.90'))
+        self.TIERED_RISK_ENABLED = self._str_to_bool('true')
+        self.NORMAL_SIGNAL_THRESHOLD = float('50.0')
+        self.ELITE_SIGNAL_THRESHOLD = float('70.0')
+        self.ELITE_CONFIDENCE_LEVEL = float('0.90')
         
-        self.CORRELATION_THRESHOLD = float(os.getenv('CORRELATION_THRESHOLD', '0.7'))
-        self.VOLATILITY_LOOKBACK_PERIODS = int(os.getenv('VOLATILITY_LOOKBACK_PERIODS', '20'))
-        self.MIN_LIQUIDITY_DEPTH = float(os.getenv('MIN_LIQUIDITY_DEPTH', '10000'))
+        self.CORRELATION_THRESHOLD = float('0.7')
+        self.VOLATILITY_LOOKBACK_PERIODS = int('20')
+        self.MIN_LIQUIDITY_DEPTH = float('10000')
         
         # ===== Circuit Breaker Configuration =====
-        self.ENABLE_CIRCUIT_BREAKER = self._str_to_bool(os.getenv('ENABLE_CIRCUIT_BREAKER', 'false'))
-        self.TRADE_FAILURE_HALT_HOURS = float(os.getenv('TRADE_FAILURE_HALT_HOURS', '0.5'))
-        self.CONSECUTIVE_LOSSES_THRESHOLD = int(os.getenv('CONSECUTIVE_LOSSES_THRESHOLD', '5'))
-        self.FLASH_CRASH_THRESHOLD = float(os.getenv('FLASH_CRASH_THRESHOLD', '-10'))
+        self.ENABLE_CIRCUIT_BREAKER = self._str_to_bool('false')
+        self.TRADE_FAILURE_HALT_HOURS = float('0.5')
+        self.CONSECUTIVE_LOSSES_THRESHOLD = int('5')
+        self.FLASH_CRASH_THRESHOLD = float('-10')
         
         # ===== Portfolio Loss Circuit Breaker =====
-        self.LOSS_CB_ENABLED = self._str_to_bool(os.getenv('LOSS_CB_ENABLED', 'true'))
-        self.LOSS_CB_PCT = float(os.getenv('LOSS_CB_PCT', '10.0'))
-        self.LOSS_CB_COOLDOWN_MINUTES = int(os.getenv('LOSS_CB_COOLDOWN_MINUTES', '30'))
+        self.LOSS_CB_ENABLED = self._str_to_bool('true')
+        self.LOSS_CB_PCT = float('10.0')
+        self.LOSS_CB_COOLDOWN_MINUTES = int('30')
         
         # ===== Telegram Integration (3 Separate Bots) =====
         # Futures Bot
-        self.TELEGRAM_FUTURES_ENABLED = self._str_to_bool(os.getenv('TELEGRAM_FUTURES_ENABLED', 'true'))
+        self.TELEGRAM_FUTURES_ENABLED = self._str_to_bool('true')
         self.TELEGRAM_FUTURES_BOT_TOKEN = os.getenv('TELEGRAM_FUTURES_BOT_TOKEN', '')
         self.TELEGRAM_FUTURES_CHAT_ID = os.getenv('TELEGRAM_FUTURES_CHAT_ID', '')
         
         # Spot Bot
-        self.TELEGRAM_SPOT_ENABLED = self._str_to_bool(os.getenv('TELEGRAM_SPOT_ENABLED', 'true'))
+        self.TELEGRAM_SPOT_ENABLED = self._str_to_bool('false')
         self.TELEGRAM_SPOT_BOT_TOKEN = os.getenv('TELEGRAM_SPOT_BOT_TOKEN', '')
         self.TELEGRAM_SPOT_CHAT_ID = os.getenv('TELEGRAM_SPOT_CHAT_ID', '')
         
         # Arbitrage Bot
-        self.TELEGRAM_ARBITRAGE_ENABLED = self._str_to_bool(os.getenv('TELEGRAM_ARBITRAGE_ENABLED', 'true'))
+        self.TELEGRAM_ARBITRAGE_ENABLED = self._str_to_bool('false')
         self.TELEGRAM_ARBITRAGE_BOT_TOKEN = os.getenv('TELEGRAM_ARBITRAGE_BOT_TOKEN', '')
         self.TELEGRAM_ARBITRAGE_CHAT_ID = os.getenv('TELEGRAM_ARBITRAGE_CHAT_ID', '')
         
         # Legacy Telegram settings (backwards compatibility)
         self.TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
         self.TELEGRAM_USER_ID = os.getenv('TELEGRAM_USER_ID', '')
-        self.TELEGRAM_NOTIFICATIONS = self._str_to_bool(os.getenv('TELEGRAM_NOTIFICATIONS', 'true'))
-        self.TELEGRAM_DAILY_SUMMARY = self._str_to_bool(os.getenv('TELEGRAM_DAILY_SUMMARY', 'true'))
-        self.TELEGRAM_DAILY_SUMMARY_TIME = os.getenv('TELEGRAM_DAILY_SUMMARY_TIME', '00:00')
+        self.TELEGRAM_NOTIFICATIONS = self._str_to_bool('true')
+        self.TELEGRAM_DAILY_SUMMARY = self._str_to_bool('false')
+        self.TELEGRAM_DAILY_SUMMARY_TIME = '00:00'
         
         # ===== Logging Configuration =====
-        self.LOG_API_CALLS = self._str_to_bool(os.getenv('LOG_API_CALLS', 'true'))
-        self.LOG_POSITION_REJECTIONS = self._str_to_bool(os.getenv('LOG_POSITION_REJECTIONS', 'true'))
-        self.LOG_TOKEN_METRICS = self._str_to_bool(os.getenv('LOG_TOKEN_METRICS', 'false'))
-        self.LOG_RISK_MANAGEMENT = self._str_to_bool(os.getenv('LOG_RISK_MANAGEMENT', 'true'))
-        self.LOG_TRADE_EXECUTION = self._str_to_bool(os.getenv('LOG_TRADE_EXECUTION', 'true'))
-        self.LOG_PERFORMANCE = self._str_to_bool(os.getenv('LOG_PERFORMANCE', 'true'))
-        self.LOG_SYSTEM_EVENTS = self._str_to_bool(os.getenv('LOG_SYSTEM_EVENTS', 'true'))
-        self.LOG_ERROR_TRACES = self._str_to_bool(os.getenv('LOG_ERROR_TRACES', 'true'))
-        self.LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
-        self.LOG_OUTPUT = os.getenv('LOG_OUTPUT', 'both')
-        self.LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', './logs')
-        self.LOG_FILE_MAX_SIZE = int(os.getenv('LOG_FILE_MAX_SIZE', '10'))
-        self.LOG_FILE_BACKUP_COUNT = int(os.getenv('LOG_FILE_BACKUP_COUNT', '5'))
-        self.MUTE_REJECTION_LOGS = self._str_to_bool(os.getenv('MUTE_REJECTION_LOGS', 'true'))
-        self.ERROR_LOG_FILE = os.getenv('ERROR_LOG_FILE', 'apex_error.log')
+        self.LOG_API_CALLS = self._str_to_bool('true')
+        self.LOG_POSITION_REJECTIONS = self._str_to_bool('true')
+        self.LOG_TOKEN_METRICS = self._str_to_bool('false')
+        self.LOG_RISK_MANAGEMENT = self._str_to_bool('true')
+        self.LOG_TRADE_EXECUTION = self._str_to_bool('true')
+        self.LOG_PERFORMANCE = self._str_to_bool('true')
+        self.LOG_SYSTEM_EVENTS = self._str_to_bool('true')
+        self.LOG_ERROR_TRACES = self._str_to_bool('true')
+        self.LOG_LEVEL = 'INFO'.upper()
+        self.LOG_OUTPUT = 'both'
+        self.LOG_FILE_PATH = './logs'
+        self.LOG_FILE_MAX_SIZE = int('10')
+        self.LOG_FILE_BACKUP_COUNT = int('5')
+        self.MUTE_REJECTION_LOGS = self._str_to_bool('false')
+        self.ERROR_LOG_FILE = 'apex_error.log'
 
         # ===== MongoDB Configuration =====
-        self.MONGODB_ENABLED = self._str_to_bool(os.getenv('MONGODB_ENABLED', 'false'))
+        self.MONGODB_ENABLED = self._str_to_bool('false')
         # ===== SQLite Configuration =====
-        self.SQLITE_ENABLED = self._str_to_bool(os.getenv('SQLITE_ENABLED', 'true'))
+        self.SQLITE_ENABLED = self._str_to_bool('true')
         self.SQLITE_DB_NAME = os.getenv('SQLITE_DB_NAME', 'apex_hunter_v14.db')
 
         self.MONGODB_HOST = os.getenv('MONGODB_HOST', '')
@@ -273,64 +273,64 @@ class Config:
         self.MONGODB_DATABASE = os.getenv('MONGODB_DATABASE', 'apex_hunter_v14')
         self.MONGODB_USERNAME = os.getenv('MONGODB_USERNAME', '')
         self.MONGODB_PASSWORD = os.getenv('MONGODB_PASSWORD', '')
-        self.MONGODB_RETENTION_DAYS = int(os.getenv('MONGODB_RETENTION_DAYS', '30'))
+        self.MONGODB_RETENTION_DAYS = int('30')
 
         # ===== Cleanup Configuration =====
-        self.CLEAN_LOGS = self._str_to_bool(os.getenv('CLEAN_LOGS', 'no'))
-        self.CLEAN_DB = self._str_to_bool(os.getenv('CLEAN_DB', 'no'))
-        self.CLEAN_TELEGRAM = self._str_to_bool(os.getenv('CLEAN_TELEGRAM', 'no'))
+        self.CLEAN_LOGS = self._str_to_bool('no')
+        self.CLEAN_DB = self._str_to_bool('no')
+        self.CLEAN_TELEGRAM = self._str_to_bool('no')
 
         # ===== Testing/Filter Configuration =====
-        self.TESTING_MODE = self._str_to_bool(os.getenv('TESTING_MODE', 'false'))
-        self.TESTING_ADX_MIN = float(os.getenv('TESTING_ADX_MIN', '15'))
-        self.TESTING_VOLUME_MULT = float(os.getenv('TESTING_VOLUME_MULT', '0.8'))
-        self.MIN_VOLUME_USDT = float(os.getenv('MIN_VOLUME_USDT', '10000'))
-        self.MAX_VOLATILITY_PERCENT = float(os.getenv('MAX_VOLATILITY_PERCENT', '5.0'))
-        self.FORCE_TRADES = self._str_to_bool(os.getenv('FORCE_TRADES', 'false'))
+        self.TESTING_MODE = self._str_to_bool('false')
+        self.TESTING_ADX_MIN = float('15')
+        self.TESTING_VOLUME_MULT = float('0.8')
+        self.MIN_VOLUME_USDT = float('10000')
+        self.MAX_VOLATILITY_PERCENT = float('5.0')
+        self.FORCE_TRADES = self._str_to_bool('false')
 
         # ===== System Configuration =====
-        self.TIMEFRAME = os.getenv('TIMEFRAME', '15m')
-        self.HEARTBEAT_INTERVAL = int(os.getenv('HEARTBEAT_INTERVAL', '60'))
-        self.API_TIMEOUT = int(os.getenv('API_TIMEOUT', '10'))
-        self.RETRY_ATTEMPTS = int(os.getenv('RETRY_ATTEMPTS', '3'))
-        self.RETRY_DELAY = int(os.getenv('RETRY_DELAY', '1'))
-        self.RATE_LIMIT_BUFFER = float(os.getenv('RATE_LIMIT_BUFFER', '0.8'))
-        self.DATA_PERSISTENCE = self._str_to_bool(os.getenv('DATA_PERSISTENCE', 'true'))
-        self.DATA_DIRECTORY = os.getenv('DATA_DIRECTORY', './data')
+        self.TIMEFRAME = '15m'
+        self.HEARTBEAT_INTERVAL = int('60')
+        self.API_TIMEOUT = int('10')
+        self.RETRY_ATTEMPTS = int('3')
+        self.RETRY_DELAY = int('1')
+        self.RATE_LIMIT_BUFFER = float('0.8')
+        self.DATA_PERSISTENCE = self._str_to_bool('true')
+        self.DATA_DIRECTORY = './data'
         
         # ===== Advanced Configuration =====
         self.ENABLE_PAPER_TRADING_SLIPPAGE = self._str_to_bool(
-            os.getenv('ENABLE_PAPER_TRADING_SLIPPAGE', 'true')
+            'true'
         )
         self.PAPER_TRADING_SLIPPAGE_PERCENT = float(
-            os.getenv('PAPER_TRADING_SLIPPAGE_PERCENT', '0.1')
+            '0.1'
         )
         self.ENABLE_PERFORMANCE_ANALYTICS = self._str_to_bool(
-            os.getenv('ENABLE_PERFORMANCE_ANALYTICS', 'true')
+            'true'
         )
-        self.REBALANCE_ON_PROFIT = self._str_to_bool(os.getenv('REBALANCE_ON_PROFIT', 'false'))
-        self.REBALANCE_THRESHOLD = float(os.getenv('REBALANCE_THRESHOLD', '20'))
+        self.REBALANCE_ON_PROFIT = self._str_to_bool('false')
+        self.REBALANCE_THRESHOLD = float('20')
         
         # ===== Safety Configuration =====
         self.REQUIRE_CONFIRMATION_FOR_LIVE = self._str_to_bool(
-            os.getenv('REQUIRE_CONFIRMATION_FOR_LIVE', 'true')
+            'true'
         )
         self.ENABLE_EMERGENCY_SHUTDOWN = self._str_to_bool(
-            os.getenv('ENABLE_EMERGENCY_SHUTDOWN', 'true')
+            'true'
         )
         self.EMERGENCY_SHUTDOWN_PASSWORD = os.getenv(
             'EMERGENCY_SHUTDOWN_PASSWORD',
             'change_this_password'
         )
-        self.MAX_API_ERRORS_PER_HOUR = int(os.getenv('MAX_API_ERRORS_PER_HOUR', '10'))
+        self.MAX_API_ERRORS_PER_HOUR = int('10')
 
         # ===== Portfolio Profit Ratchet (Phase: Gains Lock) =====
-        self.PROFIT_RATCHET_ENABLED = self._str_to_bool(os.getenv('PROFIT_RATCHET_ENABLED', 'true'))
-        self.PROFIT_RATCHET_ACTIVATION = float(os.getenv('PROFIT_RATCHET_ACTIVATION', '6.0'))
-        self.PROFIT_RATCHET_TRAILING = float(os.getenv('PROFIT_RATCHET_TRAILING', '1.0'))
-        self.PROFIT_RATCHET_FLOOR = float(os.getenv('PROFIT_RATCHET_FLOOR', '1.0'))
-        self.PROFIT_RATCHET_COOLDOWN = int(os.getenv('PROFIT_RATCHET_COOLDOWN', '5'))
-        self.PROFIT_RATCHET_SLIPPAGE_BUFFER = float(os.getenv('PROFIT_RATCHET_SLIPPAGE_BUFFER', '0.2'))
+        self.PROFIT_RATCHET_ENABLED = self._str_to_bool('true')
+        self.PROFIT_RATCHET_ACTIVATION = float('6.0')
+        self.PROFIT_RATCHET_TRAILING = float('1.0')
+        self.PROFIT_RATCHET_FLOOR = float('1.0')
+        self.PROFIT_RATCHET_COOLDOWN = int('5')
+        self.PROFIT_RATCHET_SLIPPAGE_BUFFER = float('0.2')
     
     def _validate_configuration(self):
         """Validate critical configuration values"""

@@ -831,6 +831,10 @@ class PaperTradingEngine:
 
             # Approved trade - execute
             try:
+                # Initialize safety variables to prevent UnboundLocalError
+                position = None
+                entry_fee = 0.0
+                
                 entry_price = approved_params['entry_price']
                 size = approved_params['size']
                 leverage = approved_params.get('leverage', leverage)
@@ -989,8 +993,8 @@ class PaperTradingEngine:
                         )
                     
                     # Update Capital accounting ONLY if it's a valid position
-                    if 'symbol' not in position:
-                        self.logger.error(f"🚨 ATOMIC BOOKING FAILED: Trade manager returned invalid position object for {symbol}: {position}. Rejecting.")
+                    if not position or 'symbol' not in position:
+                        self.logger.error(f"🚨 ATOMIC BOOKING FAILED: Trade manager returned invalid position object for {symbol}. Rejecting.")
                         return
                         
                     fee_percent = getattr(self.config, 'FUTURES_FEE_PERCENT', 0.04) / 100
@@ -1453,43 +1457,58 @@ class PaperTradingEngine:
             return None
 
     def _aggregate_hourly_report_data(self):
-        """Aggregate hourly report data from database files"""
+        """Aggregate hourly report data from activity_log.db and apex_hunter.db"""
         try:
             now = datetime.now()
             start_time = self.last_report_time
-
-            # Calculate the reporting period
-            report_hours = []
-            current_time = start_time
-            while current_time < now:
-                report_hours.append(current_time.strftime('%H:00'))
-                current_time += timedelta(hours=1)
-
-            # Aggregate data from database for each trading type
+            
             report_data = {
                 'futures': {'total_analyses': 0, 'signals_generated': 0, 'total_rejections': 0, 'trades_opened': 0},
                 'spot': {'total_analyses': 0, 'signals_generated': 0, 'total_rejections': 0, 'trades_opened': 0},
                 'arbitrage': {'total_analyses': 0, 'opportunities_found': 0, 'trades_executed': 0, 'total_rejections': 0}
             }
 
-            current_date = now.strftime('%Y-%m-%d')
+            # 1. Pull Scanning Data from activity_log.db
+            try:
+                import sqlite3, json
+                conn = sqlite3.connect('data/activity_log.db')
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # Query sweep summaries for the reporting period
+                start_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
+                cursor.execute("SELECT metadata FROM activity_log WHERE type = 'sweep_summary' AND timestamp >= ?", (start_str,))
+                
+                for row in cursor.fetchall():
+                    meta = json.loads(row['metadata'])
+                    # Aggregate Analysis Count
+                    scanned = meta.get('symbols_scanned', 0)
+                    report_data['futures']['total_analyses'] += scanned
+                    
+                    # Aggregate Rejection Count
+                    rejections = meta.get('strategy_rejections', {})
+                    for strat_rej in rejections.values():
+                        for sym_list in strat_rej.values():
+                            report_data['futures']['total_rejections'] += len(sym_list)
+                
+                conn.close()
+            except Exception as e:
+                self.logger.error(f"Error pulling scanning data from activity_log: {e}")
 
-            # Metrics generation from SQLite not yet implemented
-            pass
+            # 2. Pull Trade Data from apex_hunter.db
+            try:
+                cursor = self.db.conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM trades WHERE entry_time >= ?", (start_time.isoformat(),))
+                report_data['futures']['trades_opened'] = cursor.fetchone()[0]
+                report_data['futures']['signals_generated'] = report_data['futures']['trades_opened'] 
+            except Exception as e:
+                self.logger.error(f"Error pulling trade data: {e}")
 
-            # For arbitrage, we'd need to implement similar logic if arbitrage data is stored
-            # For now, arbitrage reports will show 0
-
-            self.logger.debug(f"Aggregated hourly report data: {report_data}")
             return report_data
 
         except Exception as e:
             self.logger.error(f"Error aggregating hourly report data: {e}")
-            return {
-                'futures': {'total_analyses': 0, 'signals_generated': 0, 'total_rejections': 0, 'trades_opened': 0},
-                'spot': {'total_analyses': 0, 'signals_generated': 0, 'total_rejections': 0, 'trades_opened': 0},
-                'arbitrage': {'total_analyses': 0, 'opportunities_found': 0, 'trades_executed': 0, 'total_rejections': 0}
-            }
+            return report_data
 
     def _send_hourly_reports_from_db(self, report_data):
         """Send hourly reports using database data"""
@@ -2110,13 +2129,21 @@ class ApexHunterBot:
                             if not '/' in standard_symbol:
                                 standard_symbol = standard_symbol.replace('USDT', '/USDT')
                             
+                            # Calculate 5% ROE Hard Stop for adopted positions
+                            lev = int(g_pos.get('leverage', 1))
+                            max_move = (5.0 / lev) / 100
+                            if side == 'buy':
+                                ad_sl = entry_price * (1 - max_move)
+                            else:
+                                ad_sl = entry_price * (1 + max_move)
+
                             adopted_pos = self.engine.trade_manager.record_entry(
                                 symbol=standard_symbol,
                                 strategy_name='MANUAL_ADOPT',
                                 side=side,
                                 size=notional_value,
-                                leverage=int(g_pos.get('leverage', 1)),
-                                stop_loss=None,
+                                leverage=lev,
+                                stop_loss=ad_sl,
                                 take_profit=None,
                                 order_response=g_pos,
                                 planned_price=entry_price

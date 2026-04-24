@@ -34,6 +34,12 @@ class PortfolioProfitRatchet:
         self.peak_notified_roe = 0.0
         self.stop_event = threading.Event()
         
+        # Dollar Tracking State
+        self.locked_margin = 0.0
+        self.peak_dollar_pnl = 0.0
+        self.dollar_trail_distance = 0.0
+        self.dollar_hard_floor = 0.0
+        
         # CCXT.Pro instance (initialized in loop)
         self.nx_pro = None
         
@@ -86,15 +92,28 @@ class PortfolioProfitRatchet:
                     self.ratchet_active = True
                     self.peak_roe = net_roe
                     self.peak_notified_roe = net_roe
-                    self.telegram.send_futures_message(f"🚀 *PROFIT RATCHET ACTIVATED (Initial)*\nNet ROE: {net_roe:.2f}%\nTrailing Stop set at: {net_roe - self.trailing_distance:.2f}%")
+                    
+                    # Convert to stable Dollar metrics
+                    net_dollar_pnl = total_unrealized_pnl - total_costs
+                    self.locked_margin = total_margin
+                    self.peak_dollar_pnl = net_dollar_pnl
+                    
+                    self.dollar_trail_distance = self.locked_margin * (self.trailing_distance / 100.0)
+                    self.dollar_hard_floor = self.locked_margin * (self.floor_roe / 100.0)
+                    
+                    self.telegram.send_futures_message(f"🚀 *PROFIT RATCHET ACTIVATED (Initial)*\nNet ROE: {net_roe:.2f}%\nNet Profit: ${net_dollar_pnl:.2f}\nTrailing Stop set at: ${(net_dollar_pnl - self.dollar_trail_distance):.2f}")
                     
                     # Stop Hit Check
-                    stop_level = max(self.floor_roe, self.peak_roe - self.trailing_distance)
-                    if net_roe <= stop_level:
-                        self.logger.critical(f"⚠️ RATCHET STOP HIT (Initial)! Net ROE: {net_roe:.2f}% (Stop: {stop_level:.2f}%)")
+                    stop_level_dollar = max(self.dollar_hard_floor, self.peak_dollar_pnl - self.dollar_trail_distance)
+                    if net_dollar_pnl <= stop_level_dollar:
+                        self.logger.critical(f"⚠️ RATCHET STOP HIT (Initial)! Net Profit: ${net_dollar_pnl:.2f} (Stop: ${stop_level_dollar:.2f})")
                         await self._liquidate_all(net_roe, target_symbols_initial)
                         self.ratchet_active = False
                         self.peak_roe = 0.0
+                        self.peak_dollar_pnl = 0.0
+                        self.locked_margin = 0.0
+                        self.dollar_trail_distance = 0.0
+                        self.dollar_hard_floor = 0.0
 
             while not self.stop_event.is_set():
                 # Await ANY position update (PnL change, price change, or size change)
@@ -133,29 +152,45 @@ class PortfolioProfitRatchet:
                 total_costs = total_volume * (fee_rate + slippage_rate)
                 
                 # Formula matching verified scratch test:
-                net_roe = ((total_unrealized_pnl - total_costs) / total_margin) * 100
+                net_dollar_pnl = total_unrealized_pnl - total_costs
+                net_roe = (net_dollar_pnl / total_margin) * 100
 
                 # 5. Ratchet Activation/Trailing Logic
                 if not self.ratchet_active and net_roe >= self.activation_roe:
                     self.ratchet_active = True
                     self.peak_roe = net_roe
                     self.peak_notified_roe = net_roe
-                    self.telegram.send_futures_message(f"🚀 *PROFIT RATCHET ACTIVATED*\nNet ROE: {net_roe:.2f}%\nTrailing Stop set at: {net_roe - self.trailing_distance:.2f}%")
+                    
+                    # Convert to stable Dollar metrics
+                    self.locked_margin = total_margin
+                    self.peak_dollar_pnl = net_dollar_pnl
+                    
+                    self.dollar_trail_distance = self.locked_margin * (self.trailing_distance / 100.0)
+                    self.dollar_hard_floor = self.locked_margin * (self.floor_roe / 100.0)
+                    
+                    self.telegram.send_futures_message(f"🚀 *PROFIT RATCHET ACTIVATED*\nNet ROE: {net_roe:.2f}%\nNet Profit: ${net_dollar_pnl:.2f}\nTrailing Stop set at: ${(net_dollar_pnl - self.dollar_trail_distance):.2f}")
                 
                 if self.ratchet_active:
+                    if net_dollar_pnl > self.peak_dollar_pnl:
+                        self.peak_dollar_pnl = net_dollar_pnl
+                        
                     if net_roe > self.peak_roe:
                         self.peak_roe = net_roe
                         if net_roe >= self.peak_notified_roe + 1.0:
                             self.peak_notified_roe = net_roe
-                            self.telegram.send_futures_message(f"📈 *Portfolio Peak Profit*: {net_roe:.2f}% Net ROE")
+                            self.telegram.send_futures_message(f"📈 *Portfolio Peak Profit*: {net_roe:.2f}% Net ROE (${self.peak_dollar_pnl:.2f})")
 
-                    stop_level = max(self.floor_roe, self.peak_roe - self.trailing_distance)
+                    stop_level_dollar = max(self.dollar_hard_floor, self.peak_dollar_pnl - self.dollar_trail_distance)
                     
-                    if net_roe <= stop_level:
-                        self.logger.critical(f"⚠️ RATCHET STOP HIT! Net ROE: {net_roe:.2f}% (Stop: {stop_level:.2f}%)")
+                    if net_dollar_pnl <= stop_level_dollar:
+                        self.logger.critical(f"⚠️ RATCHET STOP HIT! Net Profit: ${net_dollar_pnl:.2f} (Stop: ${stop_level_dollar:.2f})")
                         await self._liquidate_all(net_roe, target_symbols)
                         self.ratchet_active = False
                         self.peak_roe = 0.0
+                        self.peak_dollar_pnl = 0.0
+                        self.locked_margin = 0.0
+                        self.dollar_trail_distance = 0.0
+                        self.dollar_hard_floor = 0.0
                 
         except Exception as e:
             self.logger.error(f"Ratchet WebSocket Error: {e}")
