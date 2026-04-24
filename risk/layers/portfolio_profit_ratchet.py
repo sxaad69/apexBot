@@ -219,6 +219,20 @@ class PortfolioProfitRatchet:
                     self.logger.error(f"❌ Ratchet: Failed to clean/close {symbol}: {ex}")
 
             self.logger.system("🏁 RATCHET MASS LIQUIDATION COMPLETE")
+            
+            # --- PHASE 34: Persistence Guard (Log event to DB) ---
+            try:
+                self.db.record_portfolio_ratchet({
+                    'activation_roe': self.activation_roe,
+                    'peak_roe': self.peak_roe,
+                    'exit_roe': exit_roe,
+                    'total_pnl': 0.0, # Aggregate PnL handled by individual trade records
+                    'positions_closed': len(active_positions),
+                    'metadata': {'event': 'Trailing Portfolio TP Hit', 'symbols': [p['symbol'] for p in active_positions]}
+                })
+            except Exception as db_e:
+                self.logger.error(f"Failed to log ratchet event to DB: {db_e}")
+
             self.is_liquidating = False
 
         except Exception as e:

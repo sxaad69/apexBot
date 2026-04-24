@@ -4,7 +4,7 @@ Extends the base logger to include MongoDB logging capabilities
 """
 
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from .logger import Logger, LogCategory
 from database.sqlite_manager import SQLiteManager
 from config.config import Config
@@ -310,24 +310,18 @@ class MongoLogger(Logger):
             print(f"❌ SQLite analysis logging failed: {e}")
             return False
 
-    def save_strategy_signals(self, date: str, hour: str, strategy_data: Dict[str, Any]) -> bool:
-        """Save strategy signals data to SQLite (Exclusive)"""
+    def save_market_analysis_bulk(self, records: List[Dict[str, Any]]) -> bool:
+        """Save market analysis data to SQLite in bulk"""
         try:
-            if self.sqlite_enabled:
-                for symbol, data in strategy_data.items():
-                    if isinstance(data, dict) and 'action' in data:
-                        self.db.save_signal(
-                            symbol, 
-                            data.get('strategy', 'Unknown'), 
-                            data.get('action'), 
-                            data.get('confidence', 0.0), 
-                            data
-                        )
+            if self.sqlite_enabled and records:
+                self.db.save_analysis_bulk(records)
                 return True
             return False
         except Exception as e:
-            print(f"❌ SQLite signals logging failed: {e}")
+            print(f"❌ SQLite bulk analysis logging failed: {e}")
             return False
+
+
 
     def save_hourly_metrics(self, date: str, hour: str, metrics_data: Dict[str, Any]) -> bool:
         """Save hourly trading metrics to SQLite (Exclusive)"""

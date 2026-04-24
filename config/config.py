@@ -102,6 +102,7 @@ class Config:
         # Strategy-Specific Overrides (The "Breathing Room" Knobs)
         self.A5_MAX_LEVERAGE = int(os.getenv('A5_MAX_LEVERAGE', '5'))
         self.A5_STOP_LOSS_ROE = float(os.getenv('A5_STOP_LOSS_ROE', '15.0'))
+        self.A6_STOP_LOSS_ROE = float(os.getenv('A6_STOP_LOSS_ROE', '15.0'))
         
         # GLOBAL ROE Shield (The "Safety Guard")
         self.GLOBAL_STOP_LOSS_ROE = float(os.getenv('GLOBAL_STOP_LOSS_ROE', '5.0'))

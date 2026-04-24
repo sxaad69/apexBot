@@ -282,12 +282,6 @@ class StrategyA6(BaseStrategy):
             self.log_strategy_skip(symbol, f"FILTER_{filter_reason.upper()}", {})
             return None
 
-        # 4. ADX Trend Filter (require meaningful trend)
-        adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
-        if adx_val < 20:
-            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": round(adx_val, 2)})
-            return None
-
         # 5. Market Regime Filter (skip volatile/unknown)
         regime = self.get_market_regime(df)
         if regime in ['volatile', 'unknown']:
@@ -370,6 +364,15 @@ class StrategyA6(BaseStrategy):
 
         if not side:
             return self.set_rejection("NO_CLEAR_SIGNAL_SIDE")
+
+        # --- PHASE 27: Strict Trend Confirmation (Aligned with A4) ---
+        adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
+        if side == 'buy' and adx_val < 25:
+            self.log_strategy_skip(symbol, "ADX_LOW_LONG", {"adx": round(adx_val, 2), "min": 25})
+            return None
+        if side == 'sell' and adx_val < 30:
+            self.log_strategy_skip(symbol, "ADX_LOW_SHORT", {"adx": round(adx_val, 2), "min": 30})
+            return None
 
         # 12. Whale vs. Imbalance Conflict Check
         if whale_data['count'] >= 2:

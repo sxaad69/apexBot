@@ -321,7 +321,7 @@ class PaperTradingEngine:
     
     def update_trailing_stops(self, symbol, current_price):
         """Update trailing stops for all positions on a symbol"""
-        for position_key, position in self.positions.items():
+        for position_key, position in list(self.positions.items()):
             if position['symbol'] != symbol:
                 continue
 
@@ -396,7 +396,7 @@ class PaperTradingEngine:
         if not getattr(self.config, 'TRAILING_TP_ENABLED', True):
             return
 
-        for position_key, position in self.positions.items():
+        for position_key, position in list(self.positions.items()):
             if position['symbol'] != symbol:
                 continue
 
@@ -1314,10 +1314,10 @@ class PaperTradingEngine:
                 elif hasattr(strategy, 'last_rejection') and strategy.last_rejection:
                     rejections[strategy.name] = strategy.last_rejection
 
-        # Collect and save market analysis data for dashboard
-        self._collect_market_analysis_data(symbol, df, current_price)
+        # Collect market analysis data for dashboard (Bulk Aggregation)
+        collected_data = self._collect_market_analysis_data(symbol, df, current_price)
 
-        return {'symbol': symbol, 'rejections': rejections}
+        return {'symbol': symbol, 'rejections': rejections, 'collected_data': collected_data}
 
     def _collect_market_analysis_data(self, symbol, df, current_price):
         """Collect and save market analysis data for dashboard"""
@@ -1424,14 +1424,6 @@ class PaperTradingEngine:
                 'timestamp': now
             }
 
-            # Prepare strategy signals data
-            signals_data = {
-                'date': current_date,
-                'hour': current_hour,
-                'trading_type': 'futures',
-                **strategy_signals,
-                'timestamp': now
-            }
 
             # Prepare hourly metrics data (with detailed rejections)
             metrics_data = {
@@ -1450,16 +1442,15 @@ class PaperTradingEngine:
                 'timestamp': now
             }
 
-            # Save to database (MongoDB first, JSON fallback)
-            success1 = self.logger.save_market_analysis(current_date, current_hour, analysis_data)
-            success2 = self.logger.save_strategy_signals(current_date, current_hour, signals_data)
-            success3 = self.logger.save_hourly_metrics(current_date, current_hour, metrics_data)
-
-            if not (success1 and success2 and success3):
-                self.logger.warning(f"Failed to save market analysis data for {symbol}")
+            # Return data for bulk aggregation instead of saving immediately
+            return {
+                'analysis': analysis_data,
+                'metrics': metrics_data
+            }
 
         except Exception as e:
             self.logger.error(f"Error collecting market analysis data: {e}")
+            return None
 
     def _aggregate_hourly_report_data(self):
         """Aggregate hourly report data from database files"""
@@ -2265,20 +2256,56 @@ class ApexHunterBot:
                     concurrent.futures.wait(futures)
 
                     # Aggregate results
+                    bulk_analysis = []
+
+                    bulk_metrics = {'signals_generated': 0, 'trades_executed': 0, 'total_rejections': 0}
+                    last_metrics_info = None
+
                     for future in futures:
                         try:
                             result = future.result()
-                            if result and isinstance(result, dict) and 'rejections' in result:
+                            if result and isinstance(result, dict):
                                 sym = result.get('symbol')
-                                sweep_stats['symbols_scanned'] += 1
-                                for strategy_name, reason in result['rejections'].items():
-                                    if strategy_name not in sweep_stats['strategy_rejections']:
-                                        sweep_stats['strategy_rejections'][strategy_name] = {}
-                                    if reason not in sweep_stats['strategy_rejections'][strategy_name]:
-                                        sweep_stats['strategy_rejections'][strategy_name][reason] = []
-                                    sweep_stats['strategy_rejections'][strategy_name][reason].append(sym)
+                                
+                                # Aggregate rejections for sweep summary
+                                if 'rejections' in result:
+                                    sweep_stats['symbols_scanned'] += 1
+                                    for strategy_name, reason in result['rejections'].items():
+                                        if strategy_name not in sweep_stats['strategy_rejections']:
+                                            sweep_stats['strategy_rejections'][strategy_name] = {}
+                                        if reason not in sweep_stats['strategy_rejections'][strategy_name]:
+                                            sweep_stats['strategy_rejections'][strategy_name][reason] = []
+                                        sweep_stats['strategy_rejections'][strategy_name][reason].append(sym)
+                                
+                                # Aggregate bulk DB data
+                                collected = result.get('collected_data')
+                                if collected:
+                                    if collected.get('analysis'):
+                                        bulk_analysis.append(collected['analysis'])
+
+                                    if collected.get('metrics'):
+                                        m = collected['metrics']
+                                        bulk_metrics['signals_generated'] += m.get('signals_generated', 0)
+                                        bulk_metrics['trades_executed'] += m.get('trades_executed', 0)
+                                        bulk_metrics['total_rejections'] += m.get('total_rejections', 0)
+                                        last_metrics_info = m
                         except Exception as e:
                             self.logger.error(f"Error getting future result: {e}")
+                            
+                    # Bulk Save to Database
+                    if bulk_analysis and hasattr(self.logger, 'save_market_analysis_bulk'):
+                        self.logger.save_market_analysis_bulk(bulk_analysis)
+                    
+
+                        
+                    if last_metrics_info and hasattr(self.logger, 'save_hourly_metrics'):
+                        unified_metrics = last_metrics_info.copy()
+                        unified_metrics.update(bulk_metrics)
+                        self.logger.save_hourly_metrics(
+                            unified_metrics['date'], 
+                            unified_metrics['hour'], 
+                            unified_metrics
+                        )
                             
                 sweep_stats['duration_sec'] = time.time() - sweep_start_time
                 

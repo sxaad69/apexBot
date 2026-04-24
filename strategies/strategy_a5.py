@@ -237,12 +237,6 @@ class StrategyA5(BaseStrategy):
             self.log_strategy_skip(symbol, f"UNIVERSAL_FILTER_{filter_reason.upper()}", {"filter_reason": filter_reason})
             return None
 
-        # 3. Market Awareness Filter - lower ADX to 15 to catch trends early
-        adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
-        if adx_val < 15:
-            self.log_strategy_skip(symbol, "ADX_LOW", {"adx": adx_val})
-            return None
-
         # 4. Market regime analysis
         regime = self.get_market_regime(df)
         if regime in ['volatile', 'unknown']:
@@ -298,6 +292,18 @@ class StrategyA5(BaseStrategy):
             signal_side = 'buy'
         elif orderbook_imbalance < -self.min_orderbook_imbalance:
             signal_side = 'sell'
+            
+        if not signal_side:
+            return None
+            
+        # --- PHASE 27: Strict Trend Confirmation (Aligned with A4) ---
+        adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
+        if signal_side == 'buy' and adx_val < 25:
+            self.log_strategy_skip(symbol, "ADX_LOW_LONG", {"adx": round(adx_val, 2), "min": 25})
+            return None
+        if signal_side == 'sell' and adx_val < 30:
+            self.log_strategy_skip(symbol, "ADX_LOW_SHORT", {"adx": round(adx_val, 2), "min": 30})
+            return None
 
         # EMA-200 Trend Guard — only short when price < EMA-200
         if signal_side == 'sell':

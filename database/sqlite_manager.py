@@ -441,21 +441,29 @@ class SQLiteManager:
         except Exception as e:
             print(f"❌ SQLite save_analysis error: {e}")
 
-    def save_signal(self, symbol: str, strategy: str, action: str, confidence: float, data: Dict):
-        """Log high-frequency strategy signals to log DB"""
+    def save_analysis_bulk(self, records: List[Dict[str, Any]]):
+        """Log high-frequency market analysis to log DB in bulk"""
+        if not records:
+            return
         try:
             conn = self._get_connection(self.log_db)
             try:
                 cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO strategy_signals (symbol, strategy, action, confidence, data) 
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (symbol, strategy, action, confidence, json.dumps(data, default=str)))
+                data_tuples = []
+                for rec in records:
+                    data_tuples.append((
+                        rec.get('symbol', 'UNKNOWN'),
+                        rec.get('price', 0.0),
+                        json.dumps(rec.get('indicators', {}), default=str)
+                    ))
+                cursor.executemany('INSERT INTO market_analysis (symbol, price, indicators) VALUES (?, ?, ?)', data_tuples)
                 conn.commit()
             finally:
                 conn.close()
         except Exception as e:
-            print(f"❌ SQLite save_signal error: {e}")
+            print(f"❌ SQLite save_analysis_bulk error: {e}")
+
+
 
     def save_active_positions_snapshot(self, positions_data: List[Dict[str, Any]]):
         """Save a snapshot of all active positions to main DB"""

@@ -24,7 +24,7 @@ class LeverageControlLayer:
         self.logger = logger
 
     def _get_drawdown_adjusted_max(self, drawdown_pct: float) -> int:
-        \"\"\"Reduce maximum allowed leverage as drawdown increases.\"\"\"
+        """Reduce maximum allowed leverage as drawdown increases."""
         base_max = getattr(self.config, 'FUTURES_MAX_LEVERAGE', 10)
         if drawdown_pct < 5:
             return base_max           # Full range available
