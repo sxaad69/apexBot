@@ -169,9 +169,9 @@ class Config:
         # ===== Strategy Selection Configuration =====
         self.STRATEGY_A1_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A2_ENABLED = self._str_to_bool('false')
-        self.STRATEGY_A3_ENABLED = self._str_to_bool('true')
-        self.STRATEGY_A4_ENABLED = self._str_to_bool('true')
-        self.STRATEGY_A5_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A3_ENABLED = self._str_to_bool('false')
+        self.STRATEGY_A4_ENABLED = self._str_to_bool('false')
+        self.STRATEGY_A5_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A6_ENABLED = self._str_to_bool('true')
         
         # Strategy-specific Risk Overrides
