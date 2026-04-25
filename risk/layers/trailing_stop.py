@@ -178,13 +178,37 @@ class TrailingStopLayer:
         activation_pct = min(activation_pct, self.ACTIVATION_PROFIT_PCT)
         trail_dist_pct = min(trail_dist_pct, self.TRAIL_DISTANCE_PCT)
 
+        import json
+        from datetime import datetime
+        meta = trade.get('metadata', '{}')
+        meta_dict = json.loads(meta) if isinstance(meta, str) else (meta or {})
+
         # Has it reached Activation threshold?
         if profit_pct < activation_pct:
             # We must still simply update SQLite's watermark so we don't lose progress
+            if 'trailing_activation_time' in meta_dict:
+                del meta_dict['trailing_activation_time']
+            
             self.db.update_trade_metadata(trade_id, {
                 'highest_price': highest_price,
-                'lowest_price': lowest_price
+                'lowest_price': lowest_price,
+                'metadata': meta_dict
             })
+            return
+            
+        # --- DIRTY TICK FILTER (3-Second Sustained Profit Check) ---
+        current_time = datetime.utcnow().timestamp()
+        if 'trailing_activation_time' not in meta_dict:
+            meta_dict['trailing_activation_time'] = current_time
+            self.db.update_trade_metadata(trade_id, {
+                'highest_price': highest_price,
+                'lowest_price': lowest_price,
+                'metadata': meta_dict
+            })
+            return
+            
+        if current_time - meta_dict['trailing_activation_time'] < 3.0:
+            # Still within the 3-second verification window. Ignore for now.
             return
             
         # 2. Calculate new trailing stop floor (with Fee-Safety Floor)
