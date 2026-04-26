@@ -25,12 +25,12 @@ class StopLossManagementLayer:
                 target_sl_roe = getattr(self.config, 'GLOBAL_STOP_LOSS_ROE', 5.0)
                 self.logger.debug(f"Applied Global {target_sl_roe}% ROE Stop Loss for Strategy: {strategy_tag}")
 
-        # 3. Calculate Price Move based on Leverage
-        final_sl_percent = abs(target_sl_roe) / leverage
+        # 3. Calculate Price Move (Unified Price-Based)
+        final_sl_percent = abs(target_sl_roe)
         
-        # 4. Final Safety Cutoff (Equity-Aware Limit)
-        max_equity_risk = getattr(self.config, 'MAX_EQUITY_RISK_PERCENT', 3.0)
-        equity_aware_sl_percent = max_equity_risk / leverage
+        # 4. Final Safety Cutoff (ROE-Aware Limit)
+        max_roe_drawdown = getattr(self.config, 'MAX_ROE_DRAWDOWN', 20.0)
+        equity_aware_sl_percent = max_roe_drawdown / leverage
         
         # Use the tighter of the two for ultimate capital protection
         final_sl_percent = min(final_sl_percent, equity_aware_sl_percent)

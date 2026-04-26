@@ -165,18 +165,12 @@ class TrailingStopLayer:
             profit_pct = ((entry_price - lowest_price) / entry_price) * 100
             peak_price = lowest_price
             
-        # 1. Determine Dynamic Activation & Distance (Phase 53: Leverage-Aware)
+        # 1. Determine Dynamic Activation & Distance (Unified Price-Based)
         leverage = trade.get('leverage', 1)
-        target_roe = getattr(self.config, 'TRAILING_TARGET_ROE', 6.0)
-        capture_roe = getattr(self.config, 'TRAILING_CAPTURE_ROE', 2.5)
         
-        # Scale to Price Move %: Threshold = ROE / Leverage
-        activation_pct = target_roe / max(1.0, float(leverage or 1))
-        trail_dist_pct = capture_roe / max(1.0, float(leverage or 1))
-        
-        # Fallback to static config if extremely low leverage or missing
-        activation_pct = min(activation_pct, self.ACTIVATION_PROFIT_PCT)
-        trail_dist_pct = min(trail_dist_pct, self.TRAIL_DISTANCE_PCT)
+        # Pure price-based activation and distance from config
+        activation_pct = self.ACTIVATION_PROFIT_PCT
+        trail_dist_pct = self.TRAIL_DISTANCE_PCT
 
         import json
         from datetime import datetime

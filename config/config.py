@@ -78,7 +78,7 @@ class Config:
         
         # ===== Futures Trading Configuration (Primary) =====
         self.FUTURES_TRADING_ENABLED = self._str_to_bool('true')
-        self.FUTURES_VIRTUAL_CAPITAL = 150.0
+        self.FUTURES_VIRTUAL_CAPITAL = 500.0
         self.FUTURES_POSITION_SIZE_PERCENT = float('2')
         self.FUTURES_MAX_LEVERAGE = int('10')
         self.FUTURES_TAKE_PROFIT_PERCENT = float('10')
@@ -106,6 +106,7 @@ class Config:
         
         # GLOBAL ROE Shield (The "Safety Guard")
         self.GLOBAL_STOP_LOSS_ROE = float('5.0')
+        self.MAX_ROE_DRAWDOWN = float('20.0')
         self.MAX_EQUITY_RISK_PERCENT = float('5.0')
         self.TAKE_PROFIT_PERCENT = self.FUTURES_TAKE_PROFIT_PERCENT
         self.MAX_DAILY_LOSS_PERCENT = self.FUTURES_MAX_DAILY_LOSS_PERCENT
@@ -169,10 +170,10 @@ class Config:
         # ===== Strategy Selection Configuration =====
         self.STRATEGY_A1_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A2_ENABLED = self._str_to_bool('false')
-        self.STRATEGY_A3_ENABLED = self._str_to_bool('false')
+        self.STRATEGY_A3_ENABLED = self._str_to_bool('true')
         self.STRATEGY_A4_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A5_ENABLED = self._str_to_bool('true')
-        self.STRATEGY_A6_ENABLED = self._str_to_bool('false')
+        self.STRATEGY_A6_ENABLED = self._str_to_bool('true')
         
         # Strategy-specific Risk Overrides
         self.STRATEGY_A3_SL_ROE = float('5.0')
@@ -182,8 +183,8 @@ class Config:
         self.SPOT_FEE_PERCENT = float('0.1')
         
         # ===== Risk Management Configuration =====
-        self.TRAILING_STOP_ACTIVATION = float('2.0')
-        self.TRAILING_STOP_DISTANCE = float('1.2')
+        self.TRAILING_STOP_ACTIVATION = float('3.0')
+        self.TRAILING_STOP_DISTANCE = float('2.5')
 
         # Trailing Take Profit Configuration (Phase 53: Leverage-Aware)
         self.TRAILING_TP_ENABLED = self._str_to_bool('true')
