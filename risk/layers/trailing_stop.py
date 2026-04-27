@@ -23,8 +23,8 @@ class TrailingStopLayer:
         
         # Configuration - Activation distance and trailing distance
         # e.g. Start trailing once we are 1% in profit, and trail by 0.5%
-        self.ACTIVATION_PROFIT_PCT = getattr(config, 'TRAILING_TP_ACTIVATION', 3.0)
-        self.TRAIL_DISTANCE_PCT = getattr(config, 'TRAILING_TP_DISTANCE', 1.5)
+        self.ACTIVATION_PROFIT_PCT = getattr(config, 'TRAILING_STOP_ACTIVATION', 3.0)
+        self.TRAIL_DISTANCE_PCT = getattr(config, 'TRAILING_STOP_DISTANCE', 2.5)
 
     def process_open_trades(self, live_tickers: Dict[str, float]):
         """
