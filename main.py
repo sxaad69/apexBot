@@ -1818,8 +1818,7 @@ APEX HUNTER V14 🤖
 class ApexHunterBot:
     """Main bot orchestrator"""
     
-    def __init__(self, mode='paper'):
-        self.mode = mode
+    def __init__(self, mode=None):
         self.running = False
         
         print("=" * 80)
@@ -1831,6 +1830,10 @@ class ApexHunterBot:
         print("⚙️  Loading configuration...")
         self.config = Config()
         self.logger = MongoLogger(self.config)
+        
+        # Centralized Mode Management: Prioritize config, ignore CLI if provided
+        self.mode = self.config.TRADING_MODE
+        if self.mode == 'simulation': self.mode = 'paper' # Standardize internally
 
         # Handle cleanup operations
         self._handle_cleanup()
@@ -2476,17 +2479,19 @@ class ApexHunterBot:
 
 def main():
     parser = argparse.ArgumentParser(description='APEX HUNTER V14 Trading Bot')
-    parser.add_argument('--mode', type=str, choices=['paper', 'live'], default='paper',
-                        help='Trading mode (default: paper)')
+    parser.add_argument('--mode', type=str, choices=['paper', 'live'],
+                        help='Trading mode (Deprecated: Use .env TRADING_MODE instead)')
     parser.add_argument('--interval', type=int, default=60,
                         help='Check interval in seconds (default: 60)')
     
     args = parser.parse_args()
     
-    # Verify mode
-    if args.mode == 'live':
+    # Create bot instance (it will load its own config)
+    bot = ApexHunterBot()
+    
+    # Verify mode from config for safety prompt
+    if bot.mode == 'live':
         # Allow headless AWS/Docker deployments to bypass the prompt via env var
-        # Set APEX_CONFIRM_LIVE=YES in systemd EnvironmentFile or Docker env
         auto_confirm = os.environ.get('APEX_CONFIRM_LIVE', '').strip().upper()
         if auto_confirm == 'YES':
             print("\n✅ LIVE TRADING MODE - Auto-confirmed via APEX_CONFIRM_LIVE env var (headless mode)")
@@ -2499,8 +2504,7 @@ def main():
                 print("Aborted.")
                 sys.exit(0)
     
-    # Create and run bot
-    bot = ApexHunterBot(mode=args.mode)
+    # Run bot
     bot.run(interval=args.interval)
 
 

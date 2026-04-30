@@ -78,9 +78,9 @@ class Config:
         
         # ===== Futures Trading Configuration (Primary) =====
         self.FUTURES_TRADING_ENABLED = self._str_to_bool('true')
-        self.FUTURES_VIRTUAL_CAPITAL = 500.0
-        self.FUTURES_POSITION_SIZE_PERCENT = float('2')
-        self.FUTURES_MAX_LEVERAGE = int('10')
+        self.FUTURES_VIRTUAL_CAPITAL = 150.0
+        self.FUTURES_POSITION_SIZE_PERCENT = float('4.0')
+        self.FUTURES_MAX_LEVERAGE = int('3')
         self.FUTURES_TAKE_PROFIT_PERCENT = float('10')
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float('5')
         self.FUTURES_MAX_DRAWDOWN_PERCENT = float('70')
@@ -88,7 +88,7 @@ class Config:
 
         # Market Discovery Sync
         self.FUTURES_PAIRS = 'auto'
-        self.FUTURES_AUTO_TOP_N = int('200')
+        self.FUTURES_AUTO_TOP_N = int('100')
         self.FUTURES_AUTO_MIN_VOLUME = float('500000')
         
         # Position Boundary Sync
@@ -100,13 +100,13 @@ class Config:
         self.POSITION_SIZE_PERCENT = self.FUTURES_POSITION_SIZE_PERCENT
         self.MAX_LEVERAGE = self.FUTURES_MAX_LEVERAGE
         # Strategy-Specific Overrides (The "Breathing Room" Knobs)
-        self.A5_MAX_LEVERAGE = int('5')
-        self.A5_STOP_LOSS_ROE = float('5.0')
-        self.A6_STOP_LOSS_ROE = float('5.0')
+        self.A5_MAX_LEVERAGE = int('3')
+        self.A5_STOP_LOSS_ROE = float('10.0')
+        self.A6_STOP_LOSS_ROE = float('10.0')
         
         # GLOBAL ROE Shield (The "Safety Guard")
-        self.GLOBAL_STOP_LOSS_ROE = float('5.0')
-        self.MAX_ROE_DRAWDOWN = float('20.0')
+        self.GLOBAL_STOP_LOSS_ROE = float('10.0')
+        self.MAX_ROE_DRAWDOWN = float('10.0')
         self.MAX_EQUITY_RISK_PERCENT = float('5.0')
         self.TAKE_PROFIT_PERCENT = self.FUTURES_TAKE_PROFIT_PERCENT
         self.MAX_DAILY_LOSS_PERCENT = self.FUTURES_MAX_DAILY_LOSS_PERCENT
@@ -118,7 +118,8 @@ class Config:
         self.DISCOVERY_MAX_WORKERS = int('5')
         
         # Core Mode & Currency (Synched)
-        self.TRADING_MODE = os.getenv('TRADING_MODE', 'live' if self.EXCHANGE_ENVIRONMENT == 'testnet' else 'simulation')
+        # Core Mode & Currency (Synched)
+        self.TRADING_MODE = os.getenv('TRADING_MODE', 'paper').lower()
         self.BASE_CURRENCY = 'USDT'
         trading_pairs_str = 'BTC/USDT,ETH/USDT,SOL/USDT'
         self.TRADING_PAIRS = [p.strip() for p in trading_pairs_str.split(',')]
@@ -168,12 +169,14 @@ class Config:
         # self.POSITION_SIZE_PERCENT, self.MAX_LEVERAGE, etc are now managed in the Global section above
         
         # ===== Strategy Selection Configuration =====
+        # NOTE: A3, A4, A5 enabled for TESTNET only. DISABLE for LIVE prod.
         self.STRATEGY_A1_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A2_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A3_ENABLED = self._str_to_bool('true')
-        self.STRATEGY_A4_ENABLED = self._str_to_bool('false')
+        self.STRATEGY_A4_ENABLED = self._str_to_bool('true')
         self.STRATEGY_A5_ENABLED = self._str_to_bool('true')
         self.STRATEGY_A6_ENABLED = self._str_to_bool('true')
+        self.A6_ALLOW_SHORT = self._str_to_bool('false')
         
         # Strategy-specific Risk Overrides
         self.STRATEGY_A3_SL_ROE = float('5.0')
@@ -364,8 +367,8 @@ class Config:
             raise ValueError("CORRELATION_THRESHOLD must be between 0 and 1")
         
         # Validate mode settings
-        if self.TRADING_MODE not in ['simulation', 'live']:
-            raise ValueError("TRADING_MODE must be 'simulation' or 'live'")
+        if self.TRADING_MODE not in ['paper', 'simulation', 'live']:
+            raise ValueError("TRADING_MODE must be 'paper' or 'live'")
         
         # Validate exchange environment
         if self.EXCHANGE_ENVIRONMENT not in ['testnet', 'production']:

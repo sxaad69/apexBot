@@ -11,7 +11,7 @@ EnvironmentFile=/home/ubuntu/apexBot/.env
 # Pass --mode live to enable live trading. Change to 'paper' for simulation.
 # APEX_CONFIRM_LIVE=YES bypasses the interactive confirmation prompt for AWS headless mode.
 Environment=APEX_CONFIRM_LIVE=YES
-ExecStart=/home/ubuntu/apexBot/venv/bin/python3 main.py --mode live --interval 60
+ExecStart=/home/ubuntu/apexBot/venv/bin/python3 main.py --interval 10
 Restart=always
 RestartSec=10
 StandardOutput=syslog
