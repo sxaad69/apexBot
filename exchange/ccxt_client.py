@@ -119,6 +119,18 @@ class CCXTExchangeClient(BaseExchangeClient):
         except Exception as e:
             self.logger.error(f"Error fetching balance: {e}", exc_info=True)
             return {}
+            
+    def get_canonical_symbol(self, symbol: str) -> str:
+        """
+        Get the canonical symbol mapping from CCXT (e.g. 'BTC/USDT' -> 'BTC/USDT:USDT').
+        Used for exact string matching against CCXT position and order objects.
+        """
+        try:
+            market = self.exchange.market(symbol)
+            return market.get('symbol', symbol)
+        except Exception as e:
+            self.logger.debug(f"Could not find canonical symbol for {symbol}: {e}")
+            return symbol
     
     def get_positions(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get open positions"""

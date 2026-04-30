@@ -31,13 +31,26 @@ class TradeManager:
         is_live = getattr(self.config, 'TRADING_MODE', 'paper') == 'live'
         if is_live and not skip_verification:
             try:
-                time.sleep(1) # Wait for fill
-                positions = self.exchange.get_positions()
-                pos = next((p for p in positions if p['symbol'] == symbol), None)
-                actual_size = abs(float(pos.get('contracts', 0) if pos else 0))
+                canonical_symbol = getattr(self.exchange, 'get_canonical_symbol', lambda s: s)(symbol)
                 
-                if actual_size == 0:
-                    self.logger.error(f"🚨 [ENTRY VERIFICATION FAILED] {symbol} has 0 contracts on exchange! NOT recording trade in DB.")
+                verified = False
+                actual_size = 0
+                
+                # Retry loop for race conditions
+                for attempt in range(1, 4):
+                    time.sleep(2) # Wait for fill
+                    positions = self.exchange.get_positions()
+                    pos = next((p for p in positions if p['symbol'] == canonical_symbol), None)
+                    actual_size = abs(float(pos.get('contracts', 0) if pos else 0))
+                    
+                    if actual_size > 0:
+                        verified = True
+                        break
+                        
+                    self.logger.warning(f"⚠️ [ENTRY VERIFICATION] Attempt {attempt}/3: {symbol} has 0 contracts. Retrying...")
+                
+                if not verified:
+                    self.logger.error(f"🚨 [ENTRY VERIFICATION FAILED] {symbol} has 0 contracts on exchange after 3 attempts! NOT recording trade in DB.")
                     return {'verified': False, 'size': 0}
                 self.logger.info(f"✅ [ENTRY VERIFIED] {symbol} confirmed OPEN on exchange with {actual_size} contracts.")
             except Exception as e:
@@ -130,14 +143,26 @@ class TradeManager:
         is_live = getattr(self.config, 'TRADING_MODE', 'paper') == 'live'
         if is_live and not skip_verification:
             try:
-                # Small delay to allow exchange to process
-                time.sleep(1)
-                positions = self.exchange.get_positions()
-                pos = next((p for p in positions if p['symbol'] == symbol), None)
-                size = abs(float(pos.get('contracts', 0) if pos else 0))
+                canonical_symbol = getattr(self.exchange, 'get_canonical_symbol', lambda s: s)(symbol)
                 
-                if size > 0:
-                    self.logger.error(f"🚨 [VERIFICATION FAILED] {symbol} still has {size} contracts open! NOT marking as CLOSED in DB.")
+                verified = False
+                size = 0
+                
+                # Retry loop for race conditions
+                for attempt in range(1, 4):
+                    time.sleep(2)
+                    positions = self.exchange.get_positions()
+                    pos = next((p for p in positions if p['symbol'] == canonical_symbol), None)
+                    size = abs(float(pos.get('contracts', 0) if pos else 0))
+                    
+                    if size == 0:
+                        verified = True
+                        break
+                        
+                    self.logger.warning(f"⚠️ [EXIT VERIFICATION] Attempt {attempt}/3: {symbol} still has {size} contracts. Retrying...")
+                
+                if not verified:
+                    self.logger.error(f"🚨 [VERIFICATION FAILED] {symbol} still has {size} contracts open after 3 attempts! NOT marking as CLOSED in DB.")
                     return {'verified': False, 'size': size}
                 self.logger.info(f"✅ [VERIFIED] {symbol} position is confirmed ZERO on exchange.")
             except Exception as e:
