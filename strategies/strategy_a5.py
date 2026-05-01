@@ -47,7 +47,7 @@ class StrategyA5(BaseStrategy):
 
         # ATR multipliers for microstructure trades (slightly wider for safety)
         self.atr_sl_mult = 2.0
-        self.atr_tp_mult = 15.0
+        self.atr_tp_mult = 100.0
 
         # Universal filters
         self.filters = get_strategy_filters(config)

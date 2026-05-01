@@ -36,7 +36,7 @@ class StrategyA3(BaseStrategy):
 
         # Balanced stops for scalping (slightly wider for earlier entry survival)
         self.atr_sl_mult = 1.8   # Wider stop to survive initial volatility
-        self.atr_tp_mult = 3.5   # Higher TP for better R:R
+        self.atr_tp_mult = 100.0   # Higher TP for better R:R
 
         # Strategy-Specific SL ROE (Fixed Target)
         self.target_sl_roe = getattr(config, 'STRATEGY_A3_SL_ROE', 5.0)

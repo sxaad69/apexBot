@@ -27,7 +27,7 @@ class StrategyA1(BaseStrategy):
 
         # ATR multipliers for dynamic stops
         self.atr_sl_mult = 2.0  # Stop loss = 2.0x ATR (more room to breathe)
-        self.atr_tp_mult = 15.0 # Take profit = 15x ATR (let trailing TP handle exit)
+        self.atr_tp_mult = 100.0 # Take profit = 15x ATR (let trailing TP handle exit)
 
         # Universal filters for all strategies
         self.filters = get_strategy_filters(config)

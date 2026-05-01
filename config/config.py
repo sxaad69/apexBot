@@ -78,13 +78,13 @@ class Config:
         
         # ===== Futures Trading Configuration (Primary) =====
         self.FUTURES_TRADING_ENABLED = self._str_to_bool('true')
-        self.FUTURES_VIRTUAL_CAPITAL = 150.0
-        self.FUTURES_POSITION_SIZE_PERCENT = float('4.0')
+        self.FUTURES_VIRTUAL_CAPITAL = 5000.0  # SETTING FOR TESTNET (Previous Live: 150.0)
+        self.FUTURES_POSITION_SIZE_PERCENT = float('0.5')  # SETTING FOR TESTNET (Previous Live: 4.0)
         self.FUTURES_MAX_LEVERAGE = int('3')
         self.FUTURES_TAKE_PROFIT_PERCENT = float('10')
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float('5')
         self.FUTURES_MAX_DRAWDOWN_PERCENT = float('70')
-        self.FUTURES_MAX_OPEN_POSITIONS = int('15')
+        self.FUTURES_MAX_OPEN_POSITIONS = int('200')  # SETTING FOR TESTNET (Previous Live: 15)
 
         # Market Discovery Sync
         self.FUTURES_PAIRS = 'auto'
@@ -92,8 +92,8 @@ class Config:
         self.FUTURES_AUTO_MIN_VOLUME = float('500000')
         
         # Position Boundary Sync
-        self.MIN_POSITION_SIZE = float('10.0')
-        self.MAX_POSITION_SIZE = float('30')
+        self.MIN_POSITION_SIZE = float('10.0')  # SETTING FOR TESTNET (Previous Live: 10.0)
+        self.MAX_POSITION_SIZE = float('30.0')  # SETTING FOR TESTNET (Previous Live: 30.0)
 
         # ===== Global Synchronization (For Legacy/Risk Layers compatibility) =====
         self.INITIAL_CAPITAL = self.FUTURES_VIRTUAL_CAPITAL
@@ -357,8 +357,8 @@ class Config:
                 raise ValueError("Telegram credentials required when notifications are enabled")
         
         # Validate numeric ranges
-        if not 1 <= self.POSITION_SIZE_PERCENT <= 100:
-            raise ValueError("POSITION_SIZE_PERCENT must be between 1 and 100")
+        if not 0.1 <= self.POSITION_SIZE_PERCENT <= 100:
+            raise ValueError("POSITION_SIZE_PERCENT must be between 0.1 and 100")
         
         if self.MAX_LEVERAGE < 1:
             raise ValueError("MAX_LEVERAGE must be at least 1")

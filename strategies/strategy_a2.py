@@ -35,7 +35,7 @@ class StrategyA2(BaseStrategy):
 
         # ATR multipliers for dynamic stops
         self.atr_sl_mult = 1.5
-        self.atr_tp_mult = 15.0
+        self.atr_tp_mult = 100.0
 
         # Universal filters
         self.filters = get_strategy_filters(config)

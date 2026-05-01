@@ -53,6 +53,10 @@ class MongoLogger(Logger):
     def _log_to_mongodb(self, category: str, level: str, message: str, **kwargs):
         """Unified Dispatcher: Log to SQLite (Primary) and MongoDB/JSON (Secondary)"""
         try:
+            # 1. Skip redundant high-volume data already stored in structured tables
+            if category in ['position_rejections', 'trade_execution']:
+                return
+
             document = {
                 'timestamp': datetime.utcnow(),
                 'category': category,
@@ -61,7 +65,7 @@ class MongoLogger(Logger):
                 'metadata': kwargs or {}
             }
             
-            # 1. Log to SQLite activity_log
+            # 2. Log to SQLite activity_log
             if self.sqlite_enabled:
                 symbol = kwargs.get('symbol', 'SYSTEM')
                 self.db.log_activity(category, symbol, message, document)

@@ -442,7 +442,12 @@ class SQLiteManager:
             print(f"❌ SQLite save_analysis error: {e}")
 
     def save_analysis_bulk(self, records: List[Dict[str, Any]]):
-        """Log high-frequency market analysis to log DB in bulk"""
+        """Log sweep-level market analysis summaries to log DB in bulk.
+
+        NOTE: records are analysis_data dicts produced by _collect_market_analysis_data().
+        They use 'trading_type' (not 'symbol'), 'current_price' (not 'price'),
+        and the entire dict is the indicator payload — there is no separate 'indicators' key.
+        """
         if not records:
             return
         try:
@@ -451,10 +456,16 @@ class SQLiteManager:
                 cursor = conn.cursor()
                 data_tuples = []
                 for rec in records:
+                    # Resolve symbol: prefer explicit 'symbol', fall back to trading_type
+                    symbol = rec.get('symbol') or rec.get('trading_type', 'futures')
+                    # Resolve price: prefer explicit 'price', fall back to current_price
+                    price = rec.get('price') or rec.get('current_price', 0.0) or 0.0
+                    # Store the full dict as the indicators blob (exclude non-serialisable keys)
+                    indicators = {k: v for k, v in rec.items() if k != 'timestamp'}
                     data_tuples.append((
-                        rec.get('symbol', 'UNKNOWN'),
-                        rec.get('price', 0.0),
-                        json.dumps(rec.get('indicators', {}), default=str)
+                        symbol,
+                        price,
+                        json.dumps(indicators, default=str)
                     ))
                 cursor.executemany('INSERT INTO market_analysis (symbol, price, indicators) VALUES (?, ?, ?)', data_tuples)
                 conn.commit()
@@ -529,18 +540,28 @@ class SQLiteManager:
             pass
 
     def purge_old_activity(self, days: int = 7):
-        """Purge old logs to prevent disk bloat"""
+        """Purge old logs to prevent disk bloat.
+        
+        market_analysis is high-volume sweep data — kept for only 1 day.
+        Other tables (activity_log, strategy_signals) honour the full 'days' window.
+        """
         try:
-            cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
             conn = self._get_connection(self.log_db)
             try:
                 cursor = conn.cursor()
-                for table in ['activity_log', 'market_analysis', 'strategy_signals']:
+                # Tight window for high-volume sweep data
+                analysis_cutoff = (datetime.utcnow() - timedelta(days=1)).isoformat()
+                cursor.execute("DELETE FROM market_analysis WHERE timestamp < ?", (analysis_cutoff,))
+                analysis_deleted = cursor.rowcount
+
+                # Normal window for other tables
+                cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+                for table in ['activity_log', 'strategy_signals']:
                     cursor.execute(f"DELETE FROM {table} WHERE timestamp < ?", (cutoff,))
-                count = cursor.rowcount
+
                 conn.commit()
                 cursor.execute("VACUUM")
-                return count
+                return analysis_deleted
             finally:
                 conn.close()
         except Exception as e:

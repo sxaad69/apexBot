@@ -1124,6 +1124,10 @@ class PaperTradingEngine:
                         self.logger.warning(f"⚠️ Failed to poll exchange orders for {symbol}: {e}. Falling back to software check.")
 
             # --- SOFTWARE EXIT CHECKS (Fallback) ---
+            # Update Trailing Stop Ratchet BEFORE Software Check
+            if getattr(self.config, 'TRAILING_TP_ENABLED', True) and getattr(self, 'trailing_stop_engine', None):
+                self.trailing_stop_engine.update_position_ratchet(position, current_price)
+
             # Check for failed previous exits (PENDING_EXIT)
             is_pending_retry = position.get('status') == 'PENDING_EXIT'
             should_exit, reason = self.check_position_exit(position, current_price)
@@ -2323,10 +2327,10 @@ class ApexHunterBot:
                             self.logger.error(f"Error getting future result: {e}")
                             
                     # Bulk Save to Database
-                    if bulk_analysis and hasattr(self.logger, 'save_market_analysis_bulk'):
-                        self.logger.save_market_analysis_bulk(bulk_analysis)
-                    
-
+                    # [DISABLED] market_analysis is redundant and causes high CPU/disk I/O. 
+                    # All data is already captured in trades + rejections + sweep_summary.
+                    # if bulk_analysis and hasattr(self.logger, 'save_market_analysis_bulk'):
+                    #     self.logger.save_market_analysis_bulk(bulk_analysis)
                         
                     if last_metrics_info and hasattr(self.logger, 'save_hourly_metrics'):
                         unified_metrics = last_metrics_info.copy()
@@ -2381,13 +2385,7 @@ class ApexHunterBot:
                 except Exception as e:
                     self.logger.error(f"🚨 CRITICAL: Spot Engine Analysis Failed", exc_info=True)
 
-                # Process Bot-Side Trailing Stops if enabled
-                try:
-                    if getattr(self.config, 'TRAILING_TP_ENABLED', True) and getattr(self, 'trailing_stop_engine', None):
-                        # For performance, only pass prices of top pairs we're currently monitoring
-                        self.trailing_stop_engine.process_open_trades(self.engine.current_prices)
-                except Exception as e:
-                    self.logger.error(f"🚨 CRITICAL: Trailing Stop Engine Failed", exc_info=True)
+                # Trailing stops are now processed synchronously in the PriorityExitSentinel thread.
 
                 # Process Portfolio Loss Circuit Breaker
                 try:

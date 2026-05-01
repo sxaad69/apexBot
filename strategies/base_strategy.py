@@ -264,7 +264,7 @@ class BaseStrategy(ABC):
 
         return df
 
-    def get_dynamic_stops(self, df: pd.DataFrame, side: str, atr_sl_mult: float = 1.5, atr_tp_mult: float = 3.0) -> tuple:
+    def get_dynamic_stops(self, df: pd.DataFrame, side: str, atr_sl_mult: float = 1.5, atr_tp_mult: float = 100.0) -> tuple:
         """
         Calculate dynamic stop loss and take profit based on ATR
 
