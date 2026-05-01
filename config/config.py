@@ -330,7 +330,7 @@ class Config:
 
         # ===== Portfolio Profit Ratchet (Phase: Gains Lock) =====
         self.PROFIT_RATCHET_ENABLED = self._str_to_bool('true')
-        self.PROFIT_RATCHET_ACTIVATION = float('6.0')
+        self.PROFIT_RATCHET_ACTIVATION = float('1.0')
         self.PROFIT_RATCHET_TRAILING = float('1.0')
         self.PROFIT_RATCHET_FLOOR = float('1.0')
         self.PROFIT_RATCHET_COOLDOWN = int('5')
