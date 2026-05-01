@@ -1260,6 +1260,12 @@ class PaperTradingEngine:
                 if matched_pos:
                     mark_price = float(matched_pos.get('markPrice', matched_pos.get('info', {}).get('markPrice', 0)))
 
+            # [FIX 1] Paper mode fallback: Sentinel thread cannot get markPrice from exchange
+            # in paper mode (no real positions on Binance). Use price already cached by
+            # the main entry loop so the Sentinel can still evaluate stop-loss/take-profit.
+            if not mark_price and self.mode == 'paper':
+                mark_price = self.current_prices.get(symbol)
+
             if mark_price and mark_price > 0:
                 self.current_prices[symbol] = mark_price
                 
@@ -1315,7 +1321,9 @@ class PaperTradingEngine:
                 strategy.last_rejection = None
                 
                 # Generate signal
-                signal = strategy.generate_signal(df)
+                # [FIX 2] Pass symbol and market_type so StrategyA5 queries the correct
+                # orderbook per coin instead of defaulting to BTC/USDT 100x per sweep.
+                signal = strategy.generate_signal(df, symbol=symbol, market_type='futures')
 
                 if signal:
                     self.execute_paper_trade(signal, strategy.name, symbol)
@@ -1401,7 +1409,8 @@ class PaperTradingEngine:
                     continue
 
                 # Generate signal only if filters pass
-                signal = strategy.generate_signal(df)
+                # [FIX 2] Same fix — pass symbol/market_type for accurate analysis data collection
+                signal = strategy.generate_signal(df, symbol=symbol, market_type='futures')
                 if signal:
                     strategy_name = signal.get('strategy', strategy.name)
                     if strategy_name in strategy_signals:
@@ -2434,7 +2443,8 @@ class ApexHunterBot:
             # Generate signals using same strategies (but without leverage)
             for strategy in self.engine.strategies:
                 # Use same strategy logic but adapt for spot (no leverage)
-                signal = strategy.generate_signal(df)
+                # [FIX 2] Pass symbol and spot market_type explicitly
+                signal = strategy.generate_signal(df, symbol=symbol, market_type='spot')
 
                 if signal:
                     # Adapt signal for spot (remove leverage, adjust stops)
