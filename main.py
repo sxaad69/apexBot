@@ -1321,9 +1321,15 @@ class PaperTradingEngine:
                 strategy.last_rejection = None
                 
                 # Generate signal
-                # [FIX 2] Pass symbol and market_type so StrategyA5 queries the correct
-                # orderbook per coin instead of defaulting to BTC/USDT 100x per sweep.
-                signal = strategy.generate_signal(df, symbol=symbol, market_type='futures')
+                import inspect
+                kwargs = {}
+                sig = inspect.signature(strategy.generate_signal)
+                if 'symbol' in sig.parameters:
+                    kwargs['symbol'] = symbol
+                if 'market_type' in sig.parameters:
+                    kwargs['market_type'] = 'futures'
+                
+                signal = strategy.generate_signal(df, **kwargs)
 
                 if signal:
                     self.execute_paper_trade(signal, strategy.name, symbol)
@@ -1409,8 +1415,15 @@ class PaperTradingEngine:
                     continue
 
                 # Generate signal only if filters pass
-                # [FIX 2] Same fix — pass symbol/market_type for accurate analysis data collection
-                signal = strategy.generate_signal(df, symbol=symbol, market_type='futures')
+                import inspect
+                kwargs = {}
+                sig = inspect.signature(strategy.generate_signal)
+                if 'symbol' in sig.parameters:
+                    kwargs['symbol'] = symbol
+                if 'market_type' in sig.parameters:
+                    kwargs['market_type'] = 'futures'
+                    
+                signal = strategy.generate_signal(df, **kwargs)
                 if signal:
                     strategy_name = signal.get('strategy', strategy.name)
                     if strategy_name in strategy_signals:
@@ -2443,8 +2456,15 @@ class ApexHunterBot:
             # Generate signals using same strategies (but without leverage)
             for strategy in self.engine.strategies:
                 # Use same strategy logic but adapt for spot (no leverage)
-                # [FIX 2] Pass symbol and spot market_type explicitly
-                signal = strategy.generate_signal(df, symbol=symbol, market_type='spot')
+                import inspect
+                kwargs = {}
+                sig = inspect.signature(strategy.generate_signal)
+                if 'symbol' in sig.parameters:
+                    kwargs['symbol'] = symbol
+                if 'market_type' in sig.parameters:
+                    kwargs['market_type'] = 'spot'
+                    
+                signal = strategy.generate_signal(df, **kwargs)
 
                 if signal:
                     # Adapt signal for spot (remove leverage, adjust stops)
