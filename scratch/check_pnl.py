@@ -20,15 +20,27 @@ def check_unrealized():
     print(f"[{datetime.now()}] Fetching live prices for {len(trades)} open positions...")
     exchange = ccxt.binance({'options': {'defaultType': 'future'}})
     
-    symbols_for_tickers = [s.split(':')[0] for s in trades['symbol'].unique()]
-    tickers = exchange.fetch_tickers(symbols_for_tickers)
+    # Fetch all tickers to handle mapping easily
+    tickers = exchange.fetch_tickers()
     
     results = []
     total_unrealized = 0
     
     for _, trade in trades.iterrows():
-        sym = trade['symbol'].split(':')[0]
-        current_price = tickers[sym]['last']
+        symbol = trade['symbol'] # e.g. "BTC/USDT:USDT"
+        
+        # Try different formats for the ticker key
+        ticker = None
+        for key in [symbol, symbol.split(':')[0], symbol.replace(':USDT', '')]:
+            if key in tickers:
+                ticker = tickers[key]
+                break
+        
+        if not ticker:
+            print(f"Warning: Could not find price for {symbol}")
+            continue
+
+        current_price = ticker['last']
         entry_price = trade['entry_price']
         size = trade['size']
         leverage = trade['leverage']
@@ -43,7 +55,7 @@ def check_unrealized():
         total_unrealized += pnl_amount
         
         results.append({
-            'symbol': sym,
+            'symbol': symbol.split(':')[0],
             'side': side,
             'pnl_%': round(pnl_pct, 2),
             'pnl_$': round(pnl_amount, 2)
