@@ -1856,7 +1856,6 @@ class ApexHunterBot:
         print("⚙️  Loading configuration...")
         self.config = Config()
         self.logger = MongoLogger(self.config)
-        self.logger.engine = self
         
         # Centralized Mode Management: Prioritize config, ignore CLI if provided
         self.mode = self.config.TRADING_MODE
@@ -1876,6 +1875,7 @@ class ApexHunterBot:
             print("🚀 Initializing LIVE TRADING mode...")
 
         self.engine = PaperTradingEngine(self.config, self.logger, self.telegram, mode=self.mode)
+        self.logger.engine = self.engine
         
         # --- PERPETUAL STATE RECOVERY (Phase 14) ---
         # Recover peak_balance and total_capital from SQLite if they exist
