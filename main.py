@@ -1856,6 +1856,7 @@ class ApexHunterBot:
         print("⚙️  Loading configuration...")
         self.config = Config()
         self.logger = MongoLogger(self.config)
+        self.logger.engine = self
         
         # Centralized Mode Management: Prioritize config, ignore CLI if provided
         self.mode = self.config.TRADING_MODE
