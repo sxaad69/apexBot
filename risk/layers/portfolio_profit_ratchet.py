@@ -83,10 +83,14 @@ class PortfolioProfitRatchet:
                 else:
                     fee_rate = 0.0
                 
+                total_equity = float(info.get('totalWalletBalance', 0) or 0) + total_unrealized_pnl
+                session_pnl = total_equity - self.config.INITIAL_CAPITAL
+                
                 slippage_rate = float(self.slippage_buffer) / 100
                 total_costs = total_volume_initial * (fee_rate + slippage_rate)
-                net_roe = ((total_unrealized_pnl - total_costs) / total_margin) * 100
-                
+                net_dollar_pnl = session_pnl - total_costs
+                net_roe = (net_dollar_pnl / total_margin) * 100
+               
                 self.logger.info(f"📊 Initial Ratchet Check: Net ROE {net_roe:.2f}% (Target: {self.activation_roe}%)")
                 if net_roe >= self.activation_roe:
                     self.ratchet_active = True
@@ -116,9 +120,14 @@ class PortfolioProfitRatchet:
                         self.dollar_hard_floor = 0.0
 
             while not self.stop_event.is_set():
-                # Await ANY position update (PnL change, price change, or size change)
-                positions = await self.nx_pro.watch_positions()
-                
+                try:
+                    # Await position update with a 60s timeout to force a refresh even if no events occur
+                    positions = await asyncio.wait_for(self.nx_pro.watch_positions(), timeout=60.0)
+                except asyncio.TimeoutError:
+                    # If no update in 60s, fetch balance/positions manually to check ROE
+                    self.logger.debug("Ratchet: No WSS update in 60s, performing scheduled ROE check...")
+                    positions = await self.nx_pro.fetch_positions()
+
                 if not positions:
                     continue
 
@@ -129,6 +138,10 @@ class PortfolioProfitRatchet:
                 # Extract Global Metrics (Direct from Binance calculation)
                 total_unrealized_pnl = float(info.get('totalUnrealizedProfit', 0) or 0)
                 total_margin = float(info.get('totalInitialMargin', 0) or 0)
+                total_equity = float(info.get('totalWalletBalance', 0) or 0) + total_unrealized_pnl
+                
+                # Calculate Session PnL based on starting balance
+                session_pnl = total_equity - self.config.INITIAL_CAPITAL
                 
                 # Estimate Notional Volume for Costs (sum of all active positions)
                 total_volume = 0.0
@@ -151,8 +164,8 @@ class PortfolioProfitRatchet:
                 slippage_rate = float(self.slippage_buffer) / 100
                 total_costs = total_volume * (fee_rate + slippage_rate)
                 
-                # Formula matching verified scratch test:
-                net_dollar_pnl = total_unrealized_pnl - total_costs
+                # Formula: Use Session PnL instead of just Unrealized
+                net_dollar_pnl = session_pnl - total_costs
                 net_roe = (net_dollar_pnl / total_margin) * 100
 
                 # 5. Ratchet Activation/Trailing Logic

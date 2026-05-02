@@ -723,24 +723,24 @@ class PaperTradingEngine:
 
             total_capital = self.total_capital
 
-            # --- Opportunity Reserve System ---
-            # 20% of capital is always held in reserve ("Opportunity Reserve")
-            # This reserve is ONLY unlocked for signals with confidence >= 0.90
-            OPPORTUNITY_RESERVE_PCT  = 0.20   # 20% always held as reserve
-            OPPORTUNITY_THRESHOLD   = 0.90   # Confidence needed to tap reserve
+            # --- Exposure & Reserve Management ---
+            # Dynamically pull limits from config (supports 85% Normal / 95% Elite)
+            opportunity_threshold = getattr(self.config, 'FUTURES_OPPORTUNITY_THRESHOLD', 0.90)
 
-            if confidence >= OPPORTUNITY_THRESHOLD:
-                # Elite signal: can use up to 80% total exposure (full + reserve access)
-                max_exposure = total_capital * 0.80
+            if confidence >= opportunity_threshold:
+                # Elite signal: uses higher exposure limit (e.g., 95%)
+                max_exposure_pct = getattr(self.config, 'FUTURES_MAX_EXPOSURE_ELITE', 0.95)
             else:
-                # Normal signal: only 60% exposure (leaves 20% reserve + 20% safety)
-                max_exposure = total_capital * 0.60
+                # Normal signal: uses standard exposure limit (e.g., 85%)
+                max_exposure_pct = getattr(self.config, 'FUTURES_MAX_EXPOSURE_NORMAL', 0.85)
 
+            max_exposure = total_capital * max_exposure_pct
             current_exposure = sum(p['size'] for p in self.positions.values() if p['strategy'] == strategy_name)
             available_for_new_trade = max_exposure - current_exposure
 
-            if available_for_new_trade < total_capital * 0.03:  # Min 3% must be free
-                if confidence >= OPPORTUNITY_THRESHOLD:
+            reserve_min_pct = getattr(self.config, 'FUTURES_RESERVE_MIN_PCT', 0.03)
+            if available_for_new_trade < total_capital * reserve_min_pct:  # Min 3% must be free
+                if confidence >= opportunity_threshold:
                     self.logger.warning(f"[{strategy_name}] {symbol} HIGH-CONFIDENCE SIGNAL SKIPPED - Even reserve is exhausted")
                 else:
                     self.logger.warning(f"[{strategy_name}] {symbol} INSUFFICIENT RESERVE CAPITAL - Max exposure reached")
@@ -755,7 +755,7 @@ class PaperTradingEngine:
             self.logger.debug(
                 f"[{strategy_name}] Position sizing: Conf {confidence:.2f} → "
                 f"{base_size_pct*100:.0f}% size (${max_position_size:.2f}) | "
-                f"Reserve mode: {'OPPORTUNITY' if confidence >= OPPORTUNITY_THRESHOLD else 'NORMAL'}"
+                f"Reserve mode: {'OPPORTUNITY' if confidence >= opportunity_threshold else 'NORMAL'}"
             )
 
             # Prepare trade parameters for risk evaluation

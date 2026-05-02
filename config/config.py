@@ -78,13 +78,23 @@ class Config:
         
         # ===== Futures Trading Configuration (Primary) =====
         self.FUTURES_TRADING_ENABLED = self._str_to_bool('true')
-        self.FUTURES_VIRTUAL_CAPITAL = 150.0  # SETTING FOR PRODUCTION (Previous Testnet: 5000.0)
-        self.FUTURES_POSITION_SIZE_PERCENT = float('4.0')  # SETTING FOR PRODUCTION (Previous Testnet: 0.5)
+        self.FUTURES_VIRTUAL_CAPITAL = 136.78  # Real Wallet Baseline
+        self.FUTURES_POSITION_SIZE_PERCENT = float('4.0')
         self.FUTURES_MAX_LEVERAGE = int('3')
         self.FUTURES_TAKE_PROFIT_PERCENT = float('10')
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float('5')
         self.FUTURES_MAX_DRAWDOWN_PERCENT = float('70')
-        self.FUTURES_MAX_OPEN_POSITIONS = int('15')  # SETTING FOR PRODUCTION (Previous Testnet: 200)
+        self.FUTURES_MAX_OPEN_POSITIONS = int('15')
+
+        # --- Exposure & Reserve Management ---
+        # FUTURES_MAX_EXPOSURE_NORMAL: Max % of capital for standard signals (Confidence < Threshold)
+        self.FUTURES_MAX_EXPOSURE_NORMAL = 0.85 
+        
+        # FUTURES_MAX_EXPOSURE_ELITE: Max % of capital for high-conviction signals (Confidence >= Threshold)
+        self.FUTURES_MAX_EXPOSURE_ELITE = 0.95
+        
+        # FUTURES_OPPORTUNITY_THRESHOLD: Confidence needed to tap into the Elite reserve.
+        self.FUTURES_OPPORTUNITY_THRESHOLD = 0.90
 
         # Market Discovery Sync
         self.FUTURES_PAIRS = 'auto'
@@ -174,7 +184,7 @@ class Config:
         self.STRATEGY_A2_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A3_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A4_ENABLED = self._str_to_bool('false')
-        self.STRATEGY_A5_ENABLED = self._str_to_bool('false')
+        self.STRATEGY_A5_ENABLED = self._str_to_bool('true')
         self.STRATEGY_A6_ENABLED = self._str_to_bool('true')
         self.A6_ALLOW_SHORT = self._str_to_bool('false')
         
@@ -203,7 +213,6 @@ class Config:
         self.EXCHANGE_TP_ORDER_TYPE = 'TAKE_PROFIT_MARKET'
 
         self.MAX_DAILY_LOSS_PERCENT = float('15')
-        self.MAX_DRAWDOWN_PERCENT = float('10')
         
         # ===== Tiered Risk Management (Phase 14) =====
         self.TIERED_RISK_ENABLED = self._str_to_bool('true')
