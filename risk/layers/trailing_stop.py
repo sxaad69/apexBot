@@ -24,8 +24,8 @@ class TrailingStopLayer:
         self.mode = getattr(config, 'TRADING_MODE', 'paper').lower()
         
         # Configuration - Activation distance and trailing distance
-        self.ACTIVATION_PROFIT_PCT = getattr(config, 'TRAILING_STOP_ACTIVATION', 3.0)
-        self.TRAIL_DISTANCE_PCT = getattr(config, 'TRAILING_STOP_DISTANCE', 2.5)
+        self.ACTIVATION_PROFIT_PCT = getattr(config, 'TRAILING_TP_ACTIVATION', 3.0)
+        self.TRAIL_DISTANCE_PCT = getattr(config, 'TRAILING_TP_DISTANCE', 1.5)
 
     def update_position_ratchet(self, position: Dict[str, Any], current_price: float):
         """
