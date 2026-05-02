@@ -629,7 +629,7 @@ class PaperTradingEngine:
         max_leverage = getattr(self.config, 'FUTURES_MAX_LEVERAGE', 10)
 
         # Calculate current drawdown
-        initial_capital = getattr(self.config, 'INITIAL_CAPITAL', 100)
+        initial_capital = getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
         current_capital = self.total_capital
 
         if current_capital < initial_capital:
@@ -999,8 +999,7 @@ class PaperTradingEngine:
                         
                     fee_percent = getattr(self.config, 'FUTURES_FEE_PERCENT', 0.04) / 100
                     entry_fee = size * fee_percent
-                    if self.mode == 'paper':
-                        self.total_capital -= (size + entry_fee)
+                    self.total_capital -= (size + entry_fee)
     
                     self.positions[position_key] = position
                 
@@ -1107,8 +1106,7 @@ class PaperTradingEngine:
                             )
                             
                             if exit_result and exit_result.get('verified'):
-                                if self.mode == 'paper':
-                                    self.total_capital += exit_result.get('capital_return', 0)
+                                self.total_capital += exit_result.get('capital_return', 0)
                                 is_win = exit_result['net_pnl'] > 0
                                 self.risk_manager.record_trade_result(is_win, exit_result['net_pnl'])
                                 if self.total_capital > self.peak_balance:
@@ -2293,15 +2291,7 @@ class ApexHunterBot:
                 import concurrent.futures
                 import time
                 max_workers = getattr(self.config, 'DISCOVERY_MAX_WORKERS', 5)
-
-                # --- LIVE BALANCE SYNC ---
-                if self.mode == 'live':
-                    try:
-                        full_balance = self.engine.exchange.get_balance()
-                        self.engine.total_capital = float(full_balance.get('USDT', {}).get('total', 0))
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Live balance sync failed during sweep: {e}")
-
+                
                 sweep_start_time = time.time()
                 sweep_stats = {
                     'symbols_scanned': 0,
@@ -2383,7 +2373,7 @@ class ApexHunterBot:
                 self.logger.save_active_positions(self.engine.positions, self.engine.current_prices)
 
                 # Log status with high-precision price and per-position profit %
-                total_pnl = self.engine.total_capital - getattr(self.config, 'INITIAL_CAPITAL', 100)
+                total_pnl = self.engine.total_capital - getattr(self.config, 'FUTURES_VIRTUAL_CAPITAL', 100)
                 open_positions = len(self.engine.positions)
                 self.logger.info(f"Sweep Complete | Open: {open_positions} | Total P&L: ${total_pnl:+.2f}")
                 
