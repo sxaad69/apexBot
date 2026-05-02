@@ -10,13 +10,14 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List
 
 class PortfolioProfitRatchet:
-    def __init__(self, config, db, exchange_client, logger, telegram, trade_manager=None):
+    def __init__(self, config, db, exchange_client, logger, telegram, trade_manager=None, engine=None):
         self.config = config
         self.db = db
         self.nx = exchange_client # CCXTExchangeClient
         self.logger = logger
         self.telegram = telegram
         self.tm = trade_manager
+        self.engine = engine
         
         # Scheme Settings
         self.enabled = getattr(config, 'PROFIT_RATCHET_ENABLED', True)
@@ -265,6 +266,11 @@ class PortfolioProfitRatchet:
 
                 except Exception as ex:
                     self.logger.error(f"❌ Ratchet: Failed to clean/close {symbol}: {ex}")
+            
+            # --- CRITICAL: Clear Memory Ghosts ---
+            if self.engine and hasattr(self.engine, 'positions'):
+                self.logger.info(f"🧹 Ratchet: Clearing {len(active_positions)} positions from bot memory...")
+                self.engine.positions.clear()
 
             self.logger.system("🏁 RATCHET MASS LIQUIDATION COMPLETE")
             

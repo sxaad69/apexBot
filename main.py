@@ -82,7 +82,8 @@ class PaperTradingEngine:
             self.exchange, 
             logger, 
             telegram,
-            trade_manager=self.trade_manager
+            trade_manager=self.trade_manager,
+            engine=self
         )
 
         # Initialize risk manager (11 layers) - Now accurately aware of capital and live ratchet
