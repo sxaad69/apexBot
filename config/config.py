@@ -78,13 +78,13 @@ class Config:
         
         # ===== Futures Trading Configuration (Primary) =====
         self.FUTURES_TRADING_ENABLED = self._str_to_bool('true')
-        self.FUTURES_VIRTUAL_CAPITAL = 5000.0  # SETTING FOR TESTNET (Previous Live: 150.0)
-        self.FUTURES_POSITION_SIZE_PERCENT = float('0.5')  # SETTING FOR TESTNET (Previous Live: 4.0)
+        self.FUTURES_VIRTUAL_CAPITAL = 150.0  # SETTING FOR PRODUCTION (Previous Testnet: 5000.0)
+        self.FUTURES_POSITION_SIZE_PERCENT = float('4.0')  # SETTING FOR PRODUCTION (Previous Testnet: 0.5)
         self.FUTURES_MAX_LEVERAGE = int('3')
         self.FUTURES_TAKE_PROFIT_PERCENT = float('10')
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float('5')
         self.FUTURES_MAX_DRAWDOWN_PERCENT = float('70')
-        self.FUTURES_MAX_OPEN_POSITIONS = int('200')  # SETTING FOR TESTNET (Previous Live: 15)
+        self.FUTURES_MAX_OPEN_POSITIONS = int('15')  # SETTING FOR PRODUCTION (Previous Testnet: 200)
 
         # Market Discovery Sync
         self.FUTURES_PAIRS = 'auto'
