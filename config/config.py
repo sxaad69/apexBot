@@ -172,9 +172,9 @@ class Config:
         # NOTE: A3, A4, A5 enabled for TESTNET only. DISABLE for LIVE prod.
         self.STRATEGY_A1_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A2_ENABLED = self._str_to_bool('false')
-        self.STRATEGY_A3_ENABLED = self._str_to_bool('true')
-        self.STRATEGY_A4_ENABLED = self._str_to_bool('true')
-        self.STRATEGY_A5_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A3_ENABLED = self._str_to_bool('false')
+        self.STRATEGY_A4_ENABLED = self._str_to_bool('false')
+        self.STRATEGY_A5_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A6_ENABLED = self._str_to_bool('true')
         self.A6_ALLOW_SHORT = self._str_to_bool('false')
         
