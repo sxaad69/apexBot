@@ -14,7 +14,7 @@ import os
 import argparse
 from datetime import datetime
 from config import Config
-from bot_logging import Logger
+from bot_logging.logger import Logger
 from exchange import CCXTExchangeClient
 from notifications import TelegramNotificationManager
 
