@@ -168,3 +168,4 @@ yarn-error.log*
 # Temporary Research and Forensic data
 scratch/
 graphify-out/
+.worktrees/
