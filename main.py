@@ -25,6 +25,7 @@ from risk.layers.trailing_stop import TrailingStopLayer
 from risk.layers.portfolio_circuit_breaker import PortfolioCircuitBreaker
 from risk.layers.portfolio_profit_ratchet import PortfolioProfitRatchet
 from core.trade_manager import TradeManager
+from exchange.wss_manager import BinanceFuturesWSSManager
 
 
 
@@ -44,6 +45,9 @@ class PaperTradingEngine:
         import threading
         self.recent_liquidations = {}
         self.trade_lock = threading.Lock()
+        
+        # Initialize WebSocket Manager for high-frequency price awareness
+        self.wss_manager = BinanceFuturesWSSManager(logger)
 
         # Initialize exchange for market data
         self.exchange = CCXTExchangeClient(config, logger, config.FUTURES_EXCHANGE)
@@ -2201,35 +2205,49 @@ class ApexHunterBot:
             self.logger.error(f"Failed to run Startup Hydration/Reconciliation: {e}")
 
     def _run_priority_exit_thread(self):
-        """Continuous dedicated Risk Engine thread guarantees 0ms stops."""
+        """Continuous dedicated Risk Engine thread guarantees 0ms stops using WebSocket data."""
         import time
-        self.logger.info("🛡️ Priority Exit Sentinel Thread activated.")
+        self.logger.info("🛡️ Priority Exit Sentinel Thread activated (WebSocket Mode).")
+        
         while self.running:
             try:
-                # 1. Fetch Global Data once
+                # 1. Fetch Global Data for strict sync if needed
                 global_positions = None
                 if self.mode == 'live' or getattr(self.config, 'FUTURES_STRICT_SYNC', False):
                     try:
                         ex_positions = self.engine.exchange.get_positions()
                         global_positions = [p for p in ex_positions if abs(float(p.get('contracts', 0) or 0)) > 0]
-                    except Exception as e:
-                        # Log lightly to avoid WSS burst spam
-                        pass
+                    except: pass
 
                 # 2. Iterate Memory instantly
                 active_symbols = list(set([p['symbol'] for p in self.engine.positions.values()]))
+                
                 for symbol in active_symbols:
                     if not self.running: break
                     try:
-                        self.engine.run_cycle(symbol, global_positions=global_positions, exit_only=True)
+                        # Get real-time price from WSS Manager
+                        mark_price = self.engine.wss_manager.live_prices.get(symbol)
+                        
+                        # Fallback to ticker if WSS hasn't received update yet
+                        if not mark_price:
+                            ticker = self.engine.exchange.get_ticker(symbol)
+                            mark_price = ticker.get('last') if ticker else None
+                        
+                        if mark_price:
+                            self.engine.current_prices[symbol] = mark_price
+                            # Direct execution of exit logic to bypass heavy run_cycle
+                            self.engine.update_trailing_stops(symbol, mark_price)
+                            self.engine.update_trailing_take_profit(symbol, mark_price)
+                            self.engine.check_exits(symbol, mark_price)
+                            
                     except Exception as e:
-                        self.logger.error(f"🚨 CRITICAL: Exit Fireboard failure for {symbol}", exc_info=True)
+                        self.logger.error(f"🚨 Priority Exit failure for {symbol}: {e}")
                         
             except Exception as e:
-                self.logger.error(f"Priority Exit Thread Error: {e}", exc_info=True)
+                self.logger.error(f"Priority Exit Thread Error: {e}")
             
-            # Sleep to strictly enforce Cooldown matrix and API constraints (2000ms delay)
-            time.sleep(2)
+            # High-frequency tick (500ms) for ultra-fast reaction
+            time.sleep(0.5)
 
     def run(self, interval=60):
         """Run the bot"""
@@ -2266,7 +2284,9 @@ class ApexHunterBot:
         else:
             self.logger.info("🔇 Portfolio Profit Ratchet disabled via config. Skipping monitor.")
 
-        # --- PARALLEL RISK ENGINE START ---
+        # Start WebSocket Manager
+        self.engine.wss_manager.start()
+
         self.sentinel_thread = threading.Thread(
             target=self._run_priority_exit_thread,
             name="PriorityExitSentinel",
@@ -2513,7 +2533,8 @@ class ApexHunterBot:
         # Signal the ratchet monitor to stop cleanly before the loop closes
         if hasattr(self, 'engine') and hasattr(self.engine, 'profit_ratchet'):
             self.engine.profit_ratchet.stop_event.set()
-            self.logger.info("🛡️ Ratchet monitor stop signal sent.")
+            self.engine.wss_manager.stop()
+            self.logger.info("🛡️ Ratchet monitor and WSS Manager stop signal sent.")
 
         # Print summary
         if hasattr(self.engine, 'print_summary'):
