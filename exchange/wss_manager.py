@@ -12,8 +12,12 @@ class BinanceFuturesWSSManager:
     to provide real-time price updates for all symbols simultaneously.
     """
     
-    def __init__(self, logger=None):
-        self.url = "wss://fstream.binance.com/ws/!markPrice@arr@1s"
+    def __init__(self, logger=None, testnet=False):
+        if testnet:
+            self.url = "wss://fstream.binancefuture.com/ws/!markPrice@arr@1s"
+        else:
+            self.url = "wss://fstream.binance.com/ws/!markPrice@arr@1s"
+            
         self.logger = logger or logging.getLogger(__name__)
         self.live_prices: Dict[str, float] = {}
         self.is_running = False

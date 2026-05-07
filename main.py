@@ -47,7 +47,8 @@ class PaperTradingEngine:
         self.trade_lock = threading.Lock()
         
         # Initialize WebSocket Manager for high-frequency price awareness
-        self.wss_manager = BinanceFuturesWSSManager(logger)
+        is_testnet = getattr(config, 'EXCHANGE_ENVIRONMENT', 'live') == 'testnet'
+        self.wss_manager = BinanceFuturesWSSManager(logger, testnet=is_testnet)
 
         # Initialize exchange for market data
         self.exchange = CCXTExchangeClient(config, logger, config.FUTURES_EXCHANGE)
