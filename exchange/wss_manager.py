@@ -20,6 +20,7 @@ class BinanceFuturesWSSManager:
         self._stop_event = asyncio.Event()
         self._thread = None
         self._loop = None
+        self._last_heartbeat = 0
 
     def start(self):
         """Start the WSS manager in a dedicated background thread."""
@@ -80,6 +81,13 @@ class BinanceFuturesWSSManager:
                     # Convert raw symbol to standardized format (BTCUSDT -> BTC/USDT)
                     symbol = self._standardize_symbol(symbol_raw)
                     self.live_prices[symbol] = float(price_raw)
+            
+            # Periodic heartbeat (every 60s)
+            import time
+            now = time.time()
+            if now - self._last_heartbeat > 60:
+                self.logger.info(f"📡 WSS Heartbeat: {len(self.live_prices)} symbols updated in cache.")
+                self._last_heartbeat = now
                     
         except Exception as e:
             self.logger.error(f"❌ Error parsing WSS message: {e}")

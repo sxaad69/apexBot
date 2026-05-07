@@ -2237,7 +2237,9 @@ class ApexHunterBot:
         """Continuous dedicated Risk Engine thread guarantees 0ms stops using WebSocket data."""
         import time
         self.logger.info("🛡️ Priority Exit Sentinel Thread activated (WebSocket Mode).")
-        
+        # Sentinel Telemetry Tracking
+        last_telemetry = 0
+
         while self.running:
             try:
                 # 1. Fetch Global Data for strict sync if needed
@@ -2251,6 +2253,14 @@ class ApexHunterBot:
                 # 2. Iterate Memory instantly
                 active_symbols = list(set([p['symbol'] for p in self.engine.positions.values()]))
                 
+                # Periodic Telemetry (every 10s)
+                import time
+                now = time.time()
+                show_telemetry = now - last_telemetry > 10
+                if show_telemetry and active_symbols:
+                    self.logger.info(f"🛡️ Sentinel Monitoring: {len(active_symbols)} symbols via WSS Feed.")
+                    last_telemetry = now
+                
                 for symbol in active_symbols:
                     if not self.running: break
                     try:
@@ -2263,6 +2273,8 @@ class ApexHunterBot:
                             mark_price = ticker.get('last') if ticker else None
                         
                         if mark_price:
+                            if show_telemetry:
+                                self.logger.debug(f"🔍 [WSS] {symbol}: {mark_price}")
                             self.engine.current_prices[symbol] = mark_price
                             # Direct execution of exit logic to bypass heavy run_cycle
                             self.engine.update_trailing_stops(symbol, mark_price)
