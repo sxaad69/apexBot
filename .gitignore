@@ -121,7 +121,7 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
-tests/
+# tests/
 test_data/
 
 # ============================================================================
