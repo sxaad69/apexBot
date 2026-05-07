@@ -19,11 +19,16 @@ class SQLiteManager:
         self._init_db()
 
     def _get_connection(self, db_path: Path):
-        """Get a thread-safe connection to a specific database"""
-        conn = sqlite3.connect(db_path, timeout=60)
+        """Get a thread-safe connection to a specific database.
+        
+        check_same_thread=False: allows the Sentinel thread to write safely.
+        busy_timeout=5000: retry for up to 5s on lock contention (WAL handles concurrency).
+        """
+        conn = sqlite3.connect(db_path, timeout=60, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         try:
             conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
         except:
             pass
         return conn
