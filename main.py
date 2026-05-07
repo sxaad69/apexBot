@@ -1160,9 +1160,10 @@ class PaperTradingEngine:
                         self.logger.warning(f"⚠️ Failed to poll exchange orders for {symbol}: {e}. Falling back to software check.")
 
             # --- SOFTWARE EXIT CHECKS (Fallback) ---
-            # Update Trailing Stop Ratchet BEFORE Software Check
-            if getattr(self.config, 'TRAILING_TP_ENABLED', True) and getattr(self, 'trailing_stop_engine', None):
-                self.trailing_stop_engine.update_position_ratchet(position, current_price)
+            # Update Trailing Stop Ratchet BEFORE Software Check (System B — TrailingStopLayer)
+            trailing_engine = getattr(self, 'trailing_stop_engine', None)
+            if trailing_engine:
+                trailing_engine.update_position_ratchet(position, current_price)
 
             # Check for failed previous exits (PENDING_EXIT)
             is_pending_retry = position.get('status') == 'PENDING_EXIT'
@@ -1957,6 +1958,8 @@ class ApexHunterBot:
                 engine=self.engine,
                 trade_manager=self.engine.trade_manager
             )
+            # Inject into engine so check_exits() can reach it
+            self.engine.trailing_stop_engine = self.trailing_stop_engine
         else:
             self.trailing_stop_engine = None
             
@@ -2276,9 +2279,8 @@ class ApexHunterBot:
                             if show_telemetry:
                                 self.logger.debug(f"🔍 [WSS] {symbol}: {mark_price}")
                             self.engine.current_prices[symbol] = mark_price
-                            # Direct execution of exit logic to bypass heavy run_cycle
-                            self.engine.update_trailing_stops(symbol, mark_price)
-                            self.engine.update_trailing_take_profit(symbol, mark_price)
+                            # TrailingStopLayer (System B) inside check_exits is the
+                            # sole trailing stop engine — fee floor + exchange orders + history.
                             self.engine.check_exits(symbol, mark_price)
                             
                     except Exception as e:

@@ -196,8 +196,8 @@ class Config:
         self.SPOT_FEE_PERCENT = float('0.1')
         
         # ===== Risk Management Configuration =====
-        self.TRAILING_STOP_ACTIVATION = float('3.0')
-        self.TRAILING_STOP_DISTANCE = float('2.5')
+        self.TRAILING_STOP_ACTIVATION = float('5.0')  # Activate trailing stop after 5% profit
+        self.TRAILING_STOP_DISTANCE = float('3.0')    # Trail 3% below the peak
 
         # Trailing Take Profit Configuration (Phase 53: Leverage-Aware)
         self.TRAILING_TP_ENABLED = self._str_to_bool('true')
