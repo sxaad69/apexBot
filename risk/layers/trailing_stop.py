@@ -88,24 +88,6 @@ class TrailingStopLayer:
                     position['metadata'] = json.dumps(meta_dict)
                 return
 
-            # --- DIRTY TICK FILTER (3-Second Sustained Profit Check) ---
-            current_time = datetime.utcnow().timestamp()
-            if 'trailing_activation_time' not in meta_dict:
-                meta_dict['trailing_activation_time'] = current_time
-                self.db.update_trade_metadata(trade_id, {
-                    'highest_price': highest_price,
-                    'lowest_price': lowest_price,
-                    'metadata': meta_dict
-                })
-                position['highest_price'] = highest_price
-                position['lowest_price'] = lowest_price
-                position['metadata'] = json.dumps(meta_dict)
-                return
-                
-            if current_time - meta_dict['trailing_activation_time'] < 3.0:
-                # Still within the 3-second verification window. Ignore for now.
-                return
-                
             # 2. Calculate new trailing stop floor (with Fee-Safety Floor)
             fee_floor_pct = 0.12 
             
