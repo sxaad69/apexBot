@@ -340,6 +340,8 @@ class PaperTradingEngine:
                 # Track highest price since entry
                 if current_price > position['highest_price']:
                     position['highest_price'] = current_price
+                    # Persistent peak update (Phase 34)
+                    self._persist_stop_watermark(position['trade_id'], peak=current_price)
                 
                 # Check for activation
                 profit_percent = (current_price - position['entry_price']) / position['entry_price']
@@ -352,6 +354,7 @@ class PaperTradingEngine:
                         old_stop = position['stop_loss']
                         position['stop_loss'] = new_stop
                         self.logger.info(f"[{strategy_name}] {symbol} TRAILING ACTIVATED @ ${current_price:.2f} | SL: ${old_stop:.2f} -> ${new_stop:.2f}")
+                        self._persist_stop_watermark(position['trade_id'], peak=position['highest_price'])
 
                 # Ratchet logic: move SL up if current highest_price justifies it
                 if position['trailing_stop_active']:
@@ -360,11 +363,14 @@ class PaperTradingEngine:
                         old_stop = position['stop_loss']
                         position['stop_loss'] = new_stop
                         self.logger.info(f"[{strategy_name}] {symbol} TRAILING RATCHET @ ${current_price:.2f} | Peak: ${position['highest_price']:.2f} | SL: ${old_stop:.2f} -> ${new_stop:.2f}")
+                        self._persist_stop_watermark(position['trade_id'], peak=position['highest_price'])
 
             else:  # sell position (SHORT)
                 # Track lowest price since entry (most profitable price for a short)
                 if current_price < position['lowest_price']:
                     position['lowest_price'] = current_price
+                    # Persistent trough update (Phase 34)
+                    self._persist_stop_watermark(position['trade_id'], trough=current_price)
 
                 # For a SHORT: profit_percent is how much price has DROPPED from entry
                 profit_percent = (position['entry_price'] - current_price) / position['entry_price']
@@ -375,12 +381,10 @@ class PaperTradingEngine:
                     position['trailing_activation_price'] = current_price
                     # New stop is ABOVE lowest price by trailing_distance (locking in gains)
                     new_stop = position['lowest_price'] * (1 + trailing_distance)
-                    # Only valid if this new stop is BELOW the current stop_loss
-                    # (i.e., we're locking in profit, not expanding our risk)
-                    # For a SHORT, stop_loss is set ABOVE entry — new_stop should be well below entry
                     old_stop = position['stop_loss']
                     position['stop_loss'] = new_stop
                     self.logger.info(f"[{strategy_name}] {symbol} TRAILING ACTIVATED @ ${current_price:.5f} (Profit: {profit_percent*100:.2f}%) | SL: ${old_stop:.5f} → ${new_stop:.5f}")
+                    self._persist_stop_watermark(position['trade_id'], trough=position['lowest_price'])
 
                 # Ratchet: keep moving stop DOWN as price falls further (locking in MORE profit)
                 if position['trailing_stop_active']:
@@ -390,6 +394,7 @@ class PaperTradingEngine:
                         old_stop = position['stop_loss']
                         position['stop_loss'] = new_stop
                         self.logger.info(f"[{strategy_name}] {symbol} TRAILING RATCHET @ ${current_price:.5f} | Trough: ${position['lowest_price']:.5f} | SL: ${old_stop:.5f} → ${new_stop:.5f}")
+                        self._persist_stop_watermark(position['trade_id'], trough=position['lowest_price'])
 
 
 
@@ -603,6 +608,30 @@ class PaperTradingEngine:
             self.trade_manager.update_trade_params(trade_id, {'metadata': meta})
         except Exception as e:
             self.logger.warning(f"Failed to persist TP watermark: {e}")
+
+    def _persist_stop_watermark(self, trade_id: str, peak: float = None, trough: float = None):
+        """Persist trailing stop high-water/low-water marks to metadata for restart recovery."""
+        try:
+            import json
+            trades = self.db.get_trades(status='OPEN')
+            trade = next((t for t in trades if t['trade_id'] == trade_id), None)
+            if not trade:
+                return
+            meta = json.loads(trade['metadata']) if trade['metadata'] else {}
+            if peak is not None:
+                meta['trailing_stop_peak_price'] = peak
+            if trough is not None:
+                meta['trailing_stop_trough_price'] = trough
+            
+            # Also persist the active flag and the current stop level from memory
+            for pos in self.positions.values():
+                if pos.get('trade_id') == trade_id:
+                    meta['trailing_stop_active'] = pos.get('trailing_stop_active', False)
+                    meta['trailing_stop_price'] = pos.get('stop_loss') # Use stop_loss as the source of truth
+                    break
+            self.trade_manager.update_trade_params(trade_id, {'metadata': meta})
+        except Exception as e:
+            self.logger.warning(f"Failed to persist stop watermark: {e}")
 
 
     def check_position_exit(self, position, current_price):
