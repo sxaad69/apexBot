@@ -350,7 +350,7 @@ class PaperTradingEngine:
                     position['trailing_activation_price'] = current_price
                     # Activation moves SL relative to peak
                     new_stop = position['highest_price'] * (1 - trailing_distance)
-                    if new_stop > position['stop_loss']:
+                    if position['stop_loss'] is not None and new_stop > position['stop_loss']:
                         old_stop = position['stop_loss']
                         position['stop_loss'] = new_stop
                         self.logger.info(f"[{strategy_name}] {symbol} TRAILING ACTIVATED @ ${current_price:.2f} | SL: ${old_stop:.2f} -> ${new_stop:.2f}")
@@ -359,7 +359,7 @@ class PaperTradingEngine:
                 # Ratchet logic: move SL up if current highest_price justifies it
                 if position['trailing_stop_active']:
                     new_stop = position['highest_price'] * (1 - trailing_distance)
-                    if new_stop > position['stop_loss']:
+                    if position['stop_loss'] is not None and new_stop > position['stop_loss']:
                         old_stop = position['stop_loss']
                         position['stop_loss'] = new_stop
                         self.logger.info(f"[{strategy_name}] {symbol} TRAILING RATCHET @ ${current_price:.2f} | Peak: ${position['highest_price']:.2f} | SL: ${old_stop:.2f} -> ${new_stop:.2f}")
@@ -390,7 +390,7 @@ class PaperTradingEngine:
                 if position['trailing_stop_active']:
                     new_stop = position['lowest_price'] * (1 + trailing_distance)
                     # Ratchet only in the direction of more profit (lower stop for shorts)
-                    if new_stop < position['stop_loss']:
+                    if position['stop_loss'] is not None and new_stop < position['stop_loss']:
                         old_stop = position['stop_loss']
                         position['stop_loss'] = new_stop
                         self.logger.info(f"[{strategy_name}] {symbol} TRAILING RATCHET @ ${current_price:.5f} | Trough: ${position['lowest_price']:.5f} | SL: ${old_stop:.5f} → ${new_stop:.5f}")
@@ -637,14 +637,14 @@ class PaperTradingEngine:
     def check_position_exit(self, position, current_price):
         """Check if position should be exited"""
         if position['side'] == 'buy':
-            if current_price <= position['stop_loss']:
+            if position.get('stop_loss') is not None and current_price <= position['stop_loss']:
                 return True, 'trailing_stop' if position.get('trailing_stop_active') else 'stop_loss'
-            elif current_price >= position['take_profit']:
+            elif position.get('take_profit') is not None and current_price >= position['take_profit']:
                 return True, 'take_profit'
         else:  # sell
-            if current_price >= position['stop_loss']:
+            if position.get('stop_loss') is not None and current_price >= position['stop_loss']:
                 return True, 'trailing_stop' if position.get('trailing_stop_active') else 'stop_loss'
-            elif current_price <= position['take_profit']:
+            elif position.get('take_profit') is not None and current_price <= position['take_profit']:
                 return True, 'take_profit'
 
         return False, None
