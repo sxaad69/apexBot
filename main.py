@@ -1566,10 +1566,14 @@ class PaperTradingEngine:
 
             # 2. Pull Trade Data from apex_hunter.db
             try:
-                cursor = self.db.conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM trades WHERE entry_time >= ?", (start_time.isoformat(),))
-                report_data['futures']['trades_opened'] = cursor.fetchone()[0]
-                report_data['futures']['signals_generated'] = report_data['futures']['trades_opened'] 
+                conn = self.db._get_connection(self.db.main_db)
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM trades WHERE entry_time >= ?", (start_time.isoformat(),))
+                    report_data['futures']['trades_opened'] = cursor.fetchone()[0]
+                    report_data['futures']['signals_generated'] = report_data['futures']['trades_opened']
+                finally:
+                    conn.close()
             except Exception as e:
                 self.logger.error(f"Error pulling trade data: {e}")
 
