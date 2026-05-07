@@ -143,7 +143,7 @@ class Config:
         # ===== Spot Trading Configuration =====
         self.ENABLE_SPOT_TRADING = self._str_to_bool('false')
         self.ENABLE_SPOT_LOGGER = self._str_to_bool('true')
-        self.SPOT_VIRTUAL_CAPITAL = float('100')
+        self.SPOT_VIRTUAL_CAPITAL = float('3.0')
         self.SPOT_POSITION_SIZE_PERCENT = float('10')
         self.SPOT_STOP_LOSS_PERCENT = float('2')
         self.SPOT_TAKE_PROFIT_PERCENT = float('4')
@@ -159,7 +159,7 @@ class Config:
         
         # ===== Arbitrage Scanner Configuration =====
         self.ENABLE_ARBITRAGE_SCANNER = self._str_to_bool('true')
-        self.ARBITRAGE_VIRTUAL_CAPITAL = float('100')
+        self.ARBITRAGE_VIRTUAL_CAPITAL = float('3.0')
         self.ARBITRAGE_SIMPLE = self._str_to_bool('true')
         self.ARBITRAGE_TRIANGULAR = self._str_to_bool('true')
         self.ARBITRAGE_CROSS_TRIANGULAR = self._str_to_bool('false')
@@ -184,7 +184,7 @@ class Config:
         self.STRATEGY_A2_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A3_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A4_ENABLED = self._str_to_bool('false')
-        self.STRATEGY_A5_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A5_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A6_ENABLED = self._str_to_bool('true')
         self.A6_ALLOW_SHORT = self._str_to_bool('false')
         
@@ -195,18 +195,11 @@ class Config:
         self.FUTURES_FEE_PERCENT = float('0.04')
         self.SPOT_FEE_PERCENT = float('0.1')
         
-        # ===== Risk Management Configuration =====
-        self.TRAILING_STOP_ACTIVATION = float('3.0')
-        self.TRAILING_STOP_DISTANCE = float('2.5')
-
-        # Trailing Take Profit Configuration (Phase 53: Leverage-Aware)
+        # ===== Trailing Stop Configuration =====
+        # ONE place to control trailing. Change these two values only.
+        self.TRAILING_STOP_ACTIVATION = float('5.0')  # % profit before trailing starts
+        self.TRAILING_STOP_DISTANCE = float('3.0')    # % trail distance from peak
         self.TRAILING_TP_ENABLED = self._str_to_bool('true')
-        self.TRAILING_TP_ACTIVATION = float('1.0')  # Fallback price move %
-        self.TRAILING_TP_DISTANCE = float('1.5')    # Fallback price move %
-        
-        # New ROE-based Targets (Scales with leverage)
-        self.TRAILING_TARGET_ROE = float('6.0')      # Target 6% ROE to start trailing
-        self.TRAILING_CAPTURE_ROE = float('2.5')    # Gap of 2.5% ROE from peak
 
         # Exchange-Side Execution
         self.ENABLE_EXCHANGE_STOPS = self._str_to_bool('false')
@@ -339,9 +332,9 @@ class Config:
 
         # ===== Portfolio Profit Ratchet (Phase: Gains Lock) =====
         self.PROFIT_RATCHET_ENABLED = self._str_to_bool('true')
-        self.PROFIT_RATCHET_ACTIVATION = float('1.0')
-        self.PROFIT_RATCHET_TRAILING = float('1.0')
-        self.PROFIT_RATCHET_FLOOR = float('1.0')
+        self.PROFIT_RATCHET_ACTIVATION = float('5.0')
+        self.PROFIT_RATCHET_TRAILING = float('2.0')
+        self.PROFIT_RATCHET_FLOOR = float('3.0')
         self.PROFIT_RATCHET_COOLDOWN = int('5')
         self.PROFIT_RATCHET_SLIPPAGE_BUFFER = float('0.2')
     

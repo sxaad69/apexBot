@@ -108,17 +108,13 @@ class PortfolioProfitRatchet:
                     
                     self.telegram.send_futures_message(f"🚀 *PROFIT RATCHET ACTIVATED (Initial)*\nNet ROE: {net_roe:.2f}%\nNet Profit: ${net_dollar_pnl:.2f}\nTrailing Stop set at: ${(net_dollar_pnl - self.dollar_trail_distance):.2f}")
                     
-                    # Stop Hit Check
-                    stop_level_dollar = max(self.dollar_hard_floor, self.peak_dollar_pnl - self.dollar_trail_distance)
-                    if net_dollar_pnl <= stop_level_dollar:
-                        self.logger.critical(f"⚠️ RATCHET STOP HIT (Initial)! Net Profit: ${net_dollar_pnl:.2f} (Stop: ${stop_level_dollar:.2f})")
-                        await self._liquidate_all(net_roe, target_symbols_initial)
-                        self.ratchet_active = False
-                        self.peak_roe = 0.0
-                        self.peak_dollar_pnl = 0.0
-                        self.locked_margin = 0.0
-                        self.dollar_trail_distance = 0.0
-                        self.dollar_hard_floor = 0.0
+                    # GRACE PERIOD: On startup, do NOT run the stop-check immediately.
+                    # If we're already above the activation threshold at boot, we just
+                    # activate and begin trailing from the current peak. The WebSocket loop
+                    # handles all actual stop-hits from the next live update onwards.
+                    # Previously, the fee/slippage buffer subtraction would push
+                    # net_dollar_pnl below stop_level in the same instant as activation,
+                    # causing immediate panic liquidation on every restart.
 
             while not self.stop_event.is_set():
                 try:

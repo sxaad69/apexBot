@@ -6,8 +6,9 @@ Matches closed trades from the database with Binance's history to verify SL/TP e
 
 import os
 import sys
-from datetime import datetime
-from typing import Dict, List, Any
+import argparse
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Optional
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
@@ -29,12 +30,24 @@ class ClosedTradeMatcher:
             'sl_devs': [], 'tp_devs': []
         }
         
-    def get_db_closed_trades(self) -> List[Dict[str, Any]]:
-        """Fetch trades marked as CLOSED in SQLite."""
+    def get_db_closed_trades(self, days: int = 1, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Fetch trades marked as CLOSED in SQLite with time filtering."""
         conn = self.db._get_connection(self.db.main_db)
         cursor = conn.cursor()
-        query = "SELECT * FROM trades WHERE status = 'CLOSED' ORDER BY exit_time DESC"
-        cursor.execute(query)
+        
+        # Calculate the start time based on days
+        start_time = (datetime.utcnow() - timedelta(days=days)).strftime('%Y-%m-%dT%H:%M:%S')
+        
+        query = "SELECT * FROM trades WHERE status = 'CLOSED' AND exit_time >= ?"
+        params = [start_time]
+        
+        if symbol:
+            query += " AND symbol = ?"
+            params.append(symbol)
+            
+        query += " ORDER BY exit_time DESC"
+        
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
@@ -54,12 +67,14 @@ class ClosedTradeMatcher:
     def format_row(self, data: List[Any], widths: List[int]) -> str:
         return " | ".join(str(val).ljust(width)[:width] for val, width in zip(data, widths))
 
-    def run_matchmaking(self):
+    def run_matchmaking(self, days: int = 1, symbol: Optional[str] = None):
         print(f"\n{'='*140}")
-        print(f"🔍 APEX HUNTER CLOSED TRADES MATCHMAKING - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        filter_str = f"Today's trades" if days == 1 else f"Last {days} days"
+        if symbol: filter_str += f" for {symbol}"
+        print(f"🔍 APEX HUNTER MATCHMAKING - {filter_str} | {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
         print(f"{'='*140}\n")
 
-        db_trades = self.get_db_closed_trades()
+        db_trades = self.get_db_closed_trades(days=days, symbol=symbol)
         all_symbols = set(t['symbol'] for t in db_trades)
         
         print(f"Fetching Binance order history for {len(all_symbols)} symbols... this may take a moment.")
@@ -197,5 +212,10 @@ class ClosedTradeMatcher:
         print(f"{'='*140}\n")
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Match closed trades with Binance history.")
+    parser.add_argument("--days", type=int, default=1, help="Number of days to look back (default: 1)")
+    parser.add_argument("--symbol", type=str, help="Filter by specific symbol")
+    args = parser.parse_args()
+
     matcher = ClosedTradeMatcher()
-    matcher.run_matchmaking()
+    matcher.run_matchmaking(days=args.days, symbol=args.symbol)

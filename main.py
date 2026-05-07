@@ -1173,19 +1173,25 @@ class PaperTradingEngine:
                 )
 
                 if exit_result and exit_result.get('verified'):
-                    # Update Memory State & Capital
-                    self.total_capital += exit_result.get('capital_return', 0)
+                    # In paper mode: manually track capital since there's no exchange sync.
+                    # In live mode: Binance balance sync (line ~2302) updates total_capital
+                    # accurately. Adding capital_return here would create a temporary ghost
+                    # spike that gets saved as a false peak_balance before sync corrects it.
+                    if self.mode == 'paper':
+                        self.total_capital += exit_result.get('capital_return', 0)
                     self.logger.info(f"💰 CAPITAL RECOVERED: ${exit_result['capital_return']:.2f} (including Sync P&L)")
 
                     # Record result with risk manager
                     is_win = exit_result['net_pnl'] > 0
                     self.risk_manager.record_trade_result(is_win, exit_result['net_pnl'])
 
-                    # Update peak balance and drawdown tracking
+                    # Update peak balance and drawdown tracking.
+                    # Only persist to DB in paper mode — in live mode, peak is updated
+                    # after the Binance sync gives us the real balance (not a ghost value).
                     if self.total_capital > self.peak_balance:
                         self.peak_balance = self.total_capital
                         self.risk_manager.update_peak_balance(self.total_capital)
-                        if hasattr(self.logger, 'db'):
+                        if self.mode == 'paper' and hasattr(self.logger, 'db'):
                             self.logger.db.set_setting('peak_balance', self.total_capital)
                 
                 # Remove from memory loop
