@@ -8,7 +8,7 @@ class StopLossManagementLayer:
     
     def evaluate(self, trade_params: Dict[str, Any], account_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         entry_price = trade_params.get('entry_price', 0)
-        side = trade_params.get('side', 'buy')
+        side = trade_params.get('side', 'buy').lower().strip()
         strategy_tag = trade_params.get('strategy', '')
         
         # 1. Fetch Global Target ROE (The Disaster Limit we want to synchronize to)

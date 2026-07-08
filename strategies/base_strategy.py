@@ -282,6 +282,7 @@ class BaseStrategy(ABC):
 
         current_price = df.iloc[-1]['close']
         current_atr = df.iloc[-1]['atr']
+        side = side.lower().strip()
 
         if side == 'buy':
             stop_loss = current_price - (current_atr * atr_sl_mult)

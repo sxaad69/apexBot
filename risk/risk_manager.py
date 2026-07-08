@@ -109,6 +109,20 @@ class RiskManager:
 
         # All layers approved
         approved_params['confidence'] = confidence
+
+        # --- ATOMIC SAFETY CHECK: INVERTED STOP LOSS PREVENTION ---
+        final_sl = approved_params.get('stop_loss')
+        final_entry = approved_params.get('entry_price', 0)
+        final_side = approved_params.get('side', 'buy').lower().strip()
+        
+        if final_sl and final_entry > 0:
+            if final_side == 'buy' and final_sl >= final_entry:
+                self.logger.critical(f"🚨 [STRANGULATION PREVENTED] {symbol} BUY SL ({final_sl}) is HIGHER than Entry ({final_entry}). Rejecting.")
+                return None
+            elif final_side == 'sell' and final_sl <= final_entry:
+                self.logger.critical(f"🚨 [STRANGULATION PREVENTED] {symbol} SELL SL ({final_sl}) is LOWER than Entry ({final_entry}). Rejecting.")
+                return None
+
         self.logger.debug(f"Risk evaluation: Trade approved through all {len(self.layers)} risk layers for {symbol}")
         return approved_params
     
