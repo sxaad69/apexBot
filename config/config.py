@@ -80,7 +80,7 @@ class Config:
         self.FUTURES_TRADING_ENABLED = self._str_to_bool('true')
         self.FUTURES_VIRTUAL_CAPITAL = 136.78  # Real Wallet Baseline
         self.FUTURES_POSITION_SIZE_PERCENT = float('4.0')
-        self.FUTURES_MAX_LEVERAGE = int('3')
+        self.FUTURES_MAX_LEVERAGE = int('10')
         self.FUTURES_TAKE_PROFIT_PERCENT = float('10')
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float('5')
         self.FUTURES_MAX_DRAWDOWN_PERCENT = float('70')
