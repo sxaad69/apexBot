@@ -78,8 +78,10 @@ class CCXTExchangeClient(BaseExchangeClient):
             }
             
             # Set testnet/sandbox if configured
-            if self.config.EXCHANGE_ENVIRONMENT == 'testnet':
-                exchange_config['sandbox'] = True  # Sandbox for others and Binance using standard CCXT init
+            # NOTE: For Binance, sandbox mode is deprecated for futures (ccxt >= 4.5).
+            #       We use demo trading instead via enable_demo_trading().
+            if self.config.EXCHANGE_ENVIRONMENT == 'testnet' and self.exchange_id != 'binance':
+                exchange_config['sandbox'] = True  # Sandbox for non-Binance exchanges (e.g. KuCoin)
             
             # Initialize exchange
             exchange = exchange_class(exchange_config)
@@ -87,13 +89,13 @@ class CCXTExchangeClient(BaseExchangeClient):
             # Binance explicit demo trading enable (handles different ccxt versions safely)
             if self.config.EXCHANGE_ENVIRONMENT == 'testnet' and self.exchange_id == 'binance':
                 try:
-                    # Native general CCXT method
-                    exchange.set_sandbox_mode(True)
+                    # Native general CCXT method - switches to demo-fapi.binance.com endpoints
+                    exchange.enable_demo_trading(True)
                 except AttributeError:
                     try:
-                        exchange.enable_demo_trading(True)
+                        exchange.set_sandbox_mode(True)
                     except AttributeError:
-                        self.logger.warning("Could not set Binance sandbox mode dynamically. Ensure ccxt is up to date.")
+                        self.logger.warning("Could not set Binance demo trading mode dynamically. Ensure ccxt is up to date.")
                 
                 # Binance Testnet API keys are futures-only, fetching SPOT currencies crashes it
                 exchange.options['fetchCurrencies'] = False

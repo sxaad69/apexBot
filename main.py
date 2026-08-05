@@ -2210,7 +2210,7 @@ class ApexHunterBot:
                                 standard_symbol = standard_symbol.replace('USDT', '/USDT')
                             
                             # Calculate 5% ROE Hard Stop for adopted positions
-                            lev = int(g_pos.get('leverage', 1))
+                            lev = int(g_pos.get('leverage') or 1)
                             max_move = (5.0 / lev) / 100
                             if side == 'buy':
                                 ad_sl = entry_price * (1 - max_move)
