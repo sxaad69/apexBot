@@ -71,7 +71,13 @@ class StrategyA6(BaseStrategy):
             'options': {'defaultType': 'future'}
         })
         if getattr(self.config, 'EXCHANGE_ENVIRONMENT', 'production').lower() == 'testnet':
-            self.wss_exchange.set_sandbox_mode(True)
+            try:
+                self.wss_exchange.enable_demo_trading(True)
+            except AttributeError:
+                self.logger.warning(
+                    'ccxt.pro Binance demo trading helper is unavailable; '
+                    'continuing without sandbox mode.'
+                )
 
         # Launch dedicated WSS Thread strictly for A6
         self.wss_thread = threading.Thread(target=self._start_wss_loop, daemon=True)
@@ -175,7 +181,16 @@ class StrategyA6(BaseStrategy):
                 exchange_class = getattr(ccxt, getattr(self.config, 'FUTURES_EXCHANGE', 'binance').lower())
                 exchange = exchange_class({'options': {'defaultType': 'future'}})
                 if getattr(self.config, 'EXCHANGE_ENVIRONMENT', 'production').lower() == 'testnet':
-                    exchange.set_sandbox_mode(True)
+                    if getattr(self.config, 'FUTURES_EXCHANGE', 'binance').lower() == 'binance':
+                        try:
+                            exchange.enable_demo_trading(True)
+                        except AttributeError:
+                            self.logger.warning(
+                                'ccxt Binance demo trading helper is unavailable; '
+                                'continuing without sandbox mode.'
+                            )
+                    else:
+                        exchange.set_sandbox_mode(True)
 
             recent_trades = exchange.fetch_trades(symbol, limit=100)
             if not recent_trades:

@@ -62,7 +62,19 @@ class PortfolioProfitRatchet:
         })
         
         if self.config.EXCHANGE_ENVIRONMENT == 'testnet':
-            self.nx_pro.set_sandbox_mode(True)
+            # Binance futures no longer supports ccxt sandbox mode.
+            # Use demo trading when available; otherwise keep the live endpoint
+            # and rely on the main exchange client to gate live execution.
+            if self.nx.exchange_id == 'binance':
+                try:
+                    self.nx_pro.enable_demo_trading(True)
+                except AttributeError:
+                    self.logger.warning(
+                        'ccxt.pro Binance demo trading helper is unavailable; '
+                        'continuing without sandbox mode.'
+                    )
+            else:
+                self.nx_pro.set_sandbox_mode(True)
 
         try:
             # First check: Run an immediate check using REST before waiting for WSS updates
