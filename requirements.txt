@@ -1,59 +1,57 @@
 # Apex Hunter V14 - Python Dependencies
-# Python 3.11+
+# Python 3.11+ (tested on Python 3.14.4)
 
 # Core Dependencies
-python-dotenv==1.0.0
+python-dotenv==1.2.2
 
 # API & HTTP Requests
-requests==2.31.0
-urllib3==2.1.0
-websocket-client==1.6.4
-websockets==12.0
+requests==2.34.2
+urllib3==2.7.0
+websocket-client==1.9.0
+websockets==16.1.1
 
 # Exchange Integration (Optional - if you want to use CCXT instead of custom client)
-ccxt==4.2.25
-ccxtpro==1.0.0
+ccxt==4.5.70
 
 # Cryptography for API signatures
-cryptography==41.0.7
-pycryptodome==3.19.0
+cryptography==49.0.0
+pycryptodome==3.23.0
 
 # Data Processing
-pandas==2.1.4
-numpy==1.26.2
+pandas==3.0.5
+numpy==2.5.1
 
 # Telegram Bot
 # python-telegram-bot removed (Bot uses requests directly)
 
 # Async Support
-aiohttp==3.9.1
+aiohttp==3.14.1
 
 # Console Output
 colorama==0.4.6
-colorlog==6.8.0
+colorlog==6.12.0
 
 # Date/Time
-python-dateutil==2.8.2
-pytz==2023.3
+python-dateutil==2.9.0.post0
+pytz==2026.3.post1
 
 # Configuration
-pyyaml==6.0.1
+pyyaml==6.0.3
 
 # Type Hints
-typing-extensions==4.9.0
+typing-extensions==4.16.0
 
 # Database Support
-pymongo[srv]==4.6.0
-motor==3.3.2  # Async MongoDB driver
+pymongo[srv]==4.17.0
+motor==3.7.1  # Async MongoDB driver
 
 # Testing (Optional)
-pytest==7.4.3
-pytest-asyncio==0.21.1
+pytest==9.1.1
 
 # Dashboard & Visualization
-streamlit==1.29.0
-plotly==5.17.0
+streamlit==1.60.0
+plotly==6.9.0
 
 # Code Quality (Optional)
-black==23.12.1
-flake8==7.0.0
+black==26.5.1
+flake8==7.3.0
