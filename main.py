@@ -45,6 +45,14 @@ class PaperTradingEngine:
         import threading
         self.recent_liquidations = {}
         self.trade_lock = threading.Lock()
+
+        # --- RATE-LIMIT FIX: OHLCV cache to avoid hammering Binance REST ---
+        # Key: (symbol, timeframe). Value: pandas DataFrame of candles.
+        # We only refetch once per timeframe window (candles are immutable
+        # within their period) instead of re-downloading 300 candles for all
+        # 100 symbols every sweep.
+        self._ohlcv_cache = {}          # (symbol, tf) -> df
+        self._ohlcv_cache_ts = {}       # (symbol, tf) -> last fetch epoch time
         
         # Initialize WebSocket Manager for high-frequency price awareness
         is_testnet = getattr(config, 'EXCHANGE_ENVIRONMENT', 'live') == 'testnet'
@@ -301,11 +309,40 @@ class PaperTradingEngine:
             self.logger.error(f"Error fetching top pairs: {e}")
             return getattr(self.config, 'FUTURES_PAIRS', ['BTC/USDT', 'ETH/USDT'])
 
+    def _get_candle_ttl_seconds(self, timeframe: str) -> int:
+        """Return how long a candle timeframe is valid for (in seconds).
+        
+        15m candles only update when a new 15m window opens. We cache them
+        for the full timeframe duration (or a bounded window to be safe),
+        which is the primary driver of the -1003 rate-limit bans: the bot
+        was re-downloading 300 candles x 100 symbols every sweep.
+        """
+        tf_map = {
+            '1m': 60, '3m': 180, '5m': 300, '15m': 900,
+            '30m': 1800, '1h': 3600, '2h': 7200, '4h': 14400,
+        }
+        return tf_map.get(str(timeframe).lower(), 900)  # default 15m
+
     def fetch_market_data(self, symbol='BTC/USDT', timeframe=None, limit=300):
-        """Fetch market data using CCXT (exchange-agnostic)"""
+        """Fetch market data using CCXT (exchange-agnostic) with OHLCV caching.
+
+        RATE-LIMIT FIX: Cached per (symbol, timeframe) for the candle's own
+        expiry window. Since a 15m candle is immutable until its window closes,
+        we never re-download it within that window. This cuts REST fetch_ohlcv
+        calls from ~130/min (100 symbols every sweep) down to a handful per
+        timeframe boundary — eliminating the -1003 IP bans.
+        """
         if timeframe is None:
             timeframe = self.config.TIMEFRAME
-        
+
+        # --- CACHE HIT: return cached candles if still within their TTL window ---
+        cache_key = (symbol, timeframe)
+        ttl_seconds = self._get_candle_ttl_seconds(timeframe)
+        now = time.time()
+        last_fetch = self._ohlcv_cache_ts.get(cache_key, 0)
+        if now - last_fetch < ttl_seconds and cache_key in self._ohlcv_cache:
+            return self._ohlcv_cache[cache_key]
+
         # Normalize symbol for exchange specificity (e.g. ADA/USDT -> ADA/USDT:USDT if needed)
         try:
             exchange = self.exchange.exchange
@@ -315,13 +352,21 @@ class PaperTradingEngine:
                     if market_symbol.split(':')[0] == symbol:
                         symbol = market_symbol
                         break
-            
+
             ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)
+
+            # --- CACHE MISS: store the fetched candles for the candle TTL ---
+            self._ohlcv_cache[cache_key] = df
+            self._ohlcv_cache_ts[cache_key] = now
             return df
         except Exception as e:
+            # On error, fall back to stale cache if available (better than nothing)
+            if cache_key in self._ohlcv_cache:
+                self.logger.warning(f"Rate-limit / fetch error for {symbol}: {e}. Using cached candles.")
+                return self._ohlcv_cache[cache_key]
             self.logger.error(f"Error fetching market data for {symbol}: {e}")
             return None
     

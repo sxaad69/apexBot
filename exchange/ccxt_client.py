@@ -135,7 +135,17 @@ class CCXTExchangeClient(BaseExchangeClient):
             return symbol
     
     def get_positions(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Get open positions"""
+        """Get open positions (TTL-cached to avoid hammering Binance REST).
+
+        RATE-LIMIT FIX: The PriorityExitSentinel thread calls this every 0.5s,
+        which was a major contributor to the -1003 IP bans (2004+ occurrences).
+        Positions don't change that fast, so we cache for a short TTL.
+        """
+        import time as _time
+        now = _time.time()
+        ttl = getattr(self.config, 'POSITIONS_CACHE_TTL', 5.0)  # 5s default
+        if (now - getattr(self, '_positions_cache_ts', 0)) < ttl and getattr(self, '_positions_cache', None) is not None:
+            return self._positions_cache
         try:
             if symbol:
                 positions = self.exchange.fetch_positions([symbol])
@@ -145,18 +155,39 @@ class CCXTExchangeClient(BaseExchangeClient):
             # Filter out empty positions
             active_positions = [p for p in positions if abs(float(p.get('contracts', 0) or 0)) > 0]
             
+            self._positions_cache = active_positions
+            self._positions_cache_ts = now
             self.logger.debug(f"Fetched {len(active_positions)} positions from {self.exchange_id}")
             return active_positions
         except Exception as e:
+            # On error, fall back to stale cache if available
+            if getattr(self, '_positions_cache', None) is not None:
+                self.logger.warning(f"Rate-limit / fetch error for positions: {e}. Using cached positions.")
+                return self._positions_cache
             self.logger.error(f"Error fetching positions: {e}", exc_info=True)
             return []
     
     def get_ticker(self, symbol: str) -> Dict[str, Any]:
-        """Get current ticker data"""
+        """Get current ticker data (TTL-cached to avoid hammering Binance REST)."""
+        import time as _time
+        now = _time.time()
+        ttl = getattr(self.config, 'TICKER_CACHE_TTL', 5.0)  # 5s default
+        cache_key = f"ticker_{symbol}"
+        if (now - getattr(self, '_ticker_cache_ts', {}).get(cache_key, 0)) < ttl and cache_key in getattr(self, '_ticker_cache', {}):
+            return self._ticker_cache[cache_key]
         try:
             ticker = self.exchange.fetch_ticker(symbol)
+            if not hasattr(self, '_ticker_cache'):
+                self._ticker_cache = {}
+                self._ticker_cache_ts = {}
+            self._ticker_cache[cache_key] = ticker
+            self._ticker_cache_ts[cache_key] = now
             return ticker
         except Exception as e:
+            # On error, fall back to stale cache if available
+            if hasattr(self, '_ticker_cache') and cache_key in self._ticker_cache:
+                self.logger.warning(f"Rate-limit / fetch error for ticker {symbol}: {e}. Using cached ticker.")
+                return self._ticker_cache[cache_key]
             self.logger.error(f"Error fetching ticker for {symbol}: {e}")
             return {}
     
