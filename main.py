@@ -67,6 +67,7 @@ class PaperTradingEngine:
         # sweep at OHLCV_BATCH_MAX, rotating through the rest as TTLs expire.
         self._ohlcv_batch_count = 0
         self._ohlcv_batch_max = getattr(config, 'OHLCV_BATCH_MAX', 100)
+        self._batch_cap_skipped_symbols = set()  # Track symbols skipped due to batch cap (reset each sweep)
         
         # Initialize WebSocket Manager for high-frequency price awareness
         is_testnet = getattr(config, 'EXCHANGE_ENVIRONMENT', 'live') == 'testnet'
@@ -376,6 +377,8 @@ class PaperTradingEngine:
         if self._ohlcv_batch_count >= self._ohlcv_batch_max:
             if cache_key in self._ohlcv_cache:
                 return self._ohlcv_cache[cache_key]
+            # Track batch-cap skips separately so we can suppress noise in logs
+            self._batch_cap_skipped_symbols.add(symbol)
             return None
         self._ohlcv_batch_count += 1
 
@@ -1433,7 +1436,11 @@ class PaperTradingEngine:
         df = self.fetch_market_data(symbol)
 
         if df is None or len(df) == 0:
-            self.logger.error(f"Failed to fetch market data for {symbol}")
+            # Check if this was a batch-cap skip (expected during cold start) vs genuine failure
+            if symbol in self._batch_cap_skipped_symbols:
+                self.logger.debug(f"Batch-cap skip: {symbol} (will retry next sweep)")
+            else:
+                self.logger.error(f"Genuinely failed to fetch market data for {symbol}")
             return
 
         current_price = df.iloc[-1]['close']
@@ -2485,6 +2492,7 @@ class ApexHunterBot:
                 # Each sweep resets the cap so different symbols rotate through
                 # refreshes instead of the same first-100 getting priority forever.
                 self.engine._ohlcv_batch_count = 0
+                self.engine._batch_cap_skipped_symbols.clear()  # Reset skip tracking
 
                 sweep_start_time = time.time()
                 sweep_stats = {
@@ -2559,6 +2567,13 @@ class ApexHunterBot:
                         )
                             
                 sweep_stats['duration_sec'] = time.time() - sweep_start_time
+                # Track batch-cap skips for visibility
+                sweep_stats['batch_cap_skipped'] = len(self.engine._batch_cap_skipped_symbols)
+                if sweep_stats['batch_cap_skipped'] > 0:
+                    self.logger.debug(
+                        f"Batch-cap skipped {sweep_stats['batch_cap_skipped']} symbols "
+                        f"(will rotate in next sweep)"
+                    )
                 
                 # Check if it's time to send hourly report
                 self.engine._check_and_send_hourly_report()

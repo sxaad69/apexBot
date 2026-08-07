@@ -362,6 +362,7 @@ class MongoLogger(Logger):
                 'sweep_duration_sec': sweep_stats.get('duration_sec', 0),
                 'symbols_scanned': sweep_stats.get('symbols_scanned', 0),
                 'entries_executed': sweep_stats.get('entries_executed', 0),
+                'batch_cap_skipped': sweep_stats.get('batch_cap_skipped', 0),
                 'strategy_rejections': sweep_stats.get('strategy_rejections', {}),
                 'risk_rejections': sweep_stats.get('risk_rejections', {})
             }
@@ -370,7 +371,8 @@ class MongoLogger(Logger):
             self.db.log_activity('sweep_summary', 'SYSTEM', f"Sweep Complete: {document['symbols_scanned']} symbols scanned.", document)
             
             # Log high-level summary to console
-            self.info(f"🧹 SWEEP COMPLETE | {document['symbols_scanned']} symbols | {document['entries_executed']} entries | duration: {document['sweep_duration_sec']:.1f}s")
+            skipped_str = f" | ⏳ {document['batch_cap_skipped']} batch-skipped" if document['batch_cap_skipped'] > 0 else ""
+            self.info(f"🧹 SWEEP COMPLETE | {document['symbols_scanned']} symbols | {document['entries_executed']} entries | duration: {document['sweep_duration_sec']:.1f}s{skipped_str}")
         except Exception as e:
             self.error(f"Failed to log sweep summary: {e}")
 
