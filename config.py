@@ -339,7 +339,7 @@ class Config:
         self.MAX_API_ERRORS_PER_HOUR = int('10')
 
         # ===== Portfolio Profit Ratchet (Phase: Gains Lock) =====
-        self.PROFIT_RATCHET_ENABLED = self._str_to_bool('true')
+        self.PROFIT_RATCHET_ENABLED = self._str_to_bool('false')
         self.PROFIT_RATCHET_ACTIVATION = float('1.0')
         self.PROFIT_RATCHET_TRAILING = float('1.0')
         self.PROFIT_RATCHET_FLOOR = float('1.0')
