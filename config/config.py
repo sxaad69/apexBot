@@ -98,8 +98,27 @@ class Config:
 
         # Market Discovery Sync
         self.FUTURES_PAIRS = 'auto'
-        self.FUTURES_AUTO_TOP_N = int('100')
+        self.FUTURES_AUTO_TOP_N = int('1000')  # Full universe (all qualifying perps)
         self.FUTURES_AUTO_MIN_VOLUME = float('500000')
+        
+        # ===== Full-Universe Scanning (Phase 2) =====
+        self.OHLCV_BATCH_MAX = int('100')  # Max stale-candle refreshes per sweep
+        self.A6_MAX_WATCH_SYMBOLS = int('400')  # Cap A6 orderbook WSS subscriptions
+        
+        # ===== Discovery / Concurrency (Rate-Limit Task 1.5) =====
+        self.DISCOVERY_MAX_WORKERS = int('3')   # Smoother concurrency vs 5
+        
+        # ===== REST Cache TTLs (Rate-Limit Tasks) =====
+        self.OHLCV_CACHE_LOOKAHEAD = True       # Enables candle-TTL caching
+        self.OHLCV_LIMIT = int('210')           # A4 needs max 210 candles (vs 300)
+        self.POSITIONS_CACHE_TTL = float('5.0')
+        self.TICKER_CACHE_TTL = float('5.0')
+        self.BALANCE_CACHE_TTL = float('60.0')
+        self.ORDER_STATUS_CACHE_TTL = float('5.0')
+        self.WHALE_CACHE_TTL = float('60.0')
+        
+        # ===== Global Rate-Limit Budget (Task 1.2) =====
+        self.RATE_LIMIT_MAX_WEIGHT_PER_MIN = int('1500')  # Binance cap is 2400
         
         # Position Boundary Sync
         self.MIN_POSITION_SIZE = float('10.0')  # SETTING FOR TESTNET (Previous Live: 10.0)
@@ -125,7 +144,7 @@ class Config:
         
         # Parallel Execution & Safety Cooldown Configurations
         self.FUTURES_SYMBOL_COOLDOWN_MINUTES = int('15')
-        self.DISCOVERY_MAX_WORKERS = int('5')
+        # DISCOVERY_MAX_WORKERS set above (Task 1.5: 3 workers). Do NOT redefine here.
         
         # Core Mode & Currency (Synched)
         # Core Mode & Currency (Synched)

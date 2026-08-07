@@ -53,6 +53,20 @@ class PaperTradingEngine:
         # 100 symbols every sweep.
         self._ohlcv_cache = {}          # (symbol, tf) -> df
         self._ohlcv_cache_ts = {}       # (symbol, tf) -> last fetch epoch time
+
+        # --- RATE-LIMIT FIX: Order status cache (Task 1.1) ---
+        # check_exits() polls fetch_order(sl_id) + fetch_order(tp_id) every 0.5s
+        # per open position (~1,200 calls/min with 5 positions). Orders don't
+        # fill that fast, so we cache status for a short TTL.
+        self._order_status_cache = {}   # order_id -> (status, timestamp)
+        self._order_status_ttl = getattr(config, 'ORDER_STATUS_CACHE_TTL', 5.0)
+
+        # --- PHASE 2 FIX: OHLCV batch rotation (Task 2.3) ---
+        # On cold start, all ~600 symbols' candles are stale. Refreshing them
+        # all at once would burst the rate limit. We cap stale refreshes per
+        # sweep at OHLCV_BATCH_MAX, rotating through the rest as TTLs expire.
+        self._ohlcv_batch_count = 0
+        self._ohlcv_batch_max = getattr(config, 'OHLCV_BATCH_MAX', 100)
         
         # Initialize WebSocket Manager for high-frequency price awareness
         is_testnet = getattr(config, 'EXCHANGE_ENVIRONMENT', 'live') == 'testnet'
@@ -242,6 +256,14 @@ class PaperTradingEngine:
                     # Binance-specific status check
                     if market_info.get('info', {}).get('status') and market_info['info']['status'] != 'TRADING':
                         continue
+                        
+                    # --- PHASE 2 FIX: Skip TradFi contracts requiring agreement ---
+                    # Binance marks equity/commodity perps (META, LITE, XAU, etc.)
+                    # as contractType='TRADIFI_PERPETUAL'. Trading them returns
+                    # -4411 "you need to sign the agreement" errors. Filter out.
+                    market_type = market_info.get('info', {}).get('contractType', '')
+                    if market_type == 'TRADIFI_PERPETUAL':
+                        continue
 
                 # Skip specific non-trading symbols if necessary
                 if any(x in clean_symbol for x in ['BUSD', 'EUR', 'GBP', 'AUD']):
@@ -323,7 +345,7 @@ class PaperTradingEngine:
         }
         return tf_map.get(str(timeframe).lower(), 900)  # default 15m
 
-    def fetch_market_data(self, symbol='BTC/USDT', timeframe=None, limit=300):
+    def fetch_market_data(self, symbol='BTC/USDT', timeframe=None, limit=None):
         """Fetch market data using CCXT (exchange-agnostic) with OHLCV caching.
 
         RATE-LIMIT FIX: Cached per (symbol, timeframe) for the candle's own
@@ -334,6 +356,9 @@ class PaperTradingEngine:
         """
         if timeframe is None:
             timeframe = self.config.TIMEFRAME
+        if limit is None:
+            # Use config-reduced limit (210) to cut per-call weight (Task 1.5)
+            limit = int(getattr(self.config, 'OHLCV_LIMIT', 210))
 
         # --- CACHE HIT: return cached candles if still within their TTL window ---
         cache_key = (symbol, timeframe)
@@ -342,6 +367,17 @@ class PaperTradingEngine:
         last_fetch = self._ohlcv_cache_ts.get(cache_key, 0)
         if now - last_fetch < ttl_seconds and cache_key in self._ohlcv_cache:
             return self._ohlcv_cache[cache_key]
+
+        # --- PHASE 2 FIX (Task 2.3): Batch rotation cap ---
+        # On cold start, all symbols are stale. Cap stale refreshes per sweep
+        # at OHLCV_BATCH_MAX to avoid bursting the rate limit. Symbols beyond
+        # the cap use stale cache (or None) this sweep; they'll refresh next
+        # sweep as the batch counter resets.
+        if self._ohlcv_batch_count >= self._ohlcv_batch_max:
+            if cache_key in self._ohlcv_cache:
+                return self._ohlcv_cache[cache_key]
+            return None
+        self._ohlcv_batch_count += 1
 
         # Normalize symbol for exchange specificity (e.g. ADA/USDT -> ADA/USDT:USDT if needed)
         try:
@@ -370,6 +406,29 @@ class PaperTradingEngine:
             self.logger.error(f"Error fetching market data for {symbol}: {e}")
             return None
     
+    def _get_cached_order_status(self, order_id: str, symbol: str):
+        """Fetch order status with TTL caching (Task 1.1).
+
+        check_exits() polls fetch_order(sl_id) + fetch_order(tp_id) every 0.5s
+        per open position (~1,200 calls/min with 5 positions). Orders don't
+        fill that fast, so we cache status for a short TTL (default 5s).
+        """
+        now = time.time()
+        cached = self._order_status_cache.get(order_id)
+        if cached and (now - cached[1]) < self._order_status_ttl:
+            return cached[0]
+        try:
+            status = self.exchange.exchange.fetch_order(order_id, symbol)
+            self._order_status_cache[order_id] = (status, now)
+            return status
+        except Exception as e:
+            # On error, fall back to stale cache if available
+            if cached:
+                self.logger.warning(f"Rate-limit / fetch error for order {order_id}: {e}. Using cached status.")
+                return cached[0]
+            self.logger.warning(f"Failed to fetch order {order_id} for {symbol}: {e}")
+            return None
+
     def update_trailing_stops(self, symbol, current_price):
         """Update trailing stops for all positions on a symbol"""
         for position_key, position in list(self.positions.items()):
@@ -1145,10 +1204,10 @@ class PaperTradingEngine:
                 
                 if sl_id or tp_id:
                     try:
-                        # 1. Check SL
+                        # 1. Check SL (TTL-cached to avoid hammering REST every 0.5s)
                         if sl_id:
-                            sl_status = self.exchange.exchange.fetch_order(sl_id, symbol)
-                            if sl_status.get('status') == 'closed':
+                            sl_status = self._get_cached_order_status(sl_id, symbol)
+                            if sl_status and sl_status.get('status') == 'closed':
                                 exchange_exit_triggered = True
                                 exchange_exit_reason = 'stop_loss'
                                 filled_order = sl_status
@@ -1157,10 +1216,10 @@ class PaperTradingEngine:
                                     try: self.exchange.exchange.cancel_order(tp_id, symbol)
                                     except: pass
                         
-                        # 2. Check TP (if SL didn't fill)
+                        # 2. Check TP (if SL didn't fill) — TTL-cached
                         if not exchange_exit_triggered and tp_id:
-                            tp_status = self.exchange.exchange.fetch_order(tp_id, symbol)
-                            if tp_status.get('status') == 'closed':
+                            tp_status = self._get_cached_order_status(tp_id, symbol)
+                            if tp_status and tp_status.get('status') == 'closed':
                                 exchange_exit_triggered = True
                                 exchange_exit_reason = 'take_profit'
                                 filled_order = tp_status
@@ -2421,6 +2480,11 @@ class ApexHunterBot:
                         self.engine.total_capital = float(full_balance.get('USDT', {}).get('total', 0))
                     except Exception as e:
                         self.logger.warning(f"⚠️ Live balance sync failed during sweep: {e}")
+
+                # --- PHASE 2 FIX (Task 2.3): Reset OHLCV batch rotation counter ---
+                # Each sweep resets the cap so different symbols rotate through
+                # refreshes instead of the same first-100 getting priority forever.
+                self.engine._ohlcv_batch_count = 0
 
                 sweep_start_time = time.time()
                 sweep_stats = {

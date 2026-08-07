@@ -64,6 +64,14 @@ class StrategyA6(BaseStrategy):
 
         # WSS Memory tracking (speed advantage over A5's REST calls)
         self.latest_orderbooks = {}
+
+        # --- RATE-LIMIT FIX (Task 1.3): Whale detection TTL cache ---
+        # detect_whales() calls fetch_trades(symbol, limit=100) per imbalance
+        # check. Whale trades in the last 5 min don't change every second, so
+        # we cache the result for 60s to avoid hammering REST.
+        self._whale_cache = {}          # symbol -> result dict
+        self._whale_cache_ts = {}       # symbol -> last fetch epoch time
+        self._whale_cache_ttl = getattr(config, 'WHALE_CACHE_TTL', 60.0)
         
         # Initialize WebSocket client once (Fixes memory leak and high CPU)
         self.wss_exchange = ccxt.pro.binance({
@@ -128,6 +136,20 @@ class StrategyA6(BaseStrategy):
                     await asyncio.sleep(10)
                     continue
 
+                # --- PHASE 2 FIX (Task 2.4): Cap WSS orderbook subscriptions ---
+                # At full-universe (~600 symbols), subscribing to all orderbooks
+                # would choke the WSS connection. Cap at A6_MAX_WATCH_SYMBOLS,
+                # prioritizing open positions + top-volume symbols.
+                max_watch = getattr(self.config, 'A6_MAX_WATCH_SYMBOLS', 400)
+                if len(pairs) > max_watch:
+                    # Prioritize: open positions first, then top-volume (already sorted)
+                    open_symbols = set()
+                    if hasattr(self.logger, 'engine') and self.logger.engine:
+                        open_symbols = {p['symbol'] for p in self.logger.engine.positions.values()}
+                    prioritized = [s for s in pairs if s in open_symbols]
+                    prioritized += [s for s in pairs if s not in open_symbols]
+                    pairs = prioritized[:max_watch]
+
                 for sym in list(active_tasks.keys()):
                     if sym not in pairs:
                         active_tasks[sym].cancel()
@@ -171,8 +193,18 @@ class StrategyA6(BaseStrategy):
             return 0.0
 
     def detect_whales(self, symbol: str) -> Dict:
-        """Detect large institutional trades in the last 5 minutes (REST fallback)."""
+        """Detect large institutional trades in the last 5 minutes (REST fallback).
+
+        RATE-LIMIT FIX (Task 1.3): TTL-cached for 60s per symbol. Whale trades
+        in the last 5 min don't change every second, so re-fetching every
+        imbalance check would hammer REST.
+        """
         try:
+            # --- CACHE HIT: return cached whale data if within TTL ---
+            now = time_module.time()
+            if (now - self._whale_cache_ts.get(symbol, 0)) < self._whale_cache_ttl and symbol in self._whale_cache:
+                return self._whale_cache[symbol]
+
             # Use shared exchange client instead of creating new instances
             if hasattr(self, 'exchange_client') and self.exchange_client:
                 exchange = self.exchange_client.exchange
@@ -209,13 +241,18 @@ class StrategyA6(BaseStrategy):
             buy_whales = [w for w in whale_trades if w['side'] == 'buy']
             sell_whales = [w for w in whale_trades if w['side'] == 'sell']
 
-            return {
+            result = {
                 'count': len(whale_trades),
                 'buy_pressure': len(buy_whales),
                 'sell_pressure': len(sell_whales),
                 'net_pressure': len(buy_whales) - len(sell_whales),
                 'total_value': sum(w['value'] for w in whale_trades)
             }
+
+            # --- CACHE MISS: store result for the TTL window ---
+            self._whale_cache[symbol] = result
+            self._whale_cache_ts[symbol] = now
+            return result
 
         except Exception as e:
             self.logger.debug(f"[A6] Whale detection failed for {symbol}: {e}")

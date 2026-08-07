@@ -6,6 +6,7 @@ Unified exchange client using CCXT library for multi-exchange support
 import ccxt
 from typing import Dict, Any, List, Optional
 from .base_client import BaseExchangeClient
+from .rate_limiter import RateLimiter
 
 
 class CCXTExchangeClient(BaseExchangeClient):
@@ -33,10 +34,16 @@ class CCXTExchangeClient(BaseExchangeClient):
         
         # Initialize CCXT exchange
         self.exchange = self._initialize_exchange()
+
+        # --- RATE-LIMIT FIX (Task 1.2): Global token-bucket safety net ---
+        # Caps total REST weight/min regardless of code path. Binance futures
+        # limit is 2,400 weight/min; we budget 1,500 for headroom.
+        max_weight = getattr(config, 'RATE_LIMIT_MAX_WEIGHT_PER_MIN', 1500)
+        self.rate_limiter = RateLimiter(max_weight_per_min=max_weight, logger=logger)
         
         self.logger.system(
             f"CCXT client initialized: {self.exchange_id} "
-            f"({config.EXCHANGE_ENVIRONMENT})"
+            f"({config.EXCHANGE_ENVIRONMENT}) | Rate limiter: {max_weight}/min"
         )
     
     def _get_credentials(self) -> Dict[str, str]:
@@ -113,12 +120,32 @@ class CCXTExchangeClient(BaseExchangeClient):
             raise
     
     def get_balance(self) -> Dict[str, Any]:
-        """Get account balance"""
+        """Get account balance (rate-limited + TTL-cached 60s).
+
+        RATE-LIMIT FIX (Task 1.4): Called every sweep (~45s) in live mode.
+        Balance doesn't change that fast, so cache for 60s to cut REST calls.
+        """
+        import time as _time
+        now = _time.time()
+        ttl = getattr(self.config, 'BALANCE_CACHE_TTL', 60.0)
+        if (now - getattr(self, '_balance_cache_ts', 0)) < ttl and getattr(self, '_balance_cache', None) is not None:
+            return self._balance_cache
         try:
+            if not self.rate_limiter.acquire(weight=1, timeout=5):
+                # On limiter timeout, fall back to stale cache if available
+                if getattr(self, '_balance_cache', None) is not None:
+                    return self._balance_cache
+                return {}
             balance = self.exchange.fetch_balance()
+            self._balance_cache = balance
+            self._balance_cache_ts = now
             self.logger.debug(f"Fetched balance from {self.exchange_id}")
             return balance
         except Exception as e:
+            # On error, fall back to stale cache if available
+            if getattr(self, '_balance_cache', None) is not None:
+                self.logger.warning(f"Rate-limit / fetch error for balance: {e}. Using cached balance.")
+                return self._balance_cache
             self.logger.error(f"Error fetching balance: {e}", exc_info=True)
             return {}
             
@@ -146,6 +173,11 @@ class CCXTExchangeClient(BaseExchangeClient):
         ttl = getattr(self.config, 'POSITIONS_CACHE_TTL', 5.0)  # 5s default
         if (now - getattr(self, '_positions_cache_ts', 0)) < ttl and getattr(self, '_positions_cache', None) is not None:
             return self._positions_cache
+        if not self.rate_limiter.acquire(weight=5, timeout=5):
+            # On limiter timeout, fall back to stale cache if available
+            if getattr(self, '_positions_cache', None) is not None:
+                return self._positions_cache
+            return []
         try:
             if symbol:
                 positions = self.exchange.fetch_positions([symbol])
@@ -175,6 +207,11 @@ class CCXTExchangeClient(BaseExchangeClient):
         cache_key = f"ticker_{symbol}"
         if (now - getattr(self, '_ticker_cache_ts', {}).get(cache_key, 0)) < ttl and cache_key in getattr(self, '_ticker_cache', {}):
             return self._ticker_cache[cache_key]
+        if not self.rate_limiter.acquire(weight=2, timeout=5):
+            # On limiter timeout, fall back to stale cache if available
+            if hasattr(self, '_ticker_cache') and cache_key in self._ticker_cache:
+                return self._ticker_cache[cache_key]
+            return {}
         try:
             ticker = self.exchange.fetch_ticker(symbol)
             if not hasattr(self, '_ticker_cache'):
