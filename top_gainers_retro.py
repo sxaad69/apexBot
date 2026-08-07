@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 
 # === Runtime window (from DB first entry -> last exit) ===
 WINDOW_START = "2026-08-05T22:25:00"
-WINDOW_END = "2026-08-06T18:55:00"
+WINDOW_END = "2026-08-07T17:00:00"
 
 # === Config mirrors ===
 FUTURES_AUTO_TOP_N = 100          # bot scans top N by 24h volume
