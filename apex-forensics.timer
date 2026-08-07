@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily trigger for Apex Forensics Settlement Audit
+Requires=apex-forensics.service
+
+[Timer]
+# Run daily at 23:55 UTC (after the trading day closes) with a small jitter
+OnCalendar=*-*-* 23:55:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

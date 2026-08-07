@@ -54,9 +54,19 @@ pip install -r requirements.txt
 
 # 5. Create Data Architecture
 echo "📁 Creating data directories..."
-mkdir -p data logs
+mkdir -p data logs data/ohlcv_cache data/reports
 
-# 6. Final Instructions
+# 6. Install systemd units (bot + daily forensics audit)
+echo "⏰ Installing systemd units..."
+sudo cp apex-bot.service /etc/systemd/system/apex-bot.service
+sudo cp apex-forensics.service /etc/systemd/system/apex-forensics.service
+sudo cp apex-forensics.timer /etc/systemd/system/apex-forensics.timer
+sudo systemctl daemon-reload
+sudo systemctl enable apex-forensics.timer
+sudo systemctl start apex-forensics.timer
+echo "✅ apex-forensics.timer enabled (daily 23:55 UTC settle audit)"
+
+# 7. Final Instructions
 echo ""
 echo "===================================================="
 echo "✅ SERVER SETUP COMPLETE!"
@@ -64,5 +74,6 @@ echo "===================================================="
 echo "Next Steps:"
 echo "1. Configure your .env file with production keys."
 echo "2. Run the bot manually to test: source venv/bin/activate && python3 main.py"
-echo "3. (Optional) Setup systemd for 24/7 operation."
+echo "3. Start the bot service:  sudo systemctl enable --now apex-bot.service"
+echo "4. Audit reports land in data/reports/forensics_report_YYYY-MM-DD.json"
 echo "===================================================="

@@ -1,23 +1,37 @@
 #!/usr/bin/env python3
 """
-APEX FORENSICS - Comprehensive Exit Analysis
-=============================================
-Combines TP/SL validation, ride quality, and trailing stop analysis
-into a single forensic tool.
+APEX FORENSICS - Unified Trading Bot Audit Tool
+=================================================
+Three analysis modes in a single tool:
 
-For each closed trade:
-  1. Fetches 1m OHLCV from entry to exit
-  2. Validates TP/SL touches vs actual exit reason
-  3. Measures ride quality (how much of the move was banked in $ terms)
-  4. Analyzes trailing stop effectiveness
-  5. Groups results by exit type with actionable recommendations
+  MODE 1: Exit Forensics (default)
+    For each closed trade: TP/SL validation, ride quality, dollar capture,
+    forward-looking post-exit analysis (4h window), trailing stop effectiveness.
+
+  MODE 2: Top Gainers Retrospective (--toppers)
+    Market's real top gainers/losers during the bot's runtime window,
+    cross-referenced against traded symbols and watchlist.
+
+  MODE 3: Missed Alpha Analysis (--missed-alpha)
+    For signals the bot rejected (strategy/risk filters), measures whether
+    they would have been profitable in the following 4 hours.
+
+  Use --all to run all three modes sequentially.
 
 Usage:
-  python apex_forensics.py --from 2026-08-06 --to 2026-08-07
-  python apex_forensics.py --days 7
-  python apex_forensics.py --summary-only
-  python apex_forensics.py --filter-exit trailing_stop
-  python apex_forensics.py --top 10
+  python audit/apex_forensics.py --from 2026-08-06 --to 2026-08-07
+  python audit/apex_forensics.py --days 7
+  python audit/apex_forensics.py --summary-only
+  python audit/apex_forensics.py --filter-exit RATCHET_LIQUIDATION
+  python audit/apex_forensics.py --toppers --from 2026-08-07
+  python audit/apex_forensics.py --missed-alpha --from 2026-08-07
+  python audit/apex_forensics.py --all --from 2026-08-07
+  python audit/apex_forensics.py --settle              # daily settle → permanent JSON + cache purge (systemd timer)
+  python audit/apex_forensics.py --fetch-only --days 1 # pre-fetch OHLCV into the cache only
+  python audit/apex_forensics.py --purge-cache         # delete all cached OHLCV files
+
+OHLCV is cached per symbol+interval in data/ohlcv_cache (watermark-based: only
+missing deltas are fetched). Reports are written to data/reports/forensics_report_YYYY-MM-DD.json.
 """
 
 import sqlite3
@@ -26,72 +40,193 @@ import time
 import argparse
 import json
 import os
+import random
+import threading
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
+import concurrent.futures
 
 DB_PATH = "data/apex_hunter.db"
-CACHE_DIR = "data/forensics_cache"
+LOG_DB_PATH = "data/activity_log.db"
+CACHE_DIR = "data/ohlcv_cache"
+REPORTS_DIR = "data/reports"
 BINANCE = "https://fapi.binance.com/fapi/v1/klines"
+BINANCE_BASE = "https://fapi.binance.com/fapi/v1"
 
-# In-memory cache loaded from disk
-_cache = {}
+# Rate limiting (global token bucket — protects Binance from hammering)
+RATE_LIMIT_QPS = 10.0   # max requests per second
+MAX_WORKERS = 10        # exploration threadpool
+SETTLE_WORKERS = 8      # settle threadpool (t3.micro friendly)
 
-def _load_cache():
-    global _cache
-    if os.path.exists(CACHE_DIR):
-        for f in os.listdir(CACHE_DIR):
-            if f.endswith(".json"):
-                key = f[:-5]
-                try:
-                    with open(os.path.join(CACHE_DIR, f)) as fh:
-                        _cache[key] = json.load(fh)
-                except:
-                    pass
+# Top Gainers config
+FUTURES_AUTO_TOP_N = 100          # bot scans top N by 24h volume
+FUTURES_AUTO_MIN_VOLUME = 500000  # bot min volume filter
+SCAN_POOL = 300                   # how many top-volume symbols we fetch klines for
 
-def _save_cache(key, data):
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    with open(os.path.join(CACHE_DIR, f"{key}.json"), "w") as f:
-        json.dump(data, f)
+# Interval step sizes (ms per candle)
+INTERVAL_MS = {"1m": 60000, "5m": 300000, "15m": 900000, "1h": 3600000}
 
-def to_binance(db_sym):
-    return db_sym.replace("/USDT:USDT", "USDT")
 
-def fetch_ohlcv(symbol, start_ms, end_ms, interval="1m", use_cache=True):
-    """Fetch OHLCV candles with disk caching and configurable interval"""
-    cache_key = f"{symbol}_{interval}_{start_ms}_{end_ms}"
-    if use_cache and cache_key in _cache:
-        return _cache[cache_key]
+# --- Cache v2: watermark-based incremental OHLCV store -----------------------
+# One file per symbol+interval: data/ohlcv_cache/{SYMBOL}_{INTERVAL}.json
+# { "symbol": ..., "interval": ..., "updated_at": ..., "fetched_until_ms": ..., "candles": [...] }
+# A request is a pure disk read when the file fully covers [start_ms, end_ms].
+# Otherwise only the missing delta is fetched, merged, deduped, and saved.
+# ----------------------------------------------------------------------------
 
-    interval_ms = {"1m": 60000, "5m": 300000, "15m": 900000}
-    step = interval_ms.get(interval, 60000)
+_cache_lock = threading.Lock()
+_rate_lock = threading.Lock()
+_next_request_ok = 0.0
 
+
+def _rate_wait():
+    """Token-bucket rate limiter (global, thread-safe, jittered)."""
+    global _next_request_ok
+    with _rate_lock:
+        now = time.time()
+        wait = _next_request_ok - now
+        if wait > 0:
+            time.sleep(wait + random.uniform(0, 0.02))
+        _next_request_ok = max(now, _next_request_ok) + (1.0 / RATE_LIMIT_QPS)
+
+
+def _load_cache_entry(path):
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+
+
+def _save_cache_entry(path, entry):
+    with _cache_lock:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(entry, fh)
+        os.replace(tmp, path)  # atomic — no partial files
+
+
+def _merge_candles(existing, new):
+    """Merge candle lists, dedupe on open_time, keep sorted."""
+    d = {c[0]: c for c in existing}
+    for c in new:
+        d[c[0]] = c
+    return sorted(d.values(), key=lambda c: c[0])
+
+
+def _fetch_range_raw(symbol, interval, start_ms, end_ms):
+    """Fetch raw klines for [start_ms, end_ms) from Binance, paginated.
+    Returns (candles, verified_until_ms). A checked-but-empty range advances
+    verified_until_ms to end_ms so we never re-ask Binance for it."""
+    step = INTERVAL_MS.get(interval, 60000)
     klines = []
     cursor = start_ms
     while cursor < end_ms:
         params = {"symbol": symbol, "interval": interval, "startTime": cursor, "endTime": end_ms, "limit": 1000}
-        for attempt in range(3):
+        ok = False
+        for attempt in range(4):
             try:
-                r = requests.get(BINANCE, params=params, timeout=10)
+                _rate_wait()
+                r = requests.get(BINANCE, params=params, timeout=15)
+                if r.status_code == 429:
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
                 data = r.json()
                 if isinstance(data, list):
                     if not data:
-                        if use_cache:
-                            _cache[cache_key] = klines
-                            _save_cache(cache_key, klines)
-                        return klines
-                    klines.extend(data)
-                    cursor = data[-1][0] + step
+                        cursor = end_ms  # checked, nothing there
+                    else:
+                        klines.extend(data)
+                        cursor = data[-1][0] + step
+                    ok = True
                     break
-            except:
-                time.sleep(1)
-        else:
-            break
-        time.sleep(0.12)
+                time.sleep(0.5 * (attempt + 1))  # error payload
+            except Exception:
+                time.sleep(1.0 * (attempt + 1))
+        if not ok:
+            break  # give up on this cursor; keep what we have
+    return klines, cursor
 
-    if use_cache:
-        _cache[cache_key] = klines
-        _save_cache(cache_key, klines)
-    return klines
+
+def fetch_ohlcv(symbol, start_ms, end_ms, interval="1m", use_cache=True):
+    """Fetch OHLCV candles with incremental watermark caching.
+    Same signature as before — callers unchanged."""
+    cache_path = os.path.join(CACHE_DIR, f"{symbol}_{interval}.json")
+    entry = _load_cache_entry(cache_path) if use_cache else None
+
+    if entry is None:
+        # Cold start
+        klines, verified = _fetch_range_raw(symbol, interval, start_ms, end_ms)
+        if use_cache:
+            fetched_until = max(verified, (klines[-1][0] + INTERVAL_MS.get(interval, 60000)) if klines else 0)
+            _save_cache_entry(cache_path, {
+                "symbol": symbol,
+                "interval": interval,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "fetched_until_ms": fetched_until,
+                "candles": klines,
+            })
+        return klines
+
+    candles = entry.get("candles") or []
+    fetched_until = entry.get("fetched_until_ms") or 0
+
+    # Fully covered → pure disk read
+    if candles and candles[0][0] <= start_ms and fetched_until >= end_ms:
+        return [c for c in candles if start_ms <= c[0] < end_ms]
+    if not candles and fetched_until >= end_ms:
+        return []  # previously checked this empty range
+
+    new_candles = list(candles)
+
+    # Missing head (earlier than first stored candle)
+    if candles and start_ms < candles[0][0]:
+        head, _ = _fetch_range_raw(symbol, interval, start_ms, candles[0][0])
+        new_candles = _merge_candles(new_candles, head)
+
+    # Missing tail (beyond watermark)
+    tail_start = max(fetched_until, start_ms)
+    if end_ms > tail_start:
+        tail, verified = _fetch_range_raw(symbol, interval, tail_start, end_ms)
+        new_candles = _merge_candles(new_candles, tail)
+        fetched_until = max(fetched_until, verified)
+
+    entry["candles"] = new_candles
+    entry["fetched_until_ms"] = fetched_until
+    entry["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _save_cache_entry(cache_path, entry)
+
+    if not new_candles:
+        return []
+    return [c for c in new_candles if start_ms <= c[0] < end_ms]
+
+
+def purge_cache():
+    """Delete all cached OHLCV files (used after a successful settle)."""
+    if os.path.exists(CACHE_DIR):
+        removed = 0
+        for f in os.listdir(CACHE_DIR):
+            if f.endswith(".json"):
+                try:
+                    os.remove(os.path.join(CACHE_DIR, f))
+                    removed += 1
+                except OSError:
+                    pass
+        return removed
+    return 0
+
+
+def cache_file_count():
+    if not os.path.exists(CACHE_DIR):
+        return 0
+    return sum(1 for f in os.listdir(CACHE_DIR) if f.endswith(".json"))
+
+
+def to_binance(db_sym):
+    return db_sym.replace("/USDT:USDT", "USDT")
 
 
 def audit_trade(t):
@@ -287,6 +422,474 @@ def audit_trade(t):
     return findings
 
 
+# ============================================================================
+# MODE 2: Top Gainers Retrospective
+# ============================================================================
+
+def fetch_tickers():
+    """Fetch 24h ticker data from Binance futures (rate-limited)."""
+    _rate_wait()
+    try:
+        r = requests.get(f"{BINANCE_BASE}/ticker/24hr", timeout=20)
+        if r.status_code == 429:
+            time.sleep(5)
+            _rate_wait()
+            r = requests.get(f"{BINANCE_BASE}/ticker/24hr", timeout=20)
+        data = r.json()
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def compute_window_change(symbol, start_ms, end_ms):
+    """Return (symbol, pct_change, open_price) or None using cached 1h OHLCV."""
+    kl = fetch_ohlcv(symbol, start_ms, end_ms, interval="1h")
+    if not kl:
+        return None
+    first_open = float(kl[0][1])
+    last_close = float(kl[-1][4])
+    if first_open <= 0:
+        return None
+    pct = (last_close - first_open) / first_open * 100
+    return (symbol, round(pct, 2), round(first_open, 8))
+
+
+def get_traded_symbols(start_ms, end_ms):
+    """Return {base_symbol: [trade_rows]} from the DB within [start_ms, end_ms]."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    start_str = datetime.fromtimestamp(start_ms / 1000).strftime("%Y-%m-%d")
+    end_str = datetime.fromtimestamp(end_ms / 1000).strftime("%Y-%m-%d")
+    rows = conn.execute(
+        "SELECT symbol, side, entry_time, exit_time, pnl_amount, pnl_percent, status, reason "
+        "FROM trades WHERE entry_time >= ? AND entry_time <= ? ORDER BY entry_time",
+        (start_str, end_str),
+    ).fetchall()
+    conn.close()
+    traded = {}
+    for r in rows:
+        base = r["symbol"].split("/")[0]
+        traded.setdefault(base, []).append(dict(r))
+    return traded
+
+
+def run_toppers_analysis(args):
+    """Analyze top market gainers during the trading period"""
+    print("\n" + "="*120)
+    print("MODE 2: TOP GAINERS RETROSPECTIVE")
+    print("="*120)
+    
+    # Determine time window (UTC-consistent)
+    start_ms, end_ms = resolve_window_ms(args)
+
+    
+    print(f"Window: {datetime.fromtimestamp(start_ms/1000).strftime('%Y-%m-%d')} to {datetime.fromtimestamp(end_ms/1000).strftime('%Y-%m-%d')}")
+    
+    # Get top volume symbols
+    print("\nFetching top 300 symbols by volume...")
+    tickers = fetch_tickers()
+    if not tickers:
+        print("⚠️ Failed to fetch tickers")
+        return
+    
+    # Filter and sort by volume
+    volume_sorted = []
+    for t in tickers:
+        sym = t.get('symbol', '')
+        if not sym.endswith('USDT'):
+            continue
+        if any(x in sym for x in ['BUSD', 'EUR', 'GBP', 'AUD', 'USDC']):
+            continue
+        try:
+            vol = float(t.get('quoteVolume', 0) or 0)
+            last = float(t.get('lastPrice', 0) or 0)
+        except (ValueError, TypeError):
+            continue
+        if vol < FUTURES_AUTO_MIN_VOLUME:
+            continue
+        volume_sorted.append({'symbol': sym, 'volume': vol, 'last': last})
+    
+    volume_sorted.sort(key=lambda x: x['volume'], reverse=True)
+    top_n_set = {p['symbol'] for p in volume_sorted[:FUTURES_AUTO_TOP_N]}
+    print(f"Total USDT perps above ${FUTURES_AUTO_MIN_VOLUME:,}: {len(volume_sorted)}")
+    
+    # Fetch klines for scan pool
+    scan_symbols = [p['symbol'] for p in volume_sorted[:SCAN_POOL]]
+    print(f"Computing window % change for {len(scan_symbols)} symbols (1h OHLCV)...")
+    
+    # Parallel fetch
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {executor.submit(compute_window_change, s, start_ms, end_ms): s for s in scan_symbols}
+        for f in concurrent.futures.as_completed(futures):
+            res = f.result()
+            if res:
+                results.append(res)
+    
+    if not results:
+        print("⚠️ No data fetched")
+        return
+    
+    results.sort(key=lambda x: x[1], reverse=True)
+    gainers = results[:20]
+    losers = results[-10:]
+    
+    # Get traded symbols
+    traded = get_traded_symbols(start_ms, end_ms)
+    print(f"Bot traded symbols: {len(traded)}")
+    
+    # Flag function
+    def flag(symbol):
+        base = symbol[:-4] if symbol.endswith("USDT") else symbol
+        if base in traded:
+            trades = traded[base]
+            pnl = sum(t['pnl_amount'] or 0 for t in trades)
+            return f"✅ TRADED ({len(trades)}x, P&L ${pnl:+.2f})"
+        if symbol in top_n_set:
+            return "👀 WATCHED (top-100 vol) — no trade"
+        return "❌ MISSED (below top-100 by volume)"
+    
+    # Count coverage
+    traded_count = sum(1 for sym, _, _ in gainers if flag(sym).startswith("✅"))
+    watched_count = sum(1 for sym, _, _ in gainers if "WATCHED" in flag(sym))
+    missed_count = sum(1 for sym, _, _ in gainers if "MISSED" in flag(sym))
+    
+    print(f"\nTOP-20 COVERAGE: {traded_count} traded | {watched_count} watched | {missed_count} missed")
+    
+    print("\n" + "-"*120)
+    print("🏆 TOP 20 GAINERS over the bot's runtime window")
+    print("-"*120)
+    print(f"{'#':<4}{'SYMBOL':<14}{'%Change':>9}{'Open $':>16}  {'Bot Status'}")
+    print("-"*120)
+    for i, (sym, pct, opn) in enumerate(gainers, 1):
+        print(f"{i:<4}{sym:<14}{pct:>+8.2f}%{opn:>16.6f}  {flag(sym)}")
+    
+    print("\n" + "-"*120)
+    print("🔻 TOP 10 LOSERS over the bot's runtime window")
+    print("-"*120)
+    print(f"{'#':<4}{'SYMBOL':<14}{'%Change':>9}{'Open $':>16}  {'Bot Status'}")
+    print("-"*120)
+    for i, (sym, pct, opn) in enumerate(losers, 1):
+        print(f"{i:<4}{sym:<14}{pct:>+8.2f}%{opn:>16.6f}  {flag(sym)}")
+    
+    print("\n" + "="*120)
+
+    return {
+        "scan_pool": len(scan_symbols),
+        "analyzed": len(results),
+        "top_gainers": [{"symbol": s, "pct_change": p, "open": o, "status": flag(s)} for s, p, o in gainers],
+        "top_losers": [{"symbol": s, "pct_change": p, "open": o, "status": flag(s)} for s, p, o in losers],
+        "coverage": {"traded": traded_count, "watched": watched_count, "missed": missed_count},
+    }
+
+
+# ============================================================================
+# MODE 3: Missed Alpha Analysis (rejected signals)
+# ============================================================================
+
+def _parse_ts_ms(ts_str):
+    """Parse SQLite/ISO timestamp to epoch ms (UTC). Returns None on failure."""
+    if not ts_str:
+        return None
+    try:
+        return int(datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp() * 1000)
+    except ValueError:
+        try:
+            return int(datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp() * 1000)
+        except Exception:
+            return None
+
+
+def analyze_rejection_fx(rej):
+    """Measure a rejected signal against the following 4h move (cached 1m OHLCV)."""
+    symbol = to_binance(rej.get("symbol", ""))
+    start_ms = _parse_ts_ms(rej.get("timestamp"))
+    if not symbol or not start_ms:
+        return None
+    end_ms = start_ms + 4 * 3600 * 1000
+
+    kl = fetch_ohlcv(symbol, start_ms, end_ms, interval="1m")
+    if not kl:
+        return None
+
+    highs = [float(c[2]) for c in kl]
+    lows = [float(c[3]) for c in kl]
+
+    entry = float(rej.get("entry_price") or 0)
+    if entry <= 0:
+        entry = float(kl[0][1])  # strategy skip → use first candle open
+    if entry <= 0:
+        return None
+
+    side = (rej.get("side") or "all").lower()
+    if side == "buy":
+        potential_pnl = (max(highs) - entry) / entry * 100
+        max_draw = (min(lows) - entry) / entry * 100
+    elif side == "sell":
+        potential_pnl = (entry - min(lows)) / entry * 100
+        max_draw = (entry - max(highs)) / entry * 100
+    else:
+        # Direction unknown → best of both legs
+        long_pnl = (max(highs) - entry) / entry * 100
+        short_pnl = (entry - min(lows)) / entry * 100
+        if long_pnl >= short_pnl:
+            potential_pnl = long_pnl
+            max_draw = (min(lows) - entry) / entry * 100
+        else:
+            potential_pnl = short_pnl
+            max_draw = (entry - max(highs)) / entry * 100
+
+    return {
+        "symbol": rej.get("symbol"),
+        "timestamp": rej.get("timestamp"),
+        "strategy": rej.get("strategy"),
+        "side": side,
+        "reason": rej.get("reason"),
+        "layer": rej.get("layer"),
+        "confidence": rej.get("confidence"),
+        "potential_pnl": round(potential_pnl, 2),
+        "max_drawdown": round(max_draw, 2),
+    }
+
+
+def run_missed_alpha_analysis(args):
+    """Analyze rejected signals and measure foregone profit in the 4h after each."""
+    print("\n" + "="*120)
+    print("MODE 3: MISSED ALPHA ANALYSIS (REJECTED SIGNALS)")
+    print("="*120)
+
+    if not os.path.exists(LOG_DB_PATH):
+        print("⚠️ activity_log.db not found — skipping Mode 3")
+        return {"error": "no log db"}
+
+    # Window filters
+    where = []
+    params = []
+    if args.from_date:
+        where.append("timestamp >= ?")
+        params.append(args.from_date)
+    if args.to_date:
+        where.append("timestamp <= ?")
+        params.append(args.to_date + " 23:59:59")
+
+    conn = sqlite3.connect(LOG_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    if where:
+        rows = conn.execute(f"SELECT * FROM rejections WHERE {' AND '.join(where)} ORDER BY timestamp DESC", params).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM rejections ORDER BY timestamp DESC").fetchall()
+    conn.close()
+
+    if not rows:
+        print("ℹ️ No rejections found in database.")
+        return {"error": "no rejections"}
+
+    print(f"Found {len(rows)} rejected signals. Measuring 4h alpha for each...")
+
+    results = []
+    for rej in rows:
+        r = analyze_rejection_fx(dict(rej))
+        if r:
+            results.append(r)
+
+    if not results:
+        print("⚠️ No analyzable rejections (missing OHLCV data).")
+        return {"error": "no data"}
+
+    results.sort(key=lambda x: x["potential_pnl"], reverse=True)
+    winners = [r for r in results if r["potential_pnl"] > 1.0]
+    missed_total = sum(r["potential_pnl"] for r in winners)
+
+    print(f"\nAnalyzed {len(results)} rejections | {len(winners)} moved >1% in 4h | total missed alpha: {missed_total:+.2f}%\n")
+
+    # Impact maps by category and layer
+    impact = {"STRATEGY": {}, "RISK": {}, "OTHER": {}}
+    for r in results:
+        category = "STRATEGY" if "STRATEGY" in str(r["reason"]) else ("RISK" if "RISK" in str(r["reason"]) else "OTHER")
+        layer = r["layer"] or "unknown"
+        stats = impact[category].setdefault(layer, {"count": 0, "winners": 0, "missed_alpha": 0.0})
+        stats["count"] += 1
+        if r["potential_pnl"] > 1.0:
+            stats["winners"] += 1
+            stats["missed_alpha"] += r["potential_pnl"]
+
+    print("-"*120)
+    print(f"{'Timestamp':<20} | {'Type':<9} | {'Layer/Filter':<20} | {'Symbol':<14} | {'Side':<5} | {'Max ROI':>8} | {'Max Draw':>8}")
+    print("-"*120)
+    for r in results[:20]:
+        e_type = "STRATEGY" if "STRATEGY" in str(r["reason"]) else ("RISK" if "RISK" in str(r["reason"]) else "OTHER")
+        print(f"{str(r['timestamp']):<20} | {e_type:<9} | {str(r['layer']):<20} | {str(r['symbol']):<14} | {r['side'].upper():<5} | {r['potential_pnl']:>+7.2f}% | {r['max_drawdown']:>+7.2f}%")
+
+    for category in ["STRATEGY", "RISK", "OTHER"]:
+        print(f"\n🛡️ {category} FRICTION ANALYSIS")
+        print("-"*80)
+        print(f"{'Layer/Filter':<30} | {'Events':<10} | {'Winners':<8} | {'Avg Missed ROI':>14}")
+        print("-"*80)
+        cat_stats = impact[category]
+        if not cat_stats:
+            print("   No events found.")
+            continue
+        for layer, stats in sorted(cat_stats.items(), key=lambda x: x[1]["missed_alpha"], reverse=True):
+            avg_alpha = (stats["missed_alpha"] / stats["winners"]) if stats["winners"] > 0 else 0
+            print(f"{layer:<30} | {stats['count']:<10} | {stats['winners']:<8} | {avg_alpha:>+13.2f}%")
+
+    print("\n💡 STRATEGIC ADVISORY:")
+    strat_bottleneck = max(impact["STRATEGY"].items(), key=lambda x: x[1]["missed_alpha"], default=(None, None))[0]
+    if strat_bottleneck:
+        print(f"⚠️  {strat_bottleneck} is causing the most strategy silence — consider loosening ADX/ATR thresholds.")
+    risk_bottleneck = max(impact["RISK"].items(), key=lambda x: x[1]["missed_alpha"], default=(None, None))[0]
+    if risk_bottleneck:
+        print(f"⚠️  {risk_bottleneck} is your primary risk veto — review max positions/correlation tightness.")
+    if not strat_bottleneck and not risk_bottleneck:
+        print("✅ Bot is well-tuned. No significant missed alpha found.")
+
+    print("\n" + "="*120)
+
+    return {
+        "analyzed": len(results),
+        "winners": len(winners),
+        "missed_total_pct": round(missed_total, 2),
+        "top_events": results[:20],
+        "friction": {c: impact[c] for c in impact},
+    }
+
+
+# ============================================================================
+# Settle pipeline & cache warmers
+# ============================================================================
+
+def resolve_window_ms(args):
+    """Resolve analysis window to (start_ms, end_ms) using args, defaulting to 7d."""
+    if args.from_date:
+        start_ms = int(datetime.strptime(args.from_date, "%Y-%m-%d").timestamp() * 1000)
+    elif args.days:
+        start_ms = int((datetime.now(timezone.utc) - timedelta(days=args.days)).timestamp() * 1000)
+    else:
+        start_ms = int((datetime.now(timezone.utc) - timedelta(days=7)).timestamp() * 1000)
+    if args.to_date:
+        end_ms = int(datetime.strptime(args.to_date, "%Y-%m-%d").timestamp() * 1000) + 86400000
+    else:
+        end_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    return start_ms, end_ms
+
+
+def run_fetch_only(args):
+    """Pre-fetch OHLCV into the cache without running any analysis."""
+    print("\n⏳ FETCH-ONLY: warming OHLCV cache...")
+    start_ms, end_ms = resolve_window_ms(args)
+    start_str = datetime.fromtimestamp(start_ms / 1000).strftime("%Y-%m-%d")
+    end_str = datetime.fromtimestamp(end_ms / 1000).strftime("%Y-%m-%d")
+    print(f"   Window: {start_str} → {end_str}")
+
+    # 1) Scan-pool symbols: 1h klines (Mode 2 needs these)
+    tickers = fetch_tickers()
+    scan_syms = []
+    if tickers:
+        volume_sorted = []
+        for t in tickers:
+            sym = t.get("symbol", "")
+            if not sym.endswith("USDT"):
+                continue
+            if any(x in sym for x in ["BUSD", "EUR", "GBP", "AUD", "USDC"]):
+                continue
+            try:
+                vol = float(t.get("quoteVolume", 0) or 0)
+            except (ValueError, TypeError):
+                continue
+            if vol >= FUTURES_AUTO_MIN_VOLUME:
+                volume_sorted.append((sym, vol))
+        volume_sorted.sort(key=lambda x: x[1], reverse=True)
+        scan_syms = [s for s, _ in volume_sorted[:SCAN_POOL]]
+        print(f"   Fetching 1h OHLCV for {len(scan_syms)} scan-pool symbols...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+            list(ex.map(lambda s: fetch_ohlcv(s, start_ms, end_ms, "1h"), scan_syms))
+
+    # 2) Traded symbols: 1m + 5m klines (Modes 1 & 3 need these)
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT DISTINCT symbol FROM trades WHERE entry_time >= ? AND entry_time <= ?",
+        (start_str, end_str),
+    ).fetchall()
+    conn.close()
+    traded_syms = [to_binance(r[0]) for r in rows]
+    for interval in ("1m", "5m"):
+        print(f"   Fetching {interval} OHLCV for {len(traded_syms)} traded symbols...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+            list(ex.map(lambda s, iv=interval: fetch_ohlcv(s, start_ms, end_ms, iv), traded_syms))
+
+    print(f"   ✅ Cache warmed: {cache_file_count()} files in {CACHE_DIR}")
+
+
+def run_settle(args):
+    """Daily settle pipeline: run all 3 modes, write a permanent JSON report, purge cache."""
+    print("\n" + "="*120)
+    print("⚙️  DAILY SETTLE PIPELINE")
+    print("="*120)
+
+    if args.from_date:
+        start_date = args.from_date
+    else:
+        start_date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    if args.to_date:
+        end_date = args.to_date
+    else:
+        end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Normalize mode windows to the settle period so all 3 modes agree
+    import copy
+    mode_args = copy.copy(args)
+    mode_args.from_date = start_date
+    mode_args.to_date = end_date
+
+    os.makedirs(REPORTS_DIR, exist_ok=True)
+    report_path = os.path.join(REPORTS_DIR, f"forensics_report_{end_date}.json")
+
+    payload = {
+        "report_date": end_date,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "period": {"from": start_date, "to": end_date},
+        "modes": {},
+        "summary": {},
+    }
+
+    mode1 = run_exit_forensics(mode_args)
+    mode2 = run_toppers_analysis(mode_args)
+    mode3 = run_missed_alpha_analysis(mode_args)
+
+    payload["modes"]["exit_forensics"] = mode1 if isinstance(mode1, dict) else {}
+    payload["modes"]["top_gainers"] = mode2 if isinstance(mode2, dict) else {}
+    payload["modes"]["missed_alpha"] = mode3 if isinstance(mode3, dict) else {}
+
+    # Cross-mode executive summary
+    summary = {}
+    if isinstance(mode1, dict) and mode1.get("results"):
+        r = mode1["results"]
+        summary["trades_audited"] = len(r)
+        summary["avg_exit_pnl"] = round(sum(x["exit_pnl"] for x in r) / len(r), 2)
+        summary["missed_continuation_total"] = round(sum(x.get("continuation", 0) for x in r if x.get("continuation", 0) > 0), 2)
+    if isinstance(mode2, dict) and mode2.get("top_gainers"):
+        summary["top_gainers"] = mode2["top_gainers"][:10]
+        summary["top_losers"] = mode2["top_losers"][:5]
+        summary["coverage"] = mode2.get("coverage")
+    if isinstance(mode3, dict) and "analyzed" in mode3:
+        summary["missed_alpha"] = {k: mode3.get(k) for k in ("analyzed", "winners", "missed_total_pct")}
+    payload["summary"] = summary
+
+    # Atomic write
+    tmp = report_path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(payload, fh, indent=2, default=str)
+    os.replace(tmp, report_path)
+
+    removed = purge_cache()
+    print("\n" + "="*120)
+    print("✅ SETTLE COMPLETE")
+    print(f"   Report:   {report_path}")
+    print(f"   Cache:    {removed} files purged")
+    print(f"   Summary:  {json.dumps(summary, indent=2, default=str)}")
+    print("="*120)
+
+
 def main():
     parser = argparse.ArgumentParser(description="APEX Forensics - Comprehensive Exit Analysis")
     parser.add_argument("--from", dest="from_date", help="Start date (YYYY-MM-DD)")
@@ -296,9 +899,44 @@ def main():
     parser.add_argument("--filter-exit", help="Filter by exit reason (e.g., trailing_stop, TAKE_PROFIT)")
     parser.add_argument("--top", type=int, help="Show only top N trades by PnL")
     parser.add_argument("--limit", type=int, help="Limit number of trades to analyze")
+    parser.add_argument("--toppers", action="store_true", help="Run Top Gainers Retrospective analysis")
+    parser.add_argument("--missed-alpha", action="store_true", help="Run Missed Alpha Analysis (rejected signals)")
+    parser.add_argument("--all", action="store_true", help="Run all three analysis modes sequentially")
+    parser.add_argument("--settle", action="store_true", help="Run full daily settle pipeline and write permanent JSON report")
+    parser.add_argument("--purge-cache", action="store_true", help="Delete all cached OHLCV files")
+    parser.add_argument("--fetch-only", action="store_true", help="Pre-fetch market data into cache without running analysis")
     
     args = parser.parse_args()
 
+    # --- Utility / settle entry points ---
+    if args.purge_cache:
+        removed = purge_cache()
+        print(f"🧹 Purged {removed} cached OHLCV files from {CACHE_DIR}")
+        return
+
+    if args.settle:
+        run_settle(args)
+        return
+
+    if args.fetch_only:
+        run_fetch_only(args)
+        return
+
+    # --- Mode dispatch ---
+    run_mode1 = args.all or not (args.toppers or args.missed_alpha)
+    if args.all or args.toppers:
+        run_toppers_analysis(args)
+    if args.all or args.missed_alpha:
+        run_missed_alpha_analysis(args)
+    if run_mode1:
+        run_exit_forensics(args)
+
+
+# ============================================================================
+# MODE 1: Exit Forensics
+# ============================================================================
+
+def run_exit_forensics(args):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -344,7 +982,7 @@ def main():
 
     if not trades:
         print("No closed trades found for the specified period.")
-        return
+        return {"error": "no closed trades"}
 
     print(f"{'='*120}")
     print(f"  APEX FORENSICS - Comprehensive Exit Analysis ({len(trades)} trades)")
@@ -356,11 +994,10 @@ def main():
         print(f"  Filter: Exit reason = {args.filter_exit}")
     print(f"{'='*120}")
 
-    # Load OHLCV cache from disk
-    _load_cache()
-    cached_count = len(_cache)
+    # OHLCV cache (v2 watermark store) is on disk and reused automatically
+    cached_count = cache_file_count()
     if cached_count > 0:
-        print(f"  📦 Loaded {cached_count} cached OHLCV files (skipping API calls for cached data)")
+        print(f"  📦 {cached_count} cached OHLCV files on disk (skipping API calls for covered ranges)")
 
     # Analyze all trades
     results = []
@@ -505,6 +1142,19 @@ def main():
         print(f"  {reason:<20} {count:3d} trades | Avg PnL: {avg_pnl:+6.2f}% | Win Rate: {wins/count*100:5.1f}% | Avg Ride: {avg_ride:5.1f}%")
 
     print(f"{'='*120}")
+
+    # Structured output for settle pipeline
+    summary = {
+        "trades_analyzed": len(results),
+        "failed": failed,
+        "avg_exit_pnl": round(sum(r["exit_pnl"] for r in results) / len(results), 2) if results else 0,
+        "win_rate": round(sum(1 for r in results if r["exit_pnl"] > 0) / len(results) * 100, 1) if results else 0,
+        "tp_reached": tp_reached,
+        "sl_reached": sl_reached,
+        "good_captures": good_captures,
+        "better_exits": better_exits,
+    }
+    return {"summary": summary, "results": results}
 
 
 if __name__ == "__main__":
