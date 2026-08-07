@@ -13,8 +13,8 @@ EnvironmentFile=/home/ubuntu/apexBot/.env
 ExecStart=/home/ubuntu/apexBot/venv/bin/python3 audit/apex_forensics.py --settle
 Restart=on-failure
 RestartSec=30
-StandardOutput=syslog
-StandardError=syslog
+StandardOutput=journal
+StandardError=journal
 SyslogIdentifier=apex-forensics
 
 [Install]
