@@ -29,9 +29,12 @@ Usage:
   python audit/apex_forensics.py --settle              # daily settle → permanent JSON + cache purge (systemd timer)
   python audit/apex_forensics.py --fetch-only --days 1 # pre-fetch OHLCV into the cache only
   python audit/apex_forensics.py --purge-cache         # delete all cached OHLCV files
+  python audit/apex_forensics.py --cache-status        # show which ranges are already cached
 
 OHLCV is cached per symbol+interval in data/ohlcv_cache (watermark-based: only
-missing deltas are fetched). Reports are written to data/reports/forensics_report_YYYY-MM-DD.json.
+missing deltas are fetched; coverage is recorded per file via fetched_until_ms and
+the first candle timestamp — `--cache-status` prints it). Reports are written to
+data/reports/forensics_report_YYYY-MM-DD.json.
 """
 
 import sqlite3
@@ -223,6 +226,39 @@ def cache_file_count():
     if not os.path.exists(CACHE_DIR):
         return 0
     return sum(1 for f in os.listdir(CACHE_DIR) if f.endswith(".json"))
+
+
+def cache_status():
+    """Print per-symbol+interval coverage: what has already been processed."""
+    files = sorted(f for f in os.listdir(CACHE_DIR) if f.endswith(".json")) if os.path.exists(CACHE_DIR) else []
+    if not files:
+        print("Cache is empty — nothing processed yet.")
+        return
+
+    def ts(ms):
+        return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M") if ms else "-"
+
+    print(f"{CACHE_DIR} — {len(files)} file(s) on disk\n")
+    print(f"{'File':<30}{'Candles':>9}{'Covered from':>19}{'Fetched until':>19}  Last updated")
+    print("-" * 110)
+    for f in files:
+        path = os.path.join(CACHE_DIR, f)
+        try:
+            with open(path) as fh:
+                e = json.load(fh)
+        except Exception:
+            print(f"{f:<30}{'corrupt':>9}")
+            continue
+        candles = e.get("candles") or []
+        fu = e.get("fetched_until_ms") or 0
+        upd = (e.get("updated_at") or "")[:19]
+        if candles:
+            print(f"{f:<30}{len(candles):>9}{ts(candles[0][0]):>19}{ts(fu):>19}  {upd}")
+        else:
+            print(f"{f:<30}{0:>9}{'-':>19}{ts(fu):>19}  {upd}")
+    print("\nCoverage rule: a request is served from disk (no API call) when its\n"
+          "range falls inside [Covered from, Fetched until]. Missing deltas are\n"
+          "fetched and merged on demand.")
 
 
 def to_binance(db_sym):
@@ -905,6 +941,7 @@ def main():
     parser.add_argument("--settle", action="store_true", help="Run full daily settle pipeline and write permanent JSON report")
     parser.add_argument("--purge-cache", action="store_true", help="Delete all cached OHLCV files")
     parser.add_argument("--fetch-only", action="store_true", help="Pre-fetch market data into cache without running analysis")
+    parser.add_argument("--cache-status", action="store_true", help="Show what OHLCV ranges are already cached (processed)")
     
     args = parser.parse_args()
 
@@ -920,6 +957,10 @@ def main():
 
     if args.fetch_only:
         run_fetch_only(args)
+        return
+
+    if args.cache_status:
+        cache_status()
         return
 
     # --- Mode dispatch ---
