@@ -1244,6 +1244,26 @@ class PaperTradingEngine:
                                 self.logger.info(f"🎯 HARD TP PLACED: {sl_side.upper()} {symbol} @ {tp_price} (algoId: {tp_order_id})")
                             else:
                                 self.logger.warning(f"⚠️ Failed to place hard Take Profit on exchange for {symbol}. Bot safety logic still active.")
+
+                            # --- SAFETY INVARIANT ---
+                            # Trust the exchange ONLY if it fully protects the position:
+                            # the hard STOP_MARKET must be live too. If the hard SL failed,
+                            # the exchange does NOT cover the pre-activation downside, so the
+                            # bot must be the sole authority. Cancel any exchange trailing/TP
+                            # we just placed to avoid double-management, and keep the bot-side
+                            # sentinel fully active for this position.
+                            if exchange_trailing and not sl_order_id:
+                                self.logger.warning(
+                                    f"⚠️ HARD SL FAILED for {symbol} but trailing placed — exchange is NOT fully protecting "
+                                    f"this position. Cancelling exchange trailing/TP; bot sentinel takes full control."
+                                )
+                                if trailing_order_id:
+                                    self._cancel_exchange_conditional(symbol, trailing_order_id)
+                                if tp_order_id:
+                                    self._cancel_exchange_conditional(symbol, tp_order_id)
+                                trailing_order_id = None
+                                tp_order_id = None
+                                exchange_trailing = False
                         
                         # 5. Save order IDs + exchange_trailing flag to the DB (Trade Manager)
                         if sl_order_id or tp_order_id or trailing_order_id:
