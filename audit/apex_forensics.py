@@ -500,12 +500,14 @@ def get_traded_symbols(start_ms, end_ms):
     """Return {base_symbol: [trade_rows]} from the DB within [start_ms, end_ms]."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    start_str = datetime.fromtimestamp(start_ms / 1000).strftime("%Y-%m-%d")
-    end_str = datetime.fromtimestamp(end_ms / 1000).strftime("%Y-%m-%d")
+    # entry_time is stored as full ISO timestamps — compare against ISO bounds,
+    # not date-only strings (a date-only '<= YYYY-MM-DD' excludes all that day).
+    start_iso = datetime.fromtimestamp(start_ms / 1000).isoformat()
+    end_iso = datetime.fromtimestamp(end_ms / 1000).isoformat()
     rows = conn.execute(
         "SELECT symbol, side, entry_time, exit_time, pnl_amount, pnl_percent, status, reason "
         "FROM trades WHERE entry_time >= ? AND entry_time <= ? ORDER BY entry_time",
-        (start_str, end_str),
+        (start_iso, end_iso),
     ).fetchall()
     conn.close()
     traded = {}
