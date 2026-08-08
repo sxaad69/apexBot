@@ -517,6 +517,76 @@ def get_traded_symbols(start_ms, end_ms):
     return traded
 
 
+# Sweep-JSON rejection reasons that are structural/noise rather than tradeable
+# signals — excluded from missed-alpha analysis and watch-status classification.
+SWEEP_NOISE_REASONS = {
+    "STABLECOIN_FILTER",
+    "SHORT_DISABLED_BY_CONFIG",
+    "WAITING_FOR_WSS_DATA",
+    "FILTER_VOLUME",
+    "UNIVERSAL_FILTER_VOLUME",
+}
+
+
+def get_sweep_records(start_ms, end_ms):
+    """Parse sweep_summary JSONs from activity_log.db within [start_ms, end_ms].
+
+    Returns (rejections, scanned):
+      rejections: list of {timestamp, symbol, strategy, reason, layer} — deduped to
+                  the earliest occurrence per (symbol, reason). These are the bot's
+                  ACTUAL strategy/filter rejections (the real "why wasn't it traded").
+      scanned:    {base_symbol: set(reasons)} — every symbol the bot scanned in sweeps.
+    """
+    if not os.path.exists(LOG_DB_PATH):
+        return [], {}
+    conn = sqlite3.connect(LOG_DB_PATH)
+    try:
+        rows = conn.execute(
+            "SELECT metadata FROM activity_log WHERE type='sweep_summary'"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    start_iso = datetime.fromtimestamp(start_ms / 1000).isoformat()
+    end_iso = datetime.fromtimestamp(end_ms / 1000).isoformat()
+
+    earliest = {}          # (symbol, reason) -> record
+    scanned = defaultdict(set)  # base -> set(reasons)
+
+    for (meta,) in rows:
+        if not meta:
+            continue
+        try:
+            d = json.loads(meta)
+        except (ValueError, TypeError):
+            continue
+        ts = str(d.get("timestamp") or "")
+        if not (start_iso <= ts <= end_iso):
+            continue
+        for strategy, rmap in (d.get("strategy_rejections") or {}).items():
+            for reason, syms in (rmap or {}).items():
+                for sym in syms:
+                    base = sym.split("/")[0]
+                    scanned[base].add(reason)
+                    key = (sym, reason)
+                    if key not in earliest:
+                        earliest[key] = {
+                            "timestamp": ts,
+                            "symbol": sym,
+                            "strategy": strategy,
+                            "reason": reason,
+                            "layer": "STRATEGY_FILTER",
+                        }
+
+    # Drop structural/noise reasons from both structures
+    rejections = [r for r in earliest.values() if r["reason"] not in SWEEP_NOISE_REASONS]
+    scanned = {
+        base: {r for r in reasons if r not in SWEEP_NOISE_REASONS}
+        for base, reasons in scanned.items()
+    }
+    return rejections, scanned
+
+
 def run_toppers_analysis(args):
     """Analyze top market gainers during the trading period"""
     print("\n" + "="*120)
@@ -581,14 +651,21 @@ def run_toppers_analysis(args):
     # Get traded symbols
     traded = get_traded_symbols(start_ms, end_ms)
     print(f"Bot traded symbols: {len(traded)}")
-    
-    # Flag function
+
+    # Get actual sweep data — which symbols the bot scanned and why it rejected them
+    _, scanned = get_sweep_records(start_ms, end_ms)
+    print(f"Bot scanned symbols (sweep data): {len(scanned)}")
+
+    # Flag function — prioritize real bot behavior (sweeps), then volume-based fallback
     def flag(symbol):
         base = symbol[:-4] if symbol.endswith("USDT") else symbol
         if base in traded:
             trades = traded[base]
             pnl = sum(t['pnl_amount'] or 0 for t in trades)
             return f"✅ TRADED ({len(trades)}x, P&L ${pnl:+.2f})"
+        if base in scanned:
+            reasons = ", ".join(sorted(scanned[base])) or "unknown"
+            return f"🔍 SCANNED → rejected ({reasons})"
         if symbol in top_n_set:
             return "👀 WATCHED (top-100 vol) — no trade"
         return "❌ MISSED (below top-100 by volume)"
@@ -597,8 +674,9 @@ def run_toppers_analysis(args):
     traded_count = sum(1 for sym, _, _ in gainers if flag(sym).startswith("✅"))
     watched_count = sum(1 for sym, _, _ in gainers if "WATCHED" in flag(sym))
     missed_count = sum(1 for sym, _, _ in gainers if "MISSED" in flag(sym))
+    scanned_count = sum(1 for sym, _, _ in gainers if "SCANNED" in flag(sym))
     
-    print(f"\nTOP-20 COVERAGE: {traded_count} traded | {watched_count} watched | {missed_count} missed")
+    print(f"\nTOP-20 COVERAGE: {traded_count} traded | {scanned_count} scanned-rejected | {watched_count} watched | {missed_count} missed")
     
     print("\n" + "-"*120)
     print("🏆 TOP 20 GAINERS over the bot's runtime window")
@@ -623,7 +701,7 @@ def run_toppers_analysis(args):
         "analyzed": len(results),
         "top_gainers": [{"symbol": s, "pct_change": p, "open": o, "status": flag(s)} for s, p, o in gainers],
         "top_losers": [{"symbol": s, "pct_change": p, "open": o, "status": flag(s)} for s, p, o in losers],
-        "coverage": {"traded": traded_count, "watched": watched_count, "missed": missed_count},
+        "coverage": {"traded": traded_count, "scanned": scanned_count, "watched": watched_count, "missed": missed_count},
     }
 
 
@@ -724,14 +802,29 @@ def run_missed_alpha_analysis(args):
         rows = conn.execute("SELECT * FROM rejections ORDER BY timestamp DESC").fetchall()
     conn.close()
 
+    # Merge with the bot's actual strategy/filter rejections captured in sweep_summary JSONs.
+    # The rejections table (risk-layer) is frequently empty on mainnet; the sweep data is
+    # the authoritative record of "why didn't we trade X" — so we must not skip Mode 3.
+    sweep_rows = []
     if not rows:
+        try:
+            _start_ms, _end_ms = resolve_window_ms(args)
+            sweep_rows, _ = get_sweep_records(_start_ms, _end_ms)
+        except Exception as e:
+            print(f"⚠️ Sweep rejections unavailable: {e}")
+
+    combined = list(rows) + sweep_rows
+
+    if not combined:
         print("ℹ️ No rejections found in database.")
         return {"error": "no rejections"}
 
-    print(f"Found {len(rows)} rejected signals. Measuring 4h alpha for each...")
+    print(f"Found {len(combined)} rejected signals "
+          f"({len(rows)} risk-layer + {len(sweep_rows)} sweep strategy/filter). "
+          f"Measuring 4h alpha for each...")
 
     results = []
-    for rej in rows:
+    for rej in combined:
         r = analyze_rejection_fx(dict(rej))
         if r:
             results.append(r)
@@ -749,8 +842,15 @@ def run_missed_alpha_analysis(args):
     # Impact maps by category and layer
     impact = {"STRATEGY": {}, "RISK": {}, "OTHER": {}}
     for r in results:
-        category = "STRATEGY" if "STRATEGY" in str(r["reason"]) else ("RISK" if "RISK" in str(r["reason"]) else "OTHER")
         layer = r["layer"] or "unknown"
+        if layer == "STRATEGY_FILTER":
+            category = "STRATEGY"
+        elif "RISK" in str(layer).upper():
+            category = "RISK"
+        elif "STRATEGY" in str(layer).upper():
+            category = "STRATEGY"
+        else:
+            category = "OTHER"
         stats = impact[category].setdefault(layer, {"count": 0, "winners": 0, "missed_alpha": 0.0})
         stats["count"] += 1
         if r["potential_pnl"] > 1.0:
@@ -761,7 +861,7 @@ def run_missed_alpha_analysis(args):
     print(f"{'Timestamp':<20} | {'Type':<9} | {'Layer/Filter':<20} | {'Symbol':<14} | {'Side':<5} | {'Max ROI':>8} | {'Max Draw':>8}")
     print("-"*120)
     for r in results[:20]:
-        e_type = "STRATEGY" if "STRATEGY" in str(r["reason"]) else ("RISK" if "RISK" in str(r["reason"]) else "OTHER")
+        e_type = "STRATEGY" if r["layer"] == "STRATEGY_FILTER" else ("RISK" if "RISK" in str(r["layer"]).upper() else "OTHER")
         print(f"{str(r['timestamp']):<20} | {e_type:<9} | {str(r['layer']):<20} | {str(r['symbol']):<14} | {r['side'].upper():<5} | {r['potential_pnl']:>+7.2f}% | {r['max_drawdown']:>+7.2f}%")
 
     for category in ["STRATEGY", "RISK", "OTHER"]:
