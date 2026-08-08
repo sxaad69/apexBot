@@ -8,15 +8,16 @@ Apex Hunter V14 is an institutional-grade automated trading bot built for Binanc
 
 | Item | Value |
 |---|---|
-| Host | AWS EC2, `eu-north-1`, IP `3.114.179.255` |
-| SSH alias | `ssh final` (key: `/Users/user/Documents/aws/final-bot.pem`, user `ubuntu`) |
-| Repo (AWS) | `/home/ubuntu/apexBot` |
-| Repo (local) | `/Users/user/Documents/Projects/apexBot` |
-| Venv | `/home/ubuntu/apexBot/venv` |
+| Host | AWS EC2 (VPS) |
+| Repo (server) | `~/apexBot` |
+| Venv | `~/apexBot/venv` |
 | Service | `apex-bot.service` — `ExecStart=venv/bin/python3 main.py --interval 30` |
-| Env | `APEX_CONFIRM_LIVE=YES`, `.env` at `/home/ubuntu/apexBot/.env` |
+| Env | `APEX_CONFIRM_LIVE=YES`, `.env` at `~/apexBot/.env` |
 | Mode | `TRADING_MODE=live`, `EXCHANGE_ENVIRONMENT=production` |
 | Balance | Live Binance mainnet wallet (~$130 USDT baseline, `FUTURES_VIRTUAL_CAPITAL=136.78`) |
+
+> 🔒 **Note**: actual server address/credentials (SSH host, key paths, API keys) are
+> intentionally **not** in this public README. Keep them in a private note or local `.env`.
 
 ### ⚠️ CRITICAL: Two `config.py` Files
 There are **two** configuration modules and they are NOT interchangeable:
@@ -30,12 +31,12 @@ There are **two** configuration modules and they are NOT interchangeable:
 ```bash
 # 1. Edit locally, commit, push
 git add -A && git commit -m "..." && git push
-# 2. Pull on AWS and restart the service
-ssh final "cd ~/apexBot && git pull && sudo systemctl restart apex-bot"
+# 2. Pull on the server and restart the service
+ssh <server> "cd ~/apexBot && git pull && sudo systemctl restart apex-bot"
 # 3. Verify
-ssh final "sudo journalctl -u apex-bot -f"     # live logs
-ssh final "cd ~/apexBot && tail -50 logs/apex_hunter_$(date +%Y%m%d).log"
-ssh final "tail -20 logs/apex_error.log"
+ssh <server> "sudo journalctl -u apex-bot -f"     # live logs
+ssh <server> "cd ~/apexBot && tail -50 logs/apex_hunter_$(date +%Y%m%d).log"
+ssh <server> "tail -20 logs/apex_error.log"
 ```
 
 ---
@@ -263,21 +264,21 @@ Configured via `.env` (`TELEGRAM_FUTURES_BOT_TOKEN`, `TELEGRAM_FUTURES_CHAT_ID`)
 ## 🚀 Operations Cheat-Sheet
 
 ```bash
-# Status & logs
-ssh final "sudo systemctl status apex-bot"
-ssh final "sudo journalctl -u apex-bot -f"
-ssh final "cd ~/apexBot && tail -50 logs/apex_hunter_$(date +%Y%m%d).log"
-ssh final "tail -20 ~/apexBot/logs/apex_error.log"
+# Status & logs (replace <server> with your SSH host)
+ssh <server> "sudo systemctl status apex-bot"
+ssh <server> "sudo journalctl -u apex-bot -f"
+ssh <server> "cd ~/apexBot && tail -50 logs/apex_hunter_$(date +%Y%m%d).log"
+ssh <server> "tail -20 ~/apexBot/logs/apex_error.log"
 
 # Restart / stop
-ssh final "sudo systemctl restart apex-bot"
-ssh final "sudo systemctl stop apex-bot"
+ssh <server> "sudo systemctl restart apex-bot"
+ssh <server> "sudo systemctl stop apex-bot"
 
 # Live positions & balance (read-only)
-ssh final "cd ~/apexBot && ./venv/bin/python3 -c \"import config.config as c; ex=__import__('exchange.ccxt_client',fromlist=['CCXTExchangeClient']).CCXTExchangeClient(c.Config(), __import__('bot_logging.mongo_logger',fromlist=['MongoLogger']).MongoLogger(c.Config())); [print(p) for p in ex.exchange.fetch_positions() if abs(float(p.get('contracts',0)))>0]\" 2>&1 | grep -v INFO"
+ssh <server> "cd ~/apexBot && ./venv/bin/python3 -c \"import config.config as c; ex=__import__('exchange.ccxt_client',fromlist=['CCXTExchangeClient']).CCXTExchangeClient(c.Config(), __import__('bot_logging.mongo_logger',fromlist=['MongoLogger']).MongoLogger(c.Config())); [print(p) for p in ex.exchange.fetch_positions() if abs(float(p.get('contracts',0)))>0]\" 2>&1 | grep -v INFO"
 
 # DB queries
-ssh final "sqlite3 ~/apexBot/data/apex_hunter.db \"SELECT trade_id,symbol,entry_price,status,entry_time FROM trades WHERE status='OPEN'\""
+ssh <server> "sqlite3 ~/apexBot/data/apex_hunter.db \"SELECT trade_id,symbol,entry_price,status,entry_time FROM trades WHERE status='OPEN'\""
 ```
 
 ---
