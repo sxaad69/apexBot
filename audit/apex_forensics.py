@@ -418,7 +418,13 @@ def audit_trade(t):
     missed = peak_pnl - exit_pnl
     findings["missed_profit_pct"] = round(missed, 2)
     if missed > 2.0:
-        findings["better_exit"] = f"YES - missed +{missed:.1f}% (peak was +{peak_pnl:.1f}% vs exit +{exit_pnl:.1f}%)"
+        if exit_pnl < 0:
+            findings["better_exit"] = (
+                f"YES - could have avoided {abs(exit_pnl):.1f}% loss by exiting at peak "
+                f"(peak was +{peak_pnl:.1f}%, exited {exit_pnl:.1f}%)"
+            )
+        else:
+            findings["better_exit"] = f"YES - missed +{missed:.1f}% profit (peak was +{peak_pnl:.1f}% vs banked +{exit_pnl:.1f}%)"
     else:
         findings["better_exit"] = f"No (peak +{peak_pnl:.1f}% vs exit +{exit_pnl:.1f}%)"
 
@@ -1077,7 +1083,8 @@ def run_exit_forensics(args):
                 cap_emoji = "✅" if r["peak_capture"] >= 95 else "⚠️"
                 print(f"  {cap_emoji} Peak Capture: {r['peak_capture']}%")
 
-            print(f"  📊 Ride Quality: {r['ride_quality']:.1f}% (Peak: {r['peak_pnl']:+.2f}%, Banked: {r['exit_pnl']:+.2f}%, Missed: {r['missed_pnl']:+.2f}%)")
+            miss_word = "Loss" if r["exit_pnl"] < 0 else "Missed"
+            print(f"  📊 Ride Quality: {r['ride_quality']:.1f}% (Peak: {r['peak_pnl']:+.2f}%, Banked: {r['exit_pnl']:+.2f}%, {miss_word}: {r['missed_pnl']:+.2f}%)")
             
             if r.get("post_exit_candles", 0) > 0:
                 print(f"  🚀 Post-Exit (4h): High {r['post_exit_pnl']:+.2f}% | Continuation: {r['continuation']:+.2f}% | Adverse: {r['adverse_move']:+.2f}%")
@@ -1123,6 +1130,10 @@ def run_exit_forensics(args):
         
         money_capture = (total_banked / total_peak * 100) if total_peak > 0 else 0
 
+        # Split "left on table" into real missed profit (winners) vs loss-beyond-peak (losers)
+        profit_missed = sum(r["missed_pnl"] for r in results if r.get("exit_pnl", 0) > 0 and r.get("missed_pnl", 0) > 0)
+        loss_beyond_peak = sum(r["missed_pnl"] for r in results if r.get("exit_pnl", 0) <= 0 and r.get("missed_pnl", 0) > 0)
+
         print(f"\n  RIDE QUALITY & DOLLAR CAPTURE:")
         print(f"  Avg ride quality:      {avg_ride:.1f}%")
         print(f"  Good rides (>=70%):    {good_rides}/{len(ride_qualities)}")
@@ -1131,7 +1142,8 @@ def run_exit_forensics(args):
         print(f"  💰 MONEY TERMS:")
         print(f"  Total peak available:  {total_peak:+.2f}%")
         print(f"  Total actually banked: {total_banked:+.2f}%")
-        print(f"  Total left on table:   {total_missed:+.2f}%")
+        print(f"  Profit missed (winners):    {profit_missed:+.2f}%")
+        print(f"  Loss beyond peak (losers):  {loss_beyond_peak:+.2f}%")
         print(f"  Dollar capture rate:   {money_capture:.1f}%")
 
     # Forward-looking exit analysis
