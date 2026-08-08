@@ -1,203 +1,320 @@
-# APEX HUNTER V14 — Automated Futures Trading Bot
+# APEX HUNTER V14 — Automated Binance Futures Trading Bot
 
-Apex Hunter V14 is an institutional-grade automated trading bot built for Binance Futures. It operates in a strict, layered, "Verify Before Write" architecture ensuring every trade decision is validated across capital, risk, strategy, and exchange confirmation before being committed to the database.
+Apex Hunter V14 is an institutional-grade automated trading bot built for Binance Futures. It operates in a strict, layered, **"Verify Before Write"** architecture: every trade decision is validated across capital, risk, strategy, and exchange confirmation *before* anything is committed to the database. The bot is **live on Binance mainnet** (production), running 24/7 on an AWS EC2 instance via systemd.
+
+---
+
+## 🚀 Deployment Overview (Production)
+
+| Item | Value |
+|---|---|
+| Host | AWS EC2, `eu-north-1`, IP `3.114.179.255` |
+| SSH alias | `ssh final` (key: `/Users/user/Documents/aws/final-bot.pem`, user `ubuntu`) |
+| Repo (AWS) | `/home/ubuntu/apexBot` |
+| Repo (local) | `/Users/user/Documents/Projects/apexBot` |
+| Venv | `/home/ubuntu/apexBot/venv` |
+| Service | `apex-bot.service` — `ExecStart=venv/bin/python3 main.py --interval 30` |
+| Env | `APEX_CONFIRM_LIVE=YES`, `.env` at `/home/ubuntu/apexBot/.env` |
+| Mode | `TRADING_MODE=live`, `EXCHANGE_ENVIRONMENT=production` |
+| Balance | Live Binance mainnet wallet (~$130 USDT baseline, `FUTURES_VIRTUAL_CAPITAL=136.78`) |
+
+### ⚠️ CRITICAL: Two `config.py` Files
+There are **two** configuration modules and they are NOT interchangeable:
+
+- **`config/config.py`** — the **ACTIVE** one. `import config` resolves to `config/__init__.py`, which imports `Config` from `config/config.py`. All runtime behavior comes from here.
+- **`config.py`** (repo root) — **legacy/duplicate**. Changes to it have **NO effect** unless they are also made in `config/config.py`.
+
+> Any LLM or engineer editing settings MUST edit `config/config.py`, not root `config.py`.
+
+### Deploy Workflow (used for every change)
+```bash
+# 1. Edit locally, commit, push
+git add -A && git commit -m "..." && git push
+# 2. Pull on AWS and restart the service
+ssh final "cd ~/apexBot && git pull && sudo systemctl restart apex-bot"
+# 3. Verify
+ssh final "sudo journalctl -u apex-bot -f"     # live logs
+ssh final "cd ~/apexBot && tail -50 logs/apex_hunter_$(date +%Y%m%d).log"
+ssh final "tail -20 logs/apex_error.log"
+```
 
 ---
 
 ## 🏗️ System Execution Flow
 
-Each 60-second tick follows this exact pipeline:
+Each tick (default interval 30–60s) follows this pipeline:
 
 ```
 [Binance Balance Sync]
        ↓
-[Market Discovery (Top 200 by Volume)]
-  + Force-include all OPEN positions
+[Market Discovery — top N by 24h volume, force-include all OPEN positions]
        ↓
-[For each pair → 6 Strategy Engines in parallel]
+[Per symbol → Strategy Engine(s) — A1–A6]
        ↓
-[Signal Generated? → 11-Layer Risk Validation Chain]
+[Signal generated? → Risk Validation Chain (layered)]
        ↓
-[Approved? → Capital Allocation (Confidence-Tiered)]
+[Approved? → Capital Allocation (confidence-tiered)]
        ↓
-[Live Entry → Exchange → TradeManager.record_entry()]
+[Live Entry → Binance → TradeManager.record_entry()  (Verify Before Write)]
        ↓
-[Per-Position Monitoring: SL / TP / Trailing checks]
+[Per-Position Monitoring: SL / TP / Trailing via PriorityExitSentinel thread]
        ↓
-[Exit Trigger → Exchange Close → TradeManager.record_exit()]
+[Exit Trigger → Market Close → TradeManager.record_exit()]
        ↓
 [SQLite DB updated ONLY after Binance confirms ZERO position]
 ```
 
----
-
-## 💰 Capital Allocation
-
-| Parameter | .env Variable | Default |
-|---|---|---|
-| Virtual Capital (Paper) | `FUTURES_VIRTUAL_CAPITAL` | 100 USDT |
-| Per-Trade Size | `FUTURES_POSITION_SIZE_PERCENT` | 10% |
-| Opportunity Reserve | Hardcoded | 20% held back |
-| Reserve Unlock Confidence | Hardcoded | ≥ 90% confidence |
-
-### Confidence-Based Position Tiers
-| Confidence | Position Size |
-|---|---|
-| ≥ 90% | 15% of capital |
-| ≥ 80% | 12% of capital |
-| ≥ 70% | 10% of capital |
-| < 70% | 7% of capital |
-
-> **Capital Balance**: The bot syncs the Binance **`total`** USDT balance on every startup (not just `free`), preventing double-counting margin that shrank the effective capital pool.
-
----
-
-## 🔭 Market Discovery
-
-The bot calls `get_top_trading_pairs` every cycle to build its monitoring list:
-1. Fetches 24h volume tickers from Binance Futures.
-2. Excludes stablecoins and perp tokens (USDC, USDT, BUSD, etc.).
-3. Sorts by volume, takes the top N pairs (`FUTURES_AUTO_TOP_N`, default 200).
-4. **Critically**: Any symbol with an `OPEN` or `PENDING_EXIT` trade in the DB is **force-appended** to the list regardless of volume rank, preventing stop-loss bypass.
+The exit monitor is a dedicated **`PriorityExitSentinel` thread** (in `main.py`, `_run_priority_exit_thread`): it checks every position against SL/TP/trailing every ~0.5s over the WebSocket feed, independent of the main loop. Full position sweeps run every ~30–40s as backup.
 
 ---
 
 ## 📐 Strategy Engine (A1–A6)
 
-Signals from all strategies flow through the Triple-Check Symbol Guard before entering the 11-layer Risk Chain:
+| Strategy | Name | Key Indicators | Status (live) |
+|---|---|---|---|
+| **A1** | EMA + MACD Crossover | EMA 9/21, MACD, EMA 200 guard | `STRATEGY_A1_ENABLED=false` |
+| **A2** | RSI Divergence | EMA + RSI | `STRATEGY_A2_ENABLED=false` |
+| **A3** | Momentum Scalp | EMA 5/13, BB Squeeze, Volume Spike | `STRATEGY_A3_ENABLED=false` |
+| **A4** | Trend Following | Triple EMA 9/21/50/200, 210-candle warm-up | `STRATEGY_A4_ENABLED=false` |
+| **A5** | Market Microstructure | Order Flow, Bid-Ask Imbalance | `STRATEGY_A5_ENABLED=false` |
+| **A6** | Orderbook WSS | Real-time L2 orderbook (ccxt.pro), imbalance trigger | **`STRATEGY_A6_ENABLED=true`** |
 
-| Strategy | Name | Key Indicators | ADX Req | Confidence Range |
-|---|---|---|---|---|
-| **A1** | EMA + MACD Crossover | EMA 9/21, MACD, EMA 200 Guard | ≥ 30 | 0.60 – 0.85 |
-| **A2** | RSI Divergence | EMA + RSI | ≥ 25 | Variable |
-| **A3** | Momentum Scalp | EMA 5/13, BB Squeeze, Volume Spike | ≥ 30 | 0.65 – 0.95 |
-| **A4** | Trend Following | Triple EMA 9/21/50/200 | ≥ 30 | Fixed 0.90 |
-| **A5** | Market Microstructure | Order Flow, Bid-Ask Imbalance | ≥ 25 | Variable |
-| **A6** | Orderbook WSS | Real-Time L2 Orderbook (ccxt.pro) | ≥ 30 | 0.70 – 1.00 |
+> Only **A6** is currently enabled in live production (`A6_ALLOW_SHORT=false`). A1–A5 are off.
 
-### Strategy Notes
-- **A1**: Requires confirmed EMA crossover AND MACD histogram agreement AND price must be on correct side of 200 EMA. Tight ADX ≥ 30.
-- **A3**: "2-of-3" confirmation model (EMA cross, BB Squeeze breakout, Volume Spike). Very selective.
-- **A4**: The most selective strategy. Requires 210+ candles for warm-up. All 5 of the last 5 candles must align across 3 EMAs. Fixed 0.90 confidence triggers the Opportunity Reserve.
-- **A6**: Runs a dedicated background WebSocket thread (ccxt.pro). Monitors live orderbook imbalance across all tracked pairs. Triggers when bid/ask imbalance > ±40%.
-- **A1, A2, A4, A5, A6**: All actively running in parallel, scaling up to 100 concurrent positions to gather maximum statistical volume.
+Strategy sources live in `strategies/` (`strategy_a1.py` … `strategy_a6.py`), with `base_strategy.py` and `filters.py` as shared infrastructure.
 
 ---
 
-## 🛡️ 11-Layer Risk Validation Chain
+## 🛡️ Risk Validation Chain
 
-Layers are applied sequentially. Any `None` return immediately cancels the trade.
+Layers are applied sequentially; a `None`/reject from any layer cancels the trade. Files live in `risk/layers/`.
 
-| # | Layer | File | Status | What It Does |
-|---|---|---|---|---|
-| 1 | Position Sizing | `position_sizing.py` | ✅ Active | Calculates size. Hard-rejects if size > 50% of capital. |
-| 2 | Leverage Control | `leverage_control.py` | ✅ Active | ATR-volatility ceiling × Confidence scale. Reduces cap during drawdown. |
-| 3 | Stop-Loss Management | `stop_loss_management.py` | ✅ Active | Sets SL as `min(FUTURES_STOP_LOSS_PERCENT, MAX_EQUITY_RISK/Leverage)`. |
-| 4 | Daily Loss Limit | `daily_loss_limit.py` | ✅ Active | Halts all new trades if daily P&L < -(`MAX_DAILY_LOSS_PERCENT`%). |
-| 5 | Maximum Drawdown | `maximum_drawdown.py` | ✅ Active | Dual-tier: blocks normals at 50% drawdown, full halt at 70%. |
-| 6 | Correlation Risk | `correlation_risk.py` | ✅ Active | Blocks any new trade if open positions ≥ `FUTURES_MAX_OPEN_POSITIONS`. |
-| 7 | Volatility Adjustment | `volatility_adjustment.py` | ⚠️ Stub | Pass-through. Not implemented. |
-| 8 | Liquidity Check | `liquidity_check.py` | ⚠️ Stub | Pass-through. Not implemented. |
-| 9 | Rate Limit | `rate_limit.py` | ⚠️ Stub | Pass-through. Not implemented. |
-| 10 | Portfolio Circuit Breaker | `portfolio_circuit_breaker.py` | ✅ Active | Halts all new trades for 30 min if aggregate unrealized P&L drops below -10%. |
-| 11 | Capital Preservation | `capital_preservation.py` | ✅ Active | Hard blocks any trade if balance < 10% of `INITIAL_CAPITAL`. |
+| # | Layer | File | Status |
+|---|---|---|---|
+| 1 | Position Sizing | `position_sizing.py` | ✅ Active |
+| 2 | Leverage Control | `leverage_control.py` | ✅ Active |
+| 3 | Stop-Loss Management | `stop_loss_management.py` | ✅ Active |
+| 4 | Daily Loss Limit | `daily_loss_limit.py` | ✅ Active |
+| 5 | Maximum Drawdown | `maximum_drawdown.py` | ✅ Active |
+| 6 | Correlation Risk | `correlation_risk.py` | ✅ Active (caps open positions) |
+| 7 | Volatility Adjustment | `volatility_adjustment.py` | ⚠️ Stub |
+| 8 | Liquidity Check | `liquidity_check.py` | ⚠️ Stub |
+| 9 | Rate Limit | `rate_limit.py` | ⚠️ Stub |
+| 10 | Portfolio Circuit Breaker | `portfolio_circuit_breaker.py` | ✅ Active |
+| 11 | Capital Preservation | `capital_preservation.py` | ✅ Active |
+| — | Trailing Stop | `trailing_stop.py` | ✅ Active |
+| — | Portfolio Profit Ratchet | `portfolio_profit_ratchet.py` | ⛔ **DISABLED** (`PROFIT_RATCHET_ENABLED=false`) |
+
+**Portfolio Profit Ratchet (GlobalRatchet)** was disabled on 2026-08-06 because it was producing *missed alpha* (it gated trades that later won, ~+235% of the forensics missed-alpha). The flag lives in `config/config.py` (`PROFIT_RATCHET_ENABLED`, `PROFIT_RATCHET_ACTIVATION/TRAILING/FLOOR/COOLDOWN/SLIPPAGE_BUFFER`).
+
+---
+
+## 💰 Capital Allocation
+
+| Parameter | Config | Current value |
+|---|---|---|
+| Virtual/live capital baseline | `FUTURES_VIRTUAL_CAPITAL` | `136.78` USDT |
+| Per-trade size | `FUTURES_POSITION_SIZE_PERCENT` | `4.0` % |
+| Max leverage | `FUTURES_MAX_LEVERAGE` | `10` |
+| Max open positions | `FUTURES_MAX_OPEN_POSITIONS` | `15` |
+| Max equity risk per trade | `MAX_EQUITY_RISK_PERCENT` | `5.0` % |
+| Global ROE stop-loss shield | `GLOBAL_STOP_LOSS_ROE` | `10.0` % |
+| Take-profit | `TAKE_PROFIT_PERCENT` / `FUTURES_TAKE_PROFIT_PERCENT` | `10.0` % |
+| Max daily loss | `MAX_DAILY_LOSS_PERCENT` | `15.0` % |
+| Max drawdown halt | `FUTURES_MAX_DRAWDOWN_PERCENT` | `70.0` % |
+| Margin mode | `FUTURES_MARGIN_MODE` | `ISOLATED` |
+
+The bot syncs Binance **`total`** USDT balance (not just `free`) on startup, preventing double-counting of margin.
+
+---
+
+## 🔭 Market Discovery
+
+`get_top_trading_pairs` builds the monitoring universe every cycle:
+1. Fetches 24h volume tickers from Binance Futures.
+2. Excludes stablecoins (USDC, USDT, BUSD, …).
+3. Sorts by volume → top `FUTURES_AUTO_TOP_N` (currently `1000` = full universe of qualifying perps).
+4. **Force-appends** any symbol with an `OPEN`/`PENDING_EXIT` trade in the DB regardless of rank, so SL/TP exits are never missed.
 
 ---
 
 ## 🔄 Position Management
 
 ### Entry
-1. **Triple-Check Symbol Guard**: Checks in-memory `positions` dict, SQLite, then Binance live positions. Blocks if any are OPEN.
-2. **Isolated Margin Mode**: `set_margin_mode(ISOLATED)` is called before every entry on Binance.
-3. **Leverage Sync**: `set_leverage(N)` is called on Binance to match calculated leverage.
-4. **Hard SL on Exchange**: Bot immediately places a `STOP_MARKET reduceOnly` order on Binance after the market entry for hardware-level protection.
-5. **DB Record**: `TradeManager.record_entry()` saves only after the order response is confirmed.
+1. **Triple-Check Symbol Guard**: in-memory positions dict, SQLite, then Binance live positions — blocks duplicates.
+2. **Isolated margin**: `set_margin_mode(ISOLATED)` before every entry.
+3. **Leverage sync**: `set_leverage(N)` matches computed leverage.
+4. **DB record**: `TradeManager.record_entry()` saves only after the exchange confirms the fill.
 
-### Exit
-1. **Price-Level Check**: Every tick checks `current_price >= TP` or `current_price <= SL`.
-2. **Trailing TP**: Activates at `TRAILING_TP_ACTIVATION` profit %, then ratchets using a trough/peak trailing mechanism.
-3. **Market Close**: `CCXTExchangeClient.close_position()` places a market order.
-4. **Zero-Position Verification**: DB is only marked `CLOSED` after Binance confirms zero contracts.
-5. **Orphan Sweeper**: On startup, any trade open in DB but missing on Binance is auto-reconciled.
+### Exit (all bot-side; no exchange stop orders)
+> `ENABLE_EXCHANGE_STOPS=false` — SL/TP/trailing are monitored **by the bot** (`PriorityExitSentinel`), not placed as `STOP_MARKET` orders on the exchange. That is by design; `sl_order_id`/`tp_order_id` are expected to be `None`.
 
-### Trailing Take Profit (Ratchet System)
-- **Activation**: Position profit reaches `TRAILING_TP_ACTIVATION` (default: 3%).
-- **Tracking**: `peak_price` (for BUY) or `trough_price` (for SELL) is tracked and persisted to SQLite metadata.
-- **Trigger**: Closes when price retreats `TRAILING_TP_DISTANCE` (default: 1.5%) from peak.
-- **Restart Safety**: `peak_price`, `trough_price`, and `trailing_tp_active` are hydrated from SQLite metadata on every bot restart.
+1. **Price-level check** every ~0.5s: `current >= TP` or `current <= SL`.
+2. **Trailing stop**: activates at `TRAILING_STOP_ACTIVATION` (5%) profit, then trails at `TRAILING_STOP_DISTANCE` (3%) from peak/trough.
+3. **Market close**: `CCXTExchangeClient.close_position()` places a reduce-only market order.
+4. **Zero-position verification**: DB marked `CLOSED` only after Binance confirms zero contracts.
+5. **Orphan sweeper**: startup reconciliation for trades open in DB but missing on exchange.
 
 ---
 
-## ⚙️ Key Environment Variables
+## ⚙️ Key Configuration (config/config.py + .env)
 
-| Variable | Purpose | Default |
+| Variable | Purpose | Current |
 |---|---|---|
-| `EXCHANGE_ENVIRONMENT` | `testnet` or `mainnet` | `testnet` |
-| `FUTURES_MAX_OPEN_POSITIONS` | Position count cap | `30` |
-| `FUTURES_POSITION_SIZE_PERCENT` | Per-trade margin % | `10` |
-| `FUTURES_STOP_LOSS_PERCENT` | Max price drop % for SL | `2.0` |
-| `MAX_EQUITY_RISK_PERCENT` | Max equity loss % per trade | `20` |
-| `FUTURES_MAX_LEVERAGE` | Dynamic leverage ceiling | `10` |
-| `FUTURES_MAX_DRAWDOWN_PERCENT` | Hard halt drawdown | `70` |
-| `MAX_DAILY_LOSS_PERCENT` | Daily halt loss | `8` |
-| `FUTURES_VIRTUAL_CAPITAL` | Paper trading balance | `100` |
-| `FUTURES_AUTO_TOP_N` | Max pairs to monitor | `200` |
-| `FUTURES_MARGIN_MODE` | ISOLATED or CROSS | `ISOLATED` |
-| `TRAILING_TP_ACTIVATION` | TP ratchet activation % | `3.0` |
-| `TRAILING_TP_DISTANCE` | TP ratchet trailing distance % | `1.5` |
-| `LOSS_CB_ENABLED` | Enable portfolio circuit breaker | `true` |
-| `LOSS_CB_PCT` | Portfolio unrealized loss % trigger | `10.0` |
-| `LOSS_CB_COOLDOWN_MINUTES` | Halt duration on CB trigger | `30` |
+| `TRADING_MODE` | `paper` / `simulation` / `live` | `live` |
+| `EXCHANGE_ENVIRONMENT` | `testnet` / `production` | `production` |
+| `BINANCE_API_KEY` / `BINANCE_API_SECRET` | Live mainnet keys (in `.env`) | set |
+| `TELEGRAM_FUTURES_BOT_TOKEN` / `TELEGRAM_FUTURES_CHAT_ID` | Futures notifications | set |
+| `TIMEFRAME` | Candle timeframe | `15m` |
+| `FUTURES_AUTO_TOP_N` | Universe size | `1000` |
+| `OHLCV_LIMIT` | Candles fetched per symbol | `210` |
+| `OHLCV_BATCH_MAX` | Stale-candle refreshes per sweep | `100` |
+| `A6_MAX_WATCH_SYMBOLS` | Cap on A6 orderbook WSS subs | `400` |
+| `DISCOVERY_MAX_WORKERS` | Discovery concurrency | `3` |
+| `RATE_LIMIT_MAX_WEIGHT_PER_MIN` | Binance weight budget | `1500` (cap 2400) |
+| `POSITIONS_CACHE_TTL` | REST positions cache | `5.0s` |
+| `TICKER_CACHE_TTL` | REST ticker cache | `5.0s` |
+| `BALANCE_CACHE_TTL` | Balance cache | `60.0s` |
+| `LOSS_CB_ENABLED` | Portfolio circuit breaker | `true` |
+| `LOSS_CB_PCT` | Unrealized-loss trigger | `10.0%` |
+| `LOSS_CB_COOLDOWN_MINUTES` | Halt duration | `30` |
+| `PROFIT_RATCHET_ENABLED` | Portfolio profit ratchet | `false` |
+| `ENABLE_EXCHANGE_STOPS` | Exchange-side SL/TP orders | `false` |
 
 ---
 
 ## 🗄️ Database (SQLite)
 
-**Location**: `data/apex_hunter.db`
+**Location**: `data/apex_hunter.db` (hardcoded in `database/sqlite_manager.py` — note `SQLITE_DB_NAME` in config is NOT the path used).
 
-**Key Tables**:
-- `trades`: All open and closed positions with `exchange_order_id`, `entry_price`, `exit_price`, `reason`, `pnl_amount`, `pnl_percent`, `leverage`, `metadata` (JSON blob for trailing TP state).
-- `rejections`: All risk layer rejections logged for forensic auditing.
-- `settings`: Key-value store for persistent state (`peak_balance`, `paper_total_capital`).
+**Tables**:
+- `trades` — open/closed positions: `exchange_order_id`, `entry_price`, `exit_price`, `reason`, `pnl_amount`, `pnl_percent`, `leverage`, `metadata` (trailing state), `entry_time`.
+- `rejections` — risk-layer rejection log (input to Missed Alpha forensics).
+- `settings` — key-value state (`peak_balance`, `paper_total_capital`).
+- `active_positions`, `portfolio_ratchets`, `circuit_breaker_events`, `metrics` — supporting state.
+
+Also: `data/activity_log.db`, `data/ohlcv_cache/` (forensics OHLCV cache), `data/telegram_history.json`.
 
 ---
 
-## 🔍 Audit Tools
+## 🔍 Audit & Forensics (the `audit/` folder)
+
+Two tools; **no production impact** (read-only against DB/exchange).
+
+### 1. `audit/apex_forensics.py` — the *producer*
+Three analysis modes in one tool, writing JSON reports to `data/reports/forensics_report_YYYY-MM-DD.json`:
+
+- **MODE 1 — Exit Forensics** (default): per closed trade — TP/SL validation, ride quality, dollar capture, forward-looking 4h post-exit analysis, trailing effectiveness.
+- **MODE 2 — Top Gainers Retrospective** (`--toppers`): the market's real top gainers/losers during the window, cross-referenced with traded symbols & watchlist.
+- **MODE 3 — Missed Alpha** (`--missed-alpha`): rejected signals — would they have profited in the next 4h? Reports missed alpha per rejection layer.
+- **`--settle`**: runs all 3 modes for the previous UTC day, writes the permanent JSON, purges the OHLCV cache.
+
+Usage:
+```bash
+python3 audit/apex_forensics.py --from 2026-08-06 --to 2026-08-07   # mode 1
+python3 audit/apex_forensics.py --all --from 2026-08-07              # all 3 modes
+python3 audit/apex_forensics.py --settle                            # daily settle
+python3 audit/apex_forensics.py --fetch-only --days 1               # pre-fetch OHLCV
+python3 audit/apex_forensics.py --cache-status                      # cache coverage
+python3 audit/apex_forensics.py --purge-cache                       # clear cache
+```
+
+OHLCV is cached per symbol+interval in `data/ohlcv_cache` (watermark-based delta fetches; Binance rate budgeted via a token bucket).
+
+### 2. `audit/parse_forensics_report.py` — the *renderer*
+Reads a `forensics_report_YYYY-MM-DD.json` and prints a human-readable overview (executive summary + all 3 mode sections). No DB access.
+
+```bash
+python3 audit/parse_forensics_report.py --date 2026-08-07   # find by date
+python3 audit/parse_forensics_report.py --report <path>     # explicit file
+python3 audit/parse_forensics_report.py -o /tmp/overview.txt
+```
+
+### Scheduled on AWS
+- `apex-forensics.service` — `ExecStart=venv/bin/python3 audit/apex_forensics.py --settle`
+- `apex-forensics.timer` — runs **daily at 23:55 UTC** (`OnCalendar=*-*-* 23:55:00`, 5-min jitter).
+
+---
+
+## 🔧 Other Operational Scripts
 
 | Script | Purpose |
 |---|---|
-| `python3 review_positions.py` | Real-time DB vs Binance verification (Order ID, Size in USD, SL/TP, ROE%) |
-| `python3 audit_closed_trades.py` | Deep historical P&L accuracy vs Binance fill data |
-| `python3 sync_positions.py` | Active reconciliation: auto-fixes desync |
-| `python3 emergency_liquidate.py` | 🚨 Kill switch: Market-closes all positions immediately |
-
----
-
-## 🚀 Deployment
-
-### Run in Background (Systemd)
-```bash
-sudo systemctl start apex-bot.service
-sudo systemctl status apex-bot.service
-sudo journalctl -u apex-bot -f   # Live logs
-```
-
-### Switch to Mainnet
-1. Update `.env`: `EXCHANGE_ENVIRONMENT=mainnet`
-2. Replace Testnet API keys with real Binance keys.
-3. Restart: `sudo systemctl restart apex-bot.service`
+| `review_positions.py` | Real-time DB vs Binance verification (order ID, size, SL/TP, ROE%) |
+| `sync_positions.py` | Active reconciliation — auto-fixes desync |
+| `emergency_liquidate.py` | 🚨 Kill switch — market-closes all positions immediately |
+| `scripts/cleanup_logs.py` | Log rotation/cleanup |
+| `check_exit.py`, `check_pos.py`, `verify_tpsl.py` | Quick diagnostics |
+| `top_gainers_retro.py` | Standalone gainers retrospective (superseded by forensics Mode 2) |
+| `test_connection.py` | Connectivity/credentials test |
 
 ---
 
 ## 📱 Telegram Notifications
 
-Configure three bots in `.env` (`TELEGRAM_FUTURES_BOT_TOKEN`, `TELEGRAM_FUTURES_CHAT_ID`).
-
-Notifications sent:
+Configured via `.env` (`TELEGRAM_FUTURES_BOT_TOKEN`, `TELEGRAM_FUTURES_CHAT_ID`). Notifications:
 - 📊 Hourly report (activity summary)
-- 🎯 Trade Entry (Symbol, Side, Price, Leverage, SL/TP)
-- ✅/❌ Trade Exit (P&L, Reason, Duration)
-- 🚀/💰 Trailing updates (Activation and Ratchet events)
+- 🎯 Trade Entry (symbol, side, price, leverage, SL/TP)
+- ✅/❌ Trade Exit (P&L, reason, duration)
+- 🚀/💰 Trailing activation & ratchet events
+
+---
+
+## 🚀 Operations Cheat-Sheet
+
+```bash
+# Status & logs
+ssh final "sudo systemctl status apex-bot"
+ssh final "sudo journalctl -u apex-bot -f"
+ssh final "cd ~/apexBot && tail -50 logs/apex_hunter_$(date +%Y%m%d).log"
+ssh final "tail -20 ~/apexBot/logs/apex_error.log"
+
+# Restart / stop
+ssh final "sudo systemctl restart apex-bot"
+ssh final "sudo systemctl stop apex-bot"
+
+# Live positions & balance (read-only)
+ssh final "cd ~/apexBot && ./venv/bin/python3 -c \"import config.config as c; ex=__import__('exchange.ccxt_client',fromlist=['CCXTExchangeClient']).CCXTExchangeClient(c.Config(), __import__('bot_logging.mongo_logger',fromlist=['MongoLogger']).MongoLogger(c.Config())); [print(p) for p in ex.exchange.fetch_positions() if abs(float(p.get('contracts',0)))>0]\" 2>&1 | grep -v INFO"
+
+# DB queries
+ssh final "sqlite3 ~/apexBot/data/apex_hunter.db \"SELECT trade_id,symbol,entry_price,status,entry_time FROM trades WHERE status='OPEN'\""
+```
+
+---
+
+## 🧱 Repository Layout
+
+```
+apexBot/
+├── main.py                  # entry point (--interval, --mode); exit sentinel thread
+├── config/                  # ⚠️ ACTIVE config (config/config.py) + __init__.py
+├── config.py                # ⚠️ LEGACY duplicate — do not edit
+├── core/                    # trade_manager, position_manager, trading_engine, spot engine
+├── exchange/                # ccxt_client (primary), base_client, api_manager, rate_limiter, wss_manager
+├── strategies/              # strategy_a1..a6, base_strategy, filters
+├── risk/layers/             # 11 risk layers + trailing_stop + portfolio_profit_ratchet
+├── database/                # sqlite_manager (data/apex_hunter.db), mongo_manager, json_manager
+├── bot_logging/             # logger, mongo_logger
+├── notifications/           # Telegram
+├── audit/                   # apex_forensics.py (producer), parse_forensics_report.py (renderer)
+├── scripts/                 # ops/analysis helpers
+├── tests/                   # unit tests (pytest)
+├── data/                    # SQLite DBs, ohlcv_cache, reports
+├── logs/                    # rotating logs (apex_hunter_YYYYMMDD.log, apex_error.log)
+├── apex-bot.service         # systemd unit (bot)
+├── apex-forensics.service   # systemd unit (daily settle)
+├── apex-forensics.timer     # systemd timer (23:55 UTC)
+└── .env / .env.example      # credentials & env config
+```
+
+---
+
+## 🛠️ Development
+
+- **Python 3.11+** (tested on 3.14.4). Dependencies in `requirements.txt` (ccxt, pandas, numpy, requests, websockets, aiohttp, pymongo/motor optional, streamlit dashboard, pytest).
+- Run tests: `python -m pytest tests/`
+- Local sandbox: `./venv/bin/python3 main.py --interval 30` (testnet/paper `.env`).
+- Forensics/audit scripts are safe to run locally against a synced DB copy.
 
 ---
 

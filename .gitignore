@@ -1,5 +1,5 @@
 # APEX HUNTER V14 - Git Ignore File
-# Exclude sensitive data, logs, and temporary files from version control
+# Exclude sensitive data, logs, caches, and temporary files from version control.
 
 # ============================================================================
 # ENVIRONMENT & SECRETS
@@ -8,23 +8,34 @@
 .env.local
 .env.production
 .env.staging
-.env.example
 .env.backup
+.env.testnet
+*.key
+*.pem
 
 # Virtual environments
 venv/
 .venv/
-.env
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache/
 
-# Other common junk
-.claude/           # if you don't need this in repo
-*.log
-bot_logging/
+# ============================================================================
+# PYTHON
+# ============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+*.egg-info/
+*.egg
+.installed.cfg
 
 # ============================================================================
 # LOGS & DATA
@@ -35,36 +46,20 @@ logs/
 *.out
 *.err
 data/
-*.json
-!data/.gitkeep
 
 # ============================================================================
-# PYTHON
+# DATABASE
 # ============================================================================
-__pycache__/    
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+database/*.db
 
 # ============================================================================
-# IDE & EDITOR
+# IDE & OS
 # ============================================================================
 .vscode/
 .idea/
@@ -80,27 +75,25 @@ ehthumbs.db
 Thumbs.db
 
 # ============================================================================
-# DATABASE
+# TEMPORARY / BACKUP FILES
 # ============================================================================
-*.db
-*.sqlite
-*.sqlite3
-database/*.db
-db/
-*.db-journal
-*.db-wal
-*.db-shm
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*.tar.gz
+*.zip
+backups/
 
 # ============================================================================
-# OS
+# TESTING
 # ============================================================================
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+test_data/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
 
 # ============================================================================
 # DEPLOYMENT
@@ -108,64 +101,24 @@ Thumbs.db
 fly.toml.backup
 railway.json
 .vercel/
-
-# ============================================================================
-# TESTING
-# ============================================================================
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-# tests/
-test_data/
-
-# ============================================================================
-# TEMPORARY FILES
-# ============================================================================
-*.tmp
-*.temp
-*.bak
-*.backup
-*.old
-
-# ============================================================================
-# SENSITIVE FILES
-# ============================================================================
-secrets.json
-config.json
-keys.json
-credentials.json
-
-# ============================================================================
-# BACKUPS
-# ============================================================================
-*.tar.gz
-*.zip
-backups/
-
-# ============================================================================
-# NODE.JS (if any frontend components)
-# ============================================================================
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
 # ============================================================================
-# DOCKER
+# SCRATCH & RESEARCH (one-off analysis, not part of the product)
 # ============================================================================
-.dockerignore
-
-# ============================================================================
-# END OF GITIGNORE
-# ============================================================================
-
-# Temporary Research and Forensic data
 scratch/
-graphify-out/
+
+# ============================================================================
+# GRAPHIFY — track the graph outputs but never the extraction cache
+# ============================================================================
+graphify-out/cache/
+graphify-out/.graphify_python
+graphify-out/cost.json
+
+# ============================================================================
+# GIT WORKTREES
+# ============================================================================
 .worktrees/
