@@ -571,6 +571,7 @@ def get_sweep_records(start_ms, end_ms):
                 for sym in syms:
                     base = sym.split("/")[0]
                     scanned[base].add(reason)
+                    events[base].append((ts, reason))
                     key = (sym, reason)
                     if key not in earliest:
                         earliest[key] = {
