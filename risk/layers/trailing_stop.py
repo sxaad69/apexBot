@@ -33,6 +33,11 @@ class TrailingStopLayer:
         Called directly by the PriorityExitSentinel thread in main.py.
         """
         try:
+            # Exchange-managed positions: the exchange trails natively, this
+            # bot-side ratchet must not cancel/replace exchange orders.
+            if position.get('exchange_trailing'):
+                return
+
             entry_price = position.get('entry_price')
             if not entry_price or entry_price == 0:
                 return

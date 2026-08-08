@@ -60,6 +60,7 @@ class PaperTradingEngine:
         # fill that fast, so we cache status for a short TTL.
         self._order_status_cache = {}   # order_id -> (status, timestamp)
         self._order_status_ttl = getattr(config, 'ORDER_STATUS_CACHE_TTL', 5.0)
+        self._open_algo_cache = {}      # symbol -> (set_of_algo_ids, timestamp)
 
         # --- PHASE 2 FIX: OHLCV batch rotation (Task 2.3) ---
         # On cold start, all ~600 symbols' candles are stale. Refreshing them
@@ -409,6 +410,21 @@ class PaperTradingEngine:
             self.logger.error(f"Error fetching market data for {symbol}: {e}")
             return None
     
+    def _market_supports_trailing_stop(self, symbol: str) -> bool:
+        """Check if the given market supports native TRAILING_STOP_MARKET orders.
+        
+        Uses the already-cached market metadata (load_markets) — zero extra API calls.
+        Binance can temporarily drop TRAILING_STOP_MARKET from a symbol's allowed
+        orderTypes (new listings, maintenance, per-symbol restrictions), so we never
+        assume support.
+        """
+        try:
+            market = self.exchange.exchange.market(symbol)
+            order_types = (market.get('info') or {}).get('orderTypes') or []
+            return 'TRAILING_STOP_MARKET' in order_types
+        except Exception:
+            return False
+    
     def _get_cached_order_status(self, order_id: str, symbol: str):
         """Fetch order status with TTL caching (Task 1.1).
 
@@ -432,10 +448,98 @@ class PaperTradingEngine:
             self.logger.warning(f"Failed to fetch order {order_id} for {symbol}: {e}")
             return None
 
+    def _algo_symbol(self, symbol: str) -> str:
+        """Normalize a ccxt symbol ('BTC/USDT:USDT') to the raw Binance format ('BTCUSDT')."""
+        return symbol.replace('/', '').split(':')[0]
+
+    def _place_exchange_conditional(self, symbol, side, order_type, quantity, trigger_price=None,
+                                    activate_price=None, callback_rate=None, client_algo_id=None):
+        """Place a Binance conditional (Algo) order via the Algo Order API.
+
+        Since 2025-12-09 Binance migrated ALL conditional orders (STOP_MARKET,
+        TAKE_PROFIT_MARKET, TRAILING_STOP_MARKET) to the Algo Order API; the
+        legacy /fapi/v1/order endpoint rejects them with -4120. This uses
+        POST /fapi/v1/algoOrder with algoType=CONDITIONAL.
+
+        reduceOnly=true bypasses the $50 min notional so our small positions work.
+        Returns the algoId (str) or None on failure.
+        """
+        try:
+            exchange = self.exchange.exchange
+            params = {
+                'algoType': 'CONDITIONAL',
+                'symbol': self._algo_symbol(symbol),
+                'side': side.upper(),
+                'type': order_type,
+                'quantity': quantity,
+                'reduceOnly': 'true',
+                'workingType': 'CONTRACT_PRICE',
+                'newOrderRespType': 'RESULT',
+            }
+            if trigger_price is not None:
+                params['triggerPrice'] = trigger_price
+            if activate_price is not None:
+                params['activatePrice'] = activate_price
+            if callback_rate is not None:
+                params['callbackRate'] = callback_rate
+            if client_algo_id:
+                params['clientAlgoId'] = client_algo_id
+            resp = exchange.fapiPrivatePostAlgoOrder(params)
+            algo_id = resp.get('algoId') if isinstance(resp, dict) else None
+            if algo_id is not None:
+                self.logger.debug(f"[Algo] Placed {order_type} {symbol} ({client_algo_id}): algoId={algo_id}")
+            return str(algo_id) if algo_id is not None else None
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to place {order_type} via Algo API for {symbol}: {e}")
+            return None
+
+    def _cancel_exchange_conditional(self, symbol, algo_id):
+        """Cancel a conditional (Algo) order by its algoId."""
+        if not algo_id:
+            return
+        try:
+            self.exchange.exchange.fapiPrivateDeleteAlgoOrder({
+                'symbol': self._algo_symbol(symbol),
+                'algoId': algo_id,
+            })
+        except Exception as e:
+            self.logger.debug(f"Cancel algo {algo_id} for {symbol} failed (may already be gone): {e}")
+
+    def _get_cached_open_algo_ids(self, symbol):
+        """Return a set of open algoIds for a symbol via openAlgoOrders, TTL-cached.
+
+        This is the reliable detection source for exchange-side exits: when a
+        conditional order triggers and fills, Binance removes it from the open
+        list, so an algoId dropping out == the order fired.
+        """
+        now = time.time()
+        cached = self._open_algo_cache.get(symbol)
+        if cached and (now - cached[1]) < self._order_status_ttl:
+            return cached[0]
+        try:
+            resp = self.exchange.exchange.fapiPrivateGetOpenAlgoOrders({'symbol': self._algo_symbol(symbol)})
+            algo_ids = set()
+            if isinstance(resp, list):
+                for o in resp:
+                    if isinstance(o, dict) and o.get('algoId') is not None:
+                        algo_ids.add(str(o['algoId']))
+            self._open_algo_cache[symbol] = (algo_ids, now)
+            return algo_ids
+        except Exception as e:
+            self.logger.warning(f"Failed to fetch open algo orders for {symbol}: {e}")
+            if cached:
+                return cached[0]
+            return None
+
     def update_trailing_stops(self, symbol, current_price):
         """Update trailing stops for all positions on a symbol"""
         for position_key, position in list(self.positions.items()):
             if position['symbol'] != symbol:
+                continue
+
+            # Exchange-managed positions: native trailing on the exchange is the
+            # authority. The bot must not double-ratchet or double-close.
+            if position.get('exchange_trailing'):
                 continue
 
             strategy_name = position['strategy']
@@ -516,6 +620,11 @@ class PaperTradingEngine:
 
         for position_key, position in list(self.positions.items()):
             if position['symbol'] != symbol:
+                continue
+
+            # Exchange-managed positions: native trailing on the exchange is the
+            # authority. The bot must not double-ratchet or double-close.
+            if position.get('exchange_trailing'):
                 continue
 
             strategy_name = position['strategy']
@@ -1055,11 +1164,20 @@ class PaperTradingEngine:
                         self.logger.info(f"✅ LIVE ENTRY SUCCESS: {order.get('id')} ({quantity} {symbol}) at {entry_price}")
                         
                         # --- [PHASE 15.2: EXCHANGE-SIDE SL/TP PLACEMENT] ---
-                        # Only place hard exchange orders if ENABLE_EXCHANGE_STOPS is True
+                        # EXCHANGE_SIDE_SL is the master switch:
+                        #   true  -> place native TRAILING_STOP_MARKET where the market
+                        #            supports it, plus a hard STOP_MARKET at the initial
+                        #            SL to protect the pre-activation phase.
+                        #            If the market does NOT support trailing, place only
+                        #            the hard STOP_MARKET and keep the sentinel layer
+                        #            active for this position (per-position fallback).
+                        #   false -> bot-side sentinel layer only (legacy behavior).
                         sl_order_id = None
                         tp_order_id = None
-                        
-                        if getattr(self.config, 'ENABLE_EXCHANGE_STOPS', False):
+                        trailing_order_id = None
+                        exchange_trailing = False
+
+                        if getattr(self.config, 'EXCHANGE_SIDE_SL', False):
                             sl_side = 'sell' if approved_params['side'].lower() == 'buy' else 'buy'
                             sl_price = approved_params['stop_loss']
                             
@@ -1068,42 +1186,70 @@ class PaperTradingEngine:
                             except Exception:
                                 pass
                                 
-                            # 2. Place Hard Stop Loss on Exchange instantaneously
-                            try:
-                                sl_order = self.exchange.exchange.create_stop_market_order(
-                                    symbol=symbol,
-                                    side=sl_side,
-                                    amount=quantity,
-                                    stopPrice=sl_price,
-                                    params={'reduceOnly': True}
+                            # 1. Capability check: does this market support native trailing stops?
+                            supports_trailing = self._market_supports_trailing_stop(symbol)
+                            
+                            # 2. Place Hard Stop Loss on Exchange (always: protects pre-activation)
+                            client_sl = f"apex{str(position['trade_id']).replace('-', '')[-10:]}SL"
+                            sl_order_id = self._place_exchange_conditional(
+                                symbol, sl_side, 'STOP_MARKET',
+                                quantity=quantity,
+                                trigger_price=sl_price,
+                                client_algo_id=client_sl[:36],
+                            )
+                            if sl_order_id:
+                                self.logger.info(f"🛡️ HARD STOP PLACED: {sl_side.upper()} {symbol} @ {sl_price} (algoId: {sl_order_id})")
+                            else:
+                                self.logger.warning(f"⚠️ Failed to place hard Stop Loss on exchange for {symbol}. Bot safety logic still active.")
+                            
+                            # 3. Native TRAILING_STOP_MARKET (only where the market supports it)
+                            if supports_trailing:
+                                try:
+                                    activation_price = entry_price * (1 + getattr(self.config, 'TRAILING_STOP_ACTIVATION', 5.0) / 100.0)
+                                    activation_price = float(self.exchange.exchange.price_to_precision(symbol, activation_price))
+                                except Exception:
+                                    pass
+                                callback_rate = getattr(self.config, 'TRAILING_STOP_DISTANCE', 3.0)
+                                client_tr = f"apex{str(position['trade_id']).replace('-', '')[-10:]}TR"
+                                trailing_order_id = self._place_exchange_conditional(
+                                    symbol, sl_side, 'TRAILING_STOP_MARKET',
+                                    quantity=quantity,
+                                    activate_price=activation_price,
+                                    callback_rate=callback_rate,
+                                    client_algo_id=client_tr[:36],
                                 )
-                                sl_order_id = sl_order.get('id') if sl_order else None
-                                self.logger.info(f"🛡️ HARD STOP PLACED: {sl_side.upper()} {symbol} @ {sl_price} (ID: {sl_order_id})")
-                            except Exception as sl_e:
-                                self.logger.warning(f"⚠️ Failed to place hard Stop Loss on exchange: {sl_e}. Bot safety logic still active.")
-                                
-                            # 3. Place Hard Take Profit on Exchange
+                                if trailing_order_id:
+                                    exchange_trailing = True
+                                    self.logger.info(f"🔁 NATIVE TRAILING STOP PLACED: {sl_side.upper()} {symbol} activation={activation_price} callback={callback_rate}% (algoId: {trailing_order_id})")
+                                else:
+                                    self.logger.warning(f"⚠️ Failed to place native trailing stop on exchange for {symbol}. Falling back to sentinel trailing.")
+                                    trailing_order_id = None
+                                    exchange_trailing = False
+                            
+                            # 4. Place Hard Take Profit on Exchange
                             tp_price = approved_params['take_profit']
                             try:
                                 tp_price = float(self.exchange.exchange.price_to_precision(symbol, tp_price))
                             except Exception:
                                 pass
                                 
-                            try:
-                                tp_order = self.exchange.exchange.create_stop_market_order(
-                                    symbol=symbol,
-                                    side=sl_side,
-                                    amount=quantity,
-                                    stopPrice=tp_price,
-                                    params={'reduceOnly': True}
-                                )
-                                tp_order_id = tp_order.get('id') if tp_order else None
-                                self.logger.info(f"🎯 HARD TP PLACED: {sl_side.upper()} {symbol} @ {tp_price} (ID: {tp_order_id})")
-                            except Exception as tp_e:
-                                self.logger.warning(f"⚠️ Failed to place hard Take Profit on exchange: {tp_e}. Bot safety logic still active.")
+                            client_tp = f"apex{str(position['trade_id']).replace('-', '')[-10:]}TP"
+                            tp_order_id = self._place_exchange_conditional(
+                                symbol, sl_side, 'TAKE_PROFIT_MARKET',
+                                quantity=quantity,
+                                trigger_price=tp_price,
+                                client_algo_id=client_tp[:36],
+                            )
+                            if tp_order_id:
+                                self.logger.info(f"🎯 HARD TP PLACED: {sl_side.upper()} {symbol} @ {tp_price} (algoId: {tp_order_id})")
+                            else:
+                                self.logger.warning(f"⚠️ Failed to place hard Take Profit on exchange for {symbol}. Bot safety logic still active.")
                         
-                        # 4. Save both order IDs to the DB (Trade Manager)
-                        if sl_order_id or tp_order_id:
+                        # 5. Save order IDs + exchange_trailing flag to the DB (Trade Manager)
+                        if sl_order_id or tp_order_id or trailing_order_id:
+                            # Invalidate the openAlgoOrders cache so the fresh orders are
+                            # picked up by Phase 15.3 detection on the next poll cycle.
+                            self._open_algo_cache.pop(symbol, None)
                             self.trade_manager.db.update_trade_order_ids(
                                 position['trade_id'],
                                 sl_order_id=sl_order_id,
@@ -1112,6 +1258,20 @@ class PaperTradingEngine:
                             # Update in-memory reference too
                             position['sl_order_id'] = sl_order_id
                             position['tp_order_id'] = tp_order_id
+                            position['trailing_order_id'] = trailing_order_id
+                            position['exchange_trailing'] = exchange_trailing
+                            # Persist exchange_trailing + trailing order id to metadata for restart recovery
+                            import json as _json
+                            _meta = {}
+                            try:
+                                _meta = _json.loads(position.get('metadata') or '{}')
+                            except Exception:
+                                _meta = {}
+                            _meta['exchange_trailing'] = exchange_trailing
+                            _meta['trailing_order_id'] = trailing_order_id
+                            self.trade_manager.db.update_trade_metadata(
+                                position['trade_id'], {'metadata': _meta}
+                            )
                             
                     except Exception as e:
                         self.logger.error(f"🚨 LIVE ENTRY ATTEMPT FAILED for {symbol}: {e}")
@@ -1196,46 +1356,79 @@ class PaperTradingEngine:
                 continue
 
             # --- [PHASE 15.3: EXCHANGE-SIDE SL/TP POLLING] ---
-            # If we placed exchange orders, check their status FIRST before software checks
+            # If we placed exchange orders, check their status FIRST before software checks.
+            # Active only when EXCHANGE_SIDE_SL is true (the master switch).
             exchange_exit_triggered = False
             exchange_exit_reason = None
             filled_order = None
-            
-            if self.mode == 'live' and getattr(self.config, 'ENABLE_EXCHANGE_STOPS', False):
+            position_uses_exchange_trailing = position.get('exchange_trailing', False)
+
+            if self.mode == 'live' and getattr(self.config, 'EXCHANGE_SIDE_SL', False):
                 sl_id = position.get('sl_order_id')
                 tp_id = position.get('tp_order_id')
+                trailing_id = position.get('trailing_order_id')
                 
-                if sl_id or tp_id:
+                if sl_id or tp_id or trailing_id:
                     try:
-                        # 1. Check SL (TTL-cached to avoid hammering REST every 0.5s)
-                        if sl_id:
-                            sl_status = self._get_cached_order_status(sl_id, symbol)
-                            if sl_status and sl_status.get('status') == 'closed':
+                        # Fetch the current set of open algo orders for this symbol
+                        # (TTL-cached; a single call covers SL/trailing/TP).
+                        open_algo_ids = self._get_cached_open_algo_ids(symbol)
+                        
+                        if open_algo_ids is not None:
+                            # Cross-check: an exchange-side order that fired closes the
+                            # position on the exchange. Requiring the position to be GONE
+                            # eliminates false positives from placement propagation lag
+                            # (freshly placed orders may take a second to appear in the
+                            # openAlgoOrders list — we must not record a phantom exit).
+                            pos_exists = len(self.exchange.get_positions(symbol)) > 0
+                            
+                            # 1. Check SL — if its algoId dropped out of the open list, it fired
+                            if sl_id and str(sl_id) not in open_algo_ids:
                                 exchange_exit_triggered = True
                                 exchange_exit_reason = 'stop_loss'
-                                filled_order = sl_status
-                                # Cancel orphan TP
+                                filled_order = {'id': sl_id}
+                                # Cancel orphan TP + trailing
                                 if tp_id:
-                                    try: self.exchange.exchange.cancel_order(tp_id, symbol)
-                                    except: pass
+                                    self._cancel_exchange_conditional(symbol, tp_id)
+                                if trailing_id:
+                                    self._cancel_exchange_conditional(symbol, trailing_id)
                         
-                        # 2. Check TP (if SL didn't fill) — TTL-cached
-                        if not exchange_exit_triggered and tp_id:
-                            tp_status = self._get_cached_order_status(tp_id, symbol)
-                            if tp_status and tp_status.get('status') == 'closed':
+                            # 2. Check Trailing (native exchange trailing fired first)
+                            if not exchange_exit_triggered and trailing_id and str(trailing_id) not in open_algo_ids:
+                                exchange_exit_triggered = True
+                                exchange_exit_reason = 'trailing_stop'
+                                filled_order = {'id': trailing_id}
+                                # Cancel orphan SL + TP
+                                if sl_id:
+                                    self._cancel_exchange_conditional(symbol, sl_id)
+                                if tp_id:
+                                    self._cancel_exchange_conditional(symbol, tp_id)
+                        
+                            # 3. Check TP (if SL/trailing didn't fill)
+                            if not exchange_exit_triggered and tp_id and str(tp_id) not in open_algo_ids:
                                 exchange_exit_triggered = True
                                 exchange_exit_reason = 'take_profit'
-                                filled_order = tp_status
-                                # Cancel orphan SL
+                                filled_order = {'id': tp_id}
+                                # Cancel orphan SL + trailing
                                 if sl_id:
-                                    try: self.exchange.exchange.cancel_order(sl_id, symbol)
-                                    except: pass
-                                    
-                        # 3. If either filled on exchange, bypass software checks and record exit
+                                    self._cancel_exchange_conditional(symbol, sl_id)
+                                if trailing_id:
+                                    self._cancel_exchange_conditional(symbol, trailing_id)
+                        
+                            # A fired conditional order always closes the position on the
+                            # exchange. If the position still exists, the "missing" order
+                            # is just propagation lag — do NOT record an exit yet.
+                            if exchange_exit_triggered and pos_exists:
+                                self.logger.debug(f"{symbol}: algo order fired but position still on exchange ({sl_id=},{trailing_id=},{tp_id=}). Likely propagation lag — waiting.")
+                                exchange_exit_triggered = False
+                                exchange_exit_reason = None
+                                filled_order = None
+                        
+                        # 4. If any fired on exchange, bypass software checks and record exit
                         if exchange_exit_triggered:
                             self.logger.info(f"⚡ EXCHANGE-SIDE EXIT DETECTED: {symbol} hit {exchange_exit_reason}")
                             try:
-                                # Ensure both IDs are cleared in DB
+                                # Ensure all IDs are cleared in DB
                                 self.trade_manager.db.update_trade_order_ids(position['trade_id'], sl_order_id=None, tp_order_id=None)
                             except Exception as e:
                                 self.logger.warning(f"Failed to clear order IDs for {symbol}: {e}")
@@ -1268,6 +1461,11 @@ class PaperTradingEngine:
                         self.logger.warning(f"⚠️ Failed to poll exchange orders for {symbol}: {e}. Falling back to software check.")
 
             # --- SOFTWARE EXIT CHECKS (Fallback) ---
+            # Skip entirely for positions managed by a native exchange trailing stop —
+            # the exchange is the authority there, the bot must not double-close.
+            if position_uses_exchange_trailing:
+                continue
+
             # Update Trailing Stop Ratchet BEFORE Software Check (System B — TrailingStopLayer)
             trailing_engine = getattr(self, 'trailing_stop_engine', None)
             if trailing_engine:
@@ -2292,7 +2490,9 @@ class ApexHunterBot:
                             'trailing_tp_activation_price': metadata.get('trailing_tp_activation_price', None),
                             # Exchange-Side SL/TP persistence (Phase 15)
                             'sl_order_id': db_trade.get('sl_order_id'),
-                            'tp_order_id': db_trade.get('tp_order_id')
+                            'tp_order_id': db_trade.get('tp_order_id'),
+                            'trailing_order_id': metadata.get('trailing_order_id'),
+                            'exchange_trailing': metadata.get('exchange_trailing', False)
                         }
                         
                         # Add back to active memory

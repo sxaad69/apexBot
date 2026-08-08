@@ -221,7 +221,12 @@ class Config:
         self.TRAILING_TP_ENABLED = self._str_to_bool('true')
 
         # Exchange-Side Execution
-        self.ENABLE_EXCHANGE_STOPS = self._str_to_bool('false')
+        # EXCHANGE_SIDE_SL is the master switch:
+        #   true  -> place exchange-side stops (native trailing where supported,
+        #            hard STOP_MARKET fallback + sentinel where not)
+        #   false -> bot-side sentinel layer only (legacy behavior)
+        self.EXCHANGE_SIDE_SL = self._str_to_bool(os.getenv('EXCHANGE_SIDE_SL', 'false'))
+        self.ENABLE_EXCHANGE_STOPS = self._str_to_bool(os.getenv('ENABLE_EXCHANGE_STOPS', 'false'))
         self.EXCHANGE_TP_ORDER_TYPE = 'TAKE_PROFIT_MARKET'
 
         self.MAX_DAILY_LOSS_PERCENT = float('15')

@@ -370,6 +370,28 @@ class SQLiteManager:
             print(f"❌ SQLite record_trade error: {e}")
             return False
 
+    def update_trade_order_ids(self, trade_id: str, sl_order_id=None, tp_order_id=None) -> bool:
+        """Update the exchange order IDs (SL/TP) for an open trade.
+
+        Order IDs may be passed as None to clear them (e.g. after an exit or
+        when an order is cancelled). Used by the exchange-side SL/TP feature
+        (Phase 15) to persist order ids for restart recovery.
+        """
+        try:
+            conn = self._get_connection(self.main_db)
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE trades SET sl_order_id = ?, tp_order_id = ? WHERE trade_id = ?",
+                (sl_order_id, tp_order_id, trade_id)
+            )
+            success = cursor.rowcount > 0
+            conn.commit()
+            conn.close()
+            return success
+        except Exception as e:
+            print(f"❌ SQLite update_trade_order_ids error: {e}")
+            return False
+
     def update_trade_metadata(self, trade_id: str, updates: Dict[str, Any]) -> bool:
         """Update an existing trade with live parameters like SL/TP and metadata."""
         try:
