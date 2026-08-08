@@ -171,12 +171,19 @@ class CCXTExchangeClient(BaseExchangeClient):
         import time as _time
         now = _time.time()
         ttl = getattr(self.config, 'POSITIONS_CACHE_TTL', 5.0)  # 5s default
-        if (now - getattr(self, '_positions_cache_ts', 0)) < ttl and getattr(self, '_positions_cache', None) is not None:
-            return self._positions_cache
+
+        def _filter_by_symbol(positions_list):
+            if not symbol:
+                return positions_list
+            return [p for p in positions_list if p.get('symbol') == symbol]
+
+        cache_hit = (now - getattr(self, '_positions_cache_ts', 0)) < ttl and getattr(self, '_positions_cache', None) is not None
+        if cache_hit:
+            return _filter_by_symbol(self._positions_cache)
         if not self.rate_limiter.acquire(weight=5, timeout=5):
             # On limiter timeout, fall back to stale cache if available
             if getattr(self, '_positions_cache', None) is not None:
-                return self._positions_cache
+                return _filter_by_symbol(self._positions_cache)
             return []
         try:
             if symbol:
@@ -190,12 +197,12 @@ class CCXTExchangeClient(BaseExchangeClient):
             self._positions_cache = active_positions
             self._positions_cache_ts = now
             self.logger.debug(f"Fetched {len(active_positions)} positions from {self.exchange_id}")
-            return active_positions
+            return _filter_by_symbol(active_positions)
         except Exception as e:
             # On error, fall back to stale cache if available
             if getattr(self, '_positions_cache', None) is not None:
                 self.logger.warning(f"Rate-limit / fetch error for positions: {e}. Using cached positions.")
-                return self._positions_cache
+                return _filter_by_symbol(self._positions_cache)
             self.logger.error(f"Error fetching positions: {e}", exc_info=True)
             return []
     
@@ -265,11 +272,11 @@ class CCXTExchangeClient(BaseExchangeClient):
         try:
             # CCXT unified order placement
             if order_type == 'market':
-                order = self.exchange.create_market_order(symbol, side, amount, kwargs)
+                order = self.exchange.create_market_order(symbol, side, amount, params=kwargs)
             elif order_type == 'limit':
                 if price is None:
                     raise ValueError("Price required for limit orders")
-                order = self.exchange.create_limit_order(symbol, side, amount, price, kwargs)
+                order = self.exchange.create_limit_order(symbol, side, amount, price, params=kwargs)
             else:
                 raise ValueError(f"Unsupported order type: {order_type}")
             
