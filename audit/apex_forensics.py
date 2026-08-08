@@ -842,15 +842,20 @@ def run_missed_alpha_analysis(args):
     # Impact maps by category and layer
     impact = {"STRATEGY": {}, "RISK": {}, "OTHER": {}}
     for r in results:
-        layer = r["layer"] or "unknown"
-        if layer == "STRATEGY_FILTER":
+        # Sweep rows carry the real filter name in `reason` (e.g. LOW_IMBALANCE);
+        # use it as the layer key so friction is actionable, not lumped as "STRATEGY_FILTER".
+        if r["layer"] == "STRATEGY_FILTER":
             category = "STRATEGY"
-        elif "RISK" in str(layer).upper():
+            layer = str(r["reason"] or "unknown")
+        elif "RISK" in str(r["layer"]).upper():
             category = "RISK"
-        elif "STRATEGY" in str(layer).upper():
+            layer = r["layer"] or "unknown"
+        elif "STRATEGY" in str(r["layer"]).upper():
             category = "STRATEGY"
+            layer = r["layer"] or "unknown"
         else:
             category = "OTHER"
+            layer = r["layer"] or "unknown"
         stats = impact[category].setdefault(layer, {"count": 0, "winners": 0, "missed_alpha": 0.0})
         stats["count"] += 1
         if r["potential_pnl"] > 1.0:
@@ -862,7 +867,8 @@ def run_missed_alpha_analysis(args):
     print("-"*120)
     for r in results[:20]:
         e_type = "STRATEGY" if r["layer"] == "STRATEGY_FILTER" else ("RISK" if "RISK" in str(r["layer"]).upper() else "OTHER")
-        print(f"{str(r['timestamp']):<20} | {e_type:<9} | {str(r['layer']):<20} | {str(r['symbol']):<14} | {r['side'].upper():<5} | {r['potential_pnl']:>+7.2f}% | {r['max_drawdown']:>+7.2f}%")
+        layer_shown = r["reason"] if r["layer"] == "STRATEGY_FILTER" else r["layer"]
+        print(f"{str(r['timestamp']):<20} | {e_type:<9} | {str(layer_shown):<20} | {str(r['symbol']):<14} | {r['side'].upper():<5} | {r['potential_pnl']:>+7.2f}% | {r['max_drawdown']:>+7.2f}%")
 
     for category in ["STRATEGY", "RISK", "OTHER"]:
         print(f"\n🛡️ {category} FRICTION ANALYSIS")
