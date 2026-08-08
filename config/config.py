@@ -100,6 +100,9 @@ class Config:
         self.FUTURES_PAIRS = 'auto'
         self.FUTURES_AUTO_TOP_N = int('1000')  # Full universe (all qualifying perps)
         self.FUTURES_AUTO_MIN_VOLUME = float('500000')
+        # Comma-separated list of base symbols to exclude from discovery/A6 watch/sweeps.
+        # Matching is case-insensitive on the base symbol (e.g. 'BTC' excludes BTC/USDT).
+        self.FUTURES_EXCLUDE_SYMBOLS = [s.strip().upper() for s in os.getenv('FUTURES_EXCLUDE_SYMBOLS', '').split(',') if s.strip()]
         
         # ===== Full-Universe Scanning (Phase 2) =====
         self.OHLCV_BATCH_MAX = int('100')  # Max stale-candle refreshes per sweep

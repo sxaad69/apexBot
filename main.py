@@ -271,6 +271,13 @@ class PaperTradingEngine:
                 if any(x in clean_symbol for x in ['BUSD', 'EUR', 'GBP', 'AUD']):
                     continue
 
+                # --- USER-DEFINED EXCLUSIONS (FUTURES_EXCLUDE_SYMBOLS) ---
+                exclude_list = getattr(self.config, 'FUTURES_EXCLUDE_SYMBOLS', [])
+                if exclude_list:
+                    base = clean_symbol.split('/')[0].replace('USDT', '')
+                    if base in exclude_list:
+                        continue
+
                 # Standard CCXT quoteVolume is preferred
                 quote_volume = ticker.get('quoteVolume', 0)
                 
