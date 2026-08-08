@@ -531,14 +531,16 @@ SWEEP_NOISE_REASONS = {
 def get_sweep_records(start_ms, end_ms):
     """Parse sweep_summary JSONs from activity_log.db within [start_ms, end_ms].
 
-    Returns (rejections, scanned):
+    Returns (rejections, scanned, events):
       rejections: list of {timestamp, symbol, strategy, reason, layer} — deduped to
                   the earliest occurrence per (symbol, reason). These are the bot's
                   ACTUAL strategy/filter rejections (the real "why wasn't it traded").
       scanned:    {base_symbol: set(reasons)} — every symbol the bot scanned in sweeps.
+      events:     {base_symbol: [(timestamp_iso, reason), ...]} — every rejection event
+                  (sorted by time) so callers can build per-symbol timelines.
     """
     if not os.path.exists(LOG_DB_PATH):
-        return [], {}
+        return [], {}, {}
     conn = sqlite3.connect(LOG_DB_PATH)
     try:
         rows = conn.execute(
@@ -552,6 +554,7 @@ def get_sweep_records(start_ms, end_ms):
 
     earliest = {}          # (symbol, reason) -> record
     scanned = defaultdict(set)  # base -> set(reasons)
+    events = defaultdict(list)  # base -> [(ts, reason)]
 
     for (meta,) in rows:
         if not meta:
@@ -584,7 +587,38 @@ def get_sweep_records(start_ms, end_ms):
         base: {r for r in reasons if r not in SWEEP_NOISE_REASONS}
         for base, reasons in scanned.items()
     }
-    return rejections, scanned
+    events = {
+        base: sorted(
+            (ts, reason) for ts, reason in evs if reason not in SWEEP_NOISE_REASONS
+        )
+        for base, evs in events.items()
+    }
+    return rejections, scanned, events
+
+
+def summarize_sweep_timeline(base, events):
+    """Compress a per-symbol rejection event list into a short printable timeline.
+
+    Returns a string like 'LOW_IMBALANCE x12 (08:12→16:40), CONFIDENCE_LOW x3 (09:01→11:22)'.
+    """
+    if not events:
+        return "no sweep rejections"
+    by_reason = defaultdict(list)
+    for ts, reason in events:
+        try:
+            t = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            hhmm = t.strftime("%H:%M")
+        except Exception:
+            hhmm = ts
+        by_reason[reason].append(hhmm)
+    parts = []
+    for reason, times in sorted(by_reason.items(), key=lambda kv: -len(kv[1])):
+        lo, hi = times[0], times[-1]
+        if len(times) == 1:
+            parts.append(f"{reason} @{lo}")
+        else:
+            parts.append(f"{reason} x{len(times)} ({lo}→{hi})")
+    return ", ".join(parts)
 
 
 def run_toppers_analysis(args):
@@ -652,8 +686,8 @@ def run_toppers_analysis(args):
     traded = get_traded_symbols(start_ms, end_ms)
     print(f"Bot traded symbols: {len(traded)}")
 
-    # Get actual sweep data — which symbols the bot scanned and why it rejected them
-    _, scanned = get_sweep_records(start_ms, end_ms)
+    # Get actual sweep data — which symbols the bot scanned, why, and when (events)
+    _, scanned, events = get_sweep_records(start_ms, end_ms)
     print(f"Bot scanned symbols (sweep data): {len(scanned)}")
 
     # Flag function — prioritize real bot behavior (sweeps), then volume-based fallback
@@ -678,21 +712,23 @@ def run_toppers_analysis(args):
     
     print(f"\nTOP-20 COVERAGE: {traded_count} traded | {scanned_count} scanned-rejected | {watched_count} watched | {missed_count} missed")
     
-    print("\n" + "-"*120)
-    print("🏆 TOP 20 GAINERS over the bot's runtime window")
-    print("-"*120)
-    print(f"{'#':<4}{'SYMBOL':<14}{'%Change':>9}{'Open $':>16}  {'Bot Status'}")
-    print("-"*120)
-    for i, (sym, pct, opn) in enumerate(gainers, 1):
-        print(f"{i:<4}{sym:<14}{pct:>+8.2f}%{opn:>16.6f}  {flag(sym)}")
-    
-    print("\n" + "-"*120)
-    print("🔻 TOP 10 LOSERS over the bot's runtime window")
-    print("-"*120)
-    print(f"{'#':<4}{'SYMBOL':<14}{'%Change':>9}{'Open $':>16}  {'Bot Status'}")
-    print("-"*120)
-    for i, (sym, pct, opn) in enumerate(losers, 1):
-        print(f"{i:<4}{sym:<14}{pct:>+8.2f}%{opn:>16.6f}  {flag(sym)}")
+    def base_of(symbol):
+        return symbol[:-4] if symbol.endswith("USDT") else symbol
+
+    def print_rows(rows, title):
+        print("\n" + "-"*120)
+        print(title)
+        print("-"*120)
+        print(f"{'#':<4}{'SYMBOL':<14}{'%Change':>9}{'Open $':>16}  {'Bot Status'}")
+        print("-"*120)
+        for i, (sym, pct, opn) in enumerate(rows, 1):
+            print(f"{i:<4}{sym:<14}{pct:>+8.2f}%{opn:>16.6f}  {flag(sym)}")
+            tl = summarize_sweep_timeline(base_of(sym), events.get(base_of(sym), []))
+            print(f"      ⏱ rejection timeline: {tl}")
+        print("-"*120)
+
+    print_rows(gainers, "🏆 TOP 20 GAINERS over the bot's runtime window")
+    print_rows(losers, "🔻 TOP 10 LOSERS over the bot's runtime window")
     
     print("\n" + "="*120)
 
@@ -809,7 +845,7 @@ def run_missed_alpha_analysis(args):
     if not rows:
         try:
             _start_ms, _end_ms = resolve_window_ms(args)
-            sweep_rows, _ = get_sweep_records(_start_ms, _end_ms)
+            sweep_rows, _, _ = get_sweep_records(_start_ms, _end_ms)
         except Exception as e:
             print(f"⚠️ Sweep rejections unavailable: {e}")
 
