@@ -768,11 +768,11 @@ class PaperTradingEngine:
                             except: pass
                             
                             new_tp_order = self.exchange.exchange.create_stop_market_order(
-                                symbol=symbol,
-                                side=sl_side,
-                                amount=base_qty,
-                                stopPrice=new_tp_price,
-                                params={'reduceOnly': True}
+                                symbol,
+                                sl_side,
+                                base_qty,
+                                new_tp_price,
+                                {'reduceOnly': True}
                             )
                             
                             # 3. Save new ID
@@ -1471,8 +1471,8 @@ class PaperTradingEngine:
                             if exit_result and exit_result.get('verified'):
                                 if self.mode == 'paper':
                                     self.total_capital += exit_result.get('capital_return', 0)
-                                is_win = exit_result['net_pnl'] > 0
-                                self.risk_manager.record_trade_result(is_win, exit_result['net_pnl'])
+                                is_win = exit_result.get('net_pnl', 0) > 0
+                                self.risk_manager.record_trade_result(is_win, exit_result.get('net_pnl', 0))
                                 if self.total_capital > self.peak_balance:
                                     self.peak_balance = self.total_capital
                                     self.risk_manager.update_peak_balance(self.total_capital)
@@ -1546,11 +1546,11 @@ class PaperTradingEngine:
                     # spike that gets saved as a false peak_balance before sync corrects it.
                     if self.mode == 'paper':
                         self.total_capital += exit_result.get('capital_return', 0)
-                    self.logger.info(f"💰 CAPITAL RECOVERED: ${exit_result['capital_return']:.2f} (including Sync P&L)")
+                    self.logger.info(f"💰 CAPITAL RECOVERED: ${exit_result.get('capital_return', 0):.2f} (including Sync P&L)")
 
                     # Record result with risk manager
-                    is_win = exit_result['net_pnl'] > 0
-                    self.risk_manager.record_trade_result(is_win, exit_result['net_pnl'])
+                    is_win = exit_result.get('net_pnl', 0) > 0
+                    self.risk_manager.record_trade_result(is_win, exit_result.get('net_pnl', 0))
 
                     # Update peak balance and drawdown tracking.
                     # Only persist to DB in paper mode — in live mode, peak is updated
