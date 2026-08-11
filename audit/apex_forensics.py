@@ -842,13 +842,14 @@ def run_missed_alpha_analysis(args):
     # Merge with the bot's actual strategy/filter rejections captured in sweep_summary JSONs.
     # The rejections table (risk-layer) is frequently empty on mainnet; the sweep data is
     # the authoritative record of "why didn't we trade X" — so we must not skip Mode 3.
+    # Merge BOTH sources whenever sweep data exists (not only when the table is empty),
+    # so strategy-filter rejections (e.g. LOW_IMBALANCE moonshots) are never dropped.
     sweep_rows = []
-    if not rows:
-        try:
-            _start_ms, _end_ms = resolve_window_ms(args)
-            sweep_rows, _, _ = get_sweep_records(_start_ms, _end_ms)
-        except Exception as e:
-            print(f"⚠️ Sweep rejections unavailable: {e}")
+    try:
+        _start_ms, _end_ms = resolve_window_ms(args)
+        sweep_rows, _, _ = get_sweep_records(_start_ms, _end_ms)
+    except Exception as e:
+        print(f"⚠️ Sweep rejections unavailable: {e}")
 
     combined = list(rows) + sweep_rows
 
