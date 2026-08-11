@@ -44,6 +44,7 @@ class PaperTradingEngine:
         # Parallel Execution Architecture properties
         import threading
         self.recent_liquidations = {}
+        self.symbol_loss_streak = {}  # C1: consecutive SL losses per symbol (re-entry blacklist)
         self.trade_lock = threading.Lock()
 
         # --- RATE-LIMIT FIX: OHLCV cache to avoid hammering Binance REST ---
@@ -620,6 +621,112 @@ class PaperTradingEngine:
 
 
 
+
+    def _update_symbol_loss_streak(self, symbol, reason, net_pnl):
+        """C1: track consecutive stop-loss losses per symbol for the re-entry blacklist."""
+        base = symbol.split('/')[0]
+        if reason and 'stop_loss' in str(reason).lower():
+            # stop_loss exit — increment streak
+            self.symbol_loss_streak[base] = self.symbol_loss_streak.get(base, 0) + 1
+        elif net_pnl and net_pnl > 0:
+            # profitable exit — reset streak
+            self.symbol_loss_streak[base] = 0
+
+    def update_trailing_tier(self, symbol, current_price):
+        """B1: Tiered trailing for exchange-managed positions.
+
+        The exchange's native TRAILING_STOP_MARKET has a fixed callbackRate baked
+        in at placement. As a position proves it runs, widen the callback so we
+        stop cutting winners early (audit: 53% of trailing exits were premature).
+        Tier 0 (<+8%): keep entry callback. Tier 1 (+8%): 5%. Tier 2 (+20%): 8%.
+
+        Each tier change cancels the live trailing algo order and re-places it with
+        the wider callbackRate, then persists the new trailing_order_id.
+        """
+        if not getattr(self.config, 'EXCHANGE_SIDE_SL', False):
+            return
+
+        tier1_at = getattr(self.config, 'TRAILING_TIER_1_AT', 8.0) / 100.0
+        tier1_cb = getattr(self.config, 'TRAILING_TIER_1_CALLBACK', 5.0)
+        tier2_at = getattr(self.config, 'TRAILING_TIER_2_AT', 20.0) / 100.0
+        tier2_cb = getattr(self.config, 'TRAILING_TIER_2_CALLBACK', 8.0)
+
+        for position_key, position in list(self.positions.items()):
+            if position['symbol'] != symbol:
+                continue
+            if not position.get('exchange_trailing'):
+                continue  # bot-side managed positions handled elsewhere
+
+            trailing_id = position.get('trailing_order_id')
+            if not trailing_id:
+                continue
+
+            entry = float(position.get('entry_price') or 0)
+            if entry <= 0:
+                continue
+            profit_percent = (current_price - entry) / entry
+
+            # Determine target tier from current profit
+            if profit_percent >= tier2_at:
+                target_tier, target_cb = 2, tier2_cb
+            elif profit_percent >= tier1_at:
+                target_tier, target_cb = 1, tier1_cb
+            else:
+                continue  # still in tier 0 — keep entry callback
+
+            current_tier = position.get('trailing_tier', 0)
+            if current_tier >= target_tier:
+                continue  # already at this tier or higher
+
+            # Widen: cancel live trailing, re-place with wider callback
+            sl_side = 'sell' if position.get('side') == 'buy' else 'buy'
+            entry = float(position.get('entry_price') or 0)
+            size = float(position.get('size') or 0)
+            lev = float(position.get('leverage') or 1)
+            if size <= 0 or entry <= 0:
+                self.logger.warning(f"[tier] {symbol}: cannot resolve size/entry for tier upgrade. Skipping.")
+                continue
+            quantity = (size * lev) / entry  # same contract math as initial placement
+            try:
+                quantity = float(self.exchange.exchange.amount_to_precision(symbol, quantity))
+            except Exception:
+                pass
+            if quantity <= 0:
+                self.logger.warning(f"[tier] {symbol}: invalid quantity {quantity} for tier upgrade. Skipping.")
+                continue
+
+            self._cancel_exchange_conditional(symbol, trailing_id)
+
+            client_tr = f"apex{str(position['trade_id']).replace('-', '')[-10:]}TR"
+            new_id = self._place_exchange_conditional(
+                symbol, sl_side, 'TRAILING_STOP_MARKET',
+                quantity=quantity,
+                activate_price=current_price,  # already past activation — keep it live
+                callback_rate=target_cb,
+                client_algo_id=client_tr[:36],
+            )
+            if new_id:
+                position['trailing_order_id'] = new_id
+                position['trailing_tier'] = target_tier
+                # Persist tier + order id for restart recovery
+                try:
+                    import json as _json
+                    _meta = _json.loads(position.get('metadata') or '{}')
+                except Exception:
+                    _meta = {}
+                _meta['trailing_tier'] = target_tier
+                _meta['trailing_order_id'] = new_id
+                self.trade_manager.db.update_trade_metadata(
+                    position['trade_id'], {'metadata': _meta}
+                )
+                self.logger.info(
+                    f"🎯 TRAILING TIER UPGRADE: {symbol} → tier {target_tier} "
+                    f"(callback {target_cb}%) at +{profit_percent*100:.1f}% profit (algoId: {new_id})"
+                )
+            else:
+                # Re-place failed — restore original by logging (sentinel fallback covers safety)
+                self.logger.warning(f"⚠️ Trailing tier upgrade failed for {symbol}; keeping prior state.")
+
     def update_trailing_take_profit(self, symbol, current_price):
         """Update trailing take profit for all positions on a symbol."""
         if not getattr(self.config, 'TRAILING_TP_ENABLED', True):
@@ -922,6 +1029,17 @@ class PaperTradingEngine:
             self.logger.warning(f"🚫 [COOLDOWN REJECTED] {symbol} hit an exit {elapsed_minutes:.1f}m ago. Under {cooldown_minutes}m cooling off period.")
             return
 
+        # C1: Re-entry blacklist — 2 consecutive SL losses on the same symbol blocks the session.
+        # Kills the MORPHO/TA/Q repeat-loss pattern (audit: those 3 symbols lost ~$8.5 on 0 wins).
+        max_streak = getattr(self.config, 'FUTURES_MAX_LOSS_STREAK', 2)
+        streak = self.symbol_loss_streak.get(symbol.split('/')[0], 0)
+        if streak >= max_streak:
+            self.logger.warning(
+                f"🚫 [RE-ENTRY BLACKLIST] {symbol} has {streak} consecutive SL losses. "
+                f"Blocking re-entry for this session."
+            )
+            return
+
         # 1. Triple-Check Global Symbol Guard (Phase 28)
         # Prevent taking multiple positions on the same coin across different strategies
         
@@ -970,7 +1088,9 @@ class PaperTradingEngine:
             # --- Confidence-Based Position Sizing ---
             # Higher conviction signals deserve proportionally more capital
             confidence = signal.get('confidence', 0.5)
-            if confidence >= 0.90:
+            if confidence >= 0.95:
+                base_size_pct = 0.20  # 20% — Top conviction (C2: big winners were >=0.95)
+            elif confidence >= 0.90:
                 base_size_pct = 0.15  # 15% — Elite conviction
             elif confidence >= 0.80:
                 base_size_pct = 0.12  # 12% — High conviction
@@ -1009,6 +1129,15 @@ class PaperTradingEngine:
                 total_capital * base_size_pct,
                 available_for_new_trade
             )
+
+            # A2: TREND-OVERRIDE signals (strong orderbook below EMA200) enter at 50% size
+            size_multiplier = signal.get('size_multiplier', 1.0)
+            if size_multiplier < 1.0:
+                max_position_size *= size_multiplier
+                self.logger.info(
+                    f"[{strategy_name}] {symbol} TREND-OVERRIDE size halved "
+                    f"(x{size_multiplier}) → ${max_position_size:.2f}"
+                )
 
             self.logger.debug(
                 f"[{strategy_name}] Position sizing: Conf {confidence:.2f} → "
@@ -1481,6 +1610,7 @@ class PaperTradingEngine:
                             
                             import time
                             self.recent_liquidations[symbol] = time.time()
+                            self._update_symbol_loss_streak(symbol, exchange_exit_reason, exit_result.get('net_pnl', 0) if exit_result else 0)
                             closed_positions.append(position_key)
                             continue # Skip the rest of the loop for this position
                             
@@ -1564,6 +1694,7 @@ class PaperTradingEngine:
                 # Remove from memory loop
                 import time
                 self.recent_liquidations[symbol] = time.time()
+                self._update_symbol_loss_streak(symbol, reason, exit_result.get('net_pnl', 0) if exit_result else 0)
                 closed_positions.append(position_key)
                 continue
                 # (Legacy code removed)
@@ -1648,6 +1779,7 @@ class PaperTradingEngine:
                 # Fireboard Isolation for Exits
                 try:
                     self.update_trailing_stops(symbol, mark_price)
+                    self.update_trailing_tier(symbol, mark_price)
                     self.update_trailing_take_profit(symbol, mark_price)
                     self.check_exits(symbol, mark_price)
                 except Exception as e:
@@ -1675,6 +1807,7 @@ class PaperTradingEngine:
         if not mark_price and not entry_only:
             try:
                 self.update_trailing_stops(symbol, current_price)
+                self.update_trailing_tier(symbol, current_price)
                 self.update_trailing_take_profit(symbol, current_price)
                 self.check_exits(symbol, current_price)
             except Exception as e:
