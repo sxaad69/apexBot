@@ -642,6 +642,10 @@ class PaperTradingEngine:
 
         Each tier change cancels the live trailing algo order and re-places it with
         the wider callbackRate, then persists the new trailing_order_id.
+
+        DIAGNOSTIC: every position evaluated logs its skip reason so we can observe
+        why a runner (e.g. AGT) may not upgrade — flag state, missing trailing id,
+        unresolved quantity, etc. Remove verbose per-tick logs after root-causing.
         """
         if not getattr(self.config, 'EXCHANGE_SIDE_SL', False):
             return
@@ -654,15 +658,20 @@ class PaperTradingEngine:
         for position_key, position in list(self.positions.items()):
             if position['symbol'] != symbol:
                 continue
-            if not position.get('exchange_trailing'):
-                continue  # bot-side managed positions handled elsewhere
 
+            # Order-execution gate: tier ANY position with a live exchange trailing,
+            # regardless of the (sometimes unreliable) exchange_trailing flag.
             trailing_id = position.get('trailing_order_id')
             if not trailing_id:
+                self.logger.debug(
+                    f"[tier] {symbol} {position_key}: skip (no trailing_order_id; "
+                    f"exchange_trailing={position.get('exchange_trailing')})"
+                )
                 continue
 
             entry = float(position.get('entry_price') or 0)
             if entry <= 0:
+                self.logger.debug(f"[tier] {symbol} {position_key}: skip (bad entry {entry})")
                 continue
             profit_percent = (current_price - entry) / entry
 
@@ -672,15 +681,20 @@ class PaperTradingEngine:
             elif profit_percent >= tier1_at:
                 target_tier, target_cb = 1, tier1_cb
             else:
-                continue  # still in tier 0 — keep entry callback
+                continue  # still in tier 0 — keep entry callback (no log: normal path, noisy)
 
             current_tier = position.get('trailing_tier', 0)
             if current_tier >= target_tier:
-                continue  # already at this tier or higher
+                continue  # already at this tier or higher (no log: normal steady-state)
+
+            self.logger.info(
+                f"[tier] {symbol} evaluating upgrade: profit +{profit_percent*100:.1f}% "
+                f"> tier{target_tier}@+{tier1_at*100 if target_tier==1 else tier2_at*100:.0f}% | "
+                f"cur_tier={current_tier} | trailing_id={trailing_id}"
+            )
 
             # Widen: cancel live trailing, re-place with wider callback
             sl_side = 'sell' if position.get('side') == 'buy' else 'buy'
-            entry = float(position.get('entry_price') or 0)
             size = float(position.get('size') or 0)
             lev = float(position.get('leverage') or 1)
             if size <= 0 or entry <= 0:
@@ -708,6 +722,9 @@ class PaperTradingEngine:
             if new_id:
                 position['trailing_order_id'] = new_id
                 position['trailing_tier'] = target_tier
+                # Invalidate the openAlgo cache so exit-detection re-fetches and does not
+                # treat the cancelled old trailing id as a fired exit (phantom-exit bug).
+                self._open_algo_cache.pop(symbol, None)
                 # Persist tier + order id for restart recovery
                 try:
                     import json as _json
@@ -724,8 +741,26 @@ class PaperTradingEngine:
                     f"(callback {target_cb}%) at +{profit_percent*100:.1f}% profit (algoId: {new_id})"
                 )
             else:
-                # Re-place failed — restore original by logging (sentinel fallback covers safety)
-                self.logger.warning(f"⚠️ Trailing tier upgrade failed for {symbol}; keeping prior state.")
+                # Re-place failed. The old trailing is already cancelled, so the position
+                # would have NO trailing AND (if exchange_trailing stayed True) the bot would
+                # also skip software checks → unprotected. Drop exchange_trailing so the
+                # bot-side sentinel takes over this position (no unprotected window).
+                position['exchange_trailing'] = False
+                position['trailing_order_id'] = None
+                try:
+                    import json as _json
+                    _meta = _json.loads(position.get('metadata') or '{}')
+                except Exception:
+                    _meta = {}
+                _meta['exchange_trailing'] = False
+                _meta['trailing_order_id'] = None
+                self.trade_manager.db.update_trade_metadata(
+                    position['trade_id'], {'metadata': _meta}
+                )
+                self.logger.warning(
+                    f"⚠️ Trailing tier upgrade FAILED for {symbol} (old trailing cancelled). "
+                    f"Fell back to bot-side sentinel — position now software-managed."
+                )
 
     def update_trailing_take_profit(self, symbol, current_price):
         """Update trailing take profit for all positions on a symbol."""
@@ -1454,7 +1489,18 @@ class PaperTradingEngine:
                     if not position or 'symbol' not in position:
                         self.logger.error(f"🚨 ATOMIC BOOKING FAILED: Trade manager returned invalid position object for {symbol}. Rejecting.")
                         return
-                        
+
+                    # Re-apply exchange-side SL/TP/trailing state onto the FINAL position
+                    # object. record_entry() returns a fresh dict that drops the order-ID
+                    # fields set on the entry-bridge object above — without this the
+                    # in-memory position loses sl_order_id/tp_order_id/trailing_order_id
+                    # and tiered trailing + exit detection silently no-op (AGT bug).
+                    position['sl_order_id'] = sl_order_id
+                    position['tp_order_id'] = tp_order_id
+                    position['trailing_order_id'] = trailing_order_id
+                    position['exchange_trailing'] = exchange_trailing
+                    position['trailing_tier'] = 0
+
                     fee_percent = getattr(self.config, 'FUTURES_FEE_PERCENT', 0.04) / 100
                     entry_fee = size * fee_percent
                     if self.mode == 'paper':
