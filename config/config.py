@@ -84,7 +84,7 @@ class Config:
         self.FUTURES_TAKE_PROFIT_PERCENT = float('10')
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float('5')
         self.FUTURES_MAX_DRAWDOWN_PERCENT = float('70')
-        self.FUTURES_MAX_OPEN_POSITIONS = int('15')
+        self.FUTURES_MAX_OPEN_POSITIONS = int('200')
 
         # --- Exposure & Reserve Management ---
         # FUTURES_MAX_EXPOSURE_NORMAL: Max % of capital for standard signals (Confidence < Threshold)
