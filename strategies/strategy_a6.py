@@ -373,7 +373,19 @@ class StrategyA6(BaseStrategy):
                 f"[{self.name}] {symbol} scanning... Imbalance: {imbalance*100:.1f}% "
                 f"(Threshold: {effective_imbalance_threshold*100:.1f}%)"
             )
-            return self.set_rejection("LOW_IMBALANCE")
+            return self.set_rejection({
+                "reason": "LOW_IMBALANCE",
+                "imbalance": round(abs(imbalance), 4),
+                "threshold": round(effective_imbalance_threshold, 4),
+                "regime": regime,
+                "adx": round(float(df['adx'].iloc[-1]) if 'adx' in df.columns else 0, 2),
+                "volatility": round(float(df['volatility'].iloc[-1]) if 'volatility' in df.columns else 0, 3),
+                "volume_ratio": round(float(df['volume_ratio'].iloc[-1]) if 'volume_ratio' in df.columns else 0, 2),
+                "ema200_distance": round((current_price - ema_200) / ema_200, 4),
+                "price": round(current_price, 8),
+                "atr": round(float(df['atr'].iloc[-1]) if 'atr' in df.columns else 0, 8),
+                "trend_bias": trend_bias,
+            })
 
         # 7. Whale Confirmation
         whale_data = self.detect_whales(symbol)
@@ -428,14 +440,32 @@ class StrategyA6(BaseStrategy):
                         f"below EMA200 — entering at 50% size."
                     )
                 else:
-                    return self.set_rejection("TREND_MISMATCH_BEARISH")
+                    return self.set_rejection({
+                        "reason": "TREND_MISMATCH_BEARISH",
+                        "imbalance": round(abs(imbalance), 4),
+                        "threshold": round(effective_imbalance_threshold, 4),
+                        "regime": regime,
+                        "ema200_distance": round((current_price - ema_200) / ema_200, 4),
+                        "trend_bias": trend_bias,
+                    })
             side = 'buy'
             self.logger.info(f"[{self.name}] {symbol} MASSIVE BID WALL: +{imbalance*100:.1f}% | Conf: {confidence:.2f} | Regime: {regime}")
         elif imbalance <= -effective_imbalance_threshold:
             if not getattr(self.config, 'A6_ALLOW_SHORT', True):
-                return self.set_rejection("SHORT_DISABLED_BY_CONFIG")
+                return self.set_rejection({
+                    "reason": "SHORT_DISABLED_BY_CONFIG",
+                    "imbalance": round(abs(imbalance), 4),
+                    "regime": regime,
+                })
             if trend_bias != 'bearish':
-                return self.set_rejection("TREND_MISMATCH_BULLISH")
+                return self.set_rejection({
+                    "reason": "TREND_MISMATCH_BULLISH",
+                    "imbalance": round(abs(imbalance), 4),
+                    "threshold": round(effective_imbalance_threshold, 4),
+                    "regime": regime,
+                    "ema200_distance": round((current_price - ema_200) / ema_200, 4),
+                    "trend_bias": trend_bias,
+                })
             # Shorts require stricter imbalance (35% vs 25% for longs)
             if abs(imbalance) < self.short_imbalance_threshold:
                 self.log_strategy_skip(symbol, "SHORT_IMBALANCE_INSUFFICIENT", {"imbalance": round(imbalance*100, 1), "required": self.short_imbalance_threshold*100})
@@ -444,7 +474,11 @@ class StrategyA6(BaseStrategy):
             self.logger.info(f"[{self.name}] {symbol} MASSIVE ASK WALL: {imbalance*100:.1f}% | Conf: {confidence:.2f} | Regime: {regime}")
 
         if not side:
-            return self.set_rejection("NO_CLEAR_SIGNAL_SIDE")
+            return self.set_rejection({
+                "reason": "NO_CLEAR_SIGNAL_SIDE",
+                "imbalance": round(abs(imbalance), 4),
+                "regime": regime,
+            })
 
         # --- PHASE 27: Strict Trend Confirmation (Aligned with A4) ---
         adx_val = df['adx'].iloc[-1] if 'adx' in df.columns else 0
