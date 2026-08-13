@@ -2944,12 +2944,19 @@ class ApexHunterBot:
                                 # Aggregate rejections for sweep summary
                                 if 'rejections' in result:
                                     sweep_stats['symbols_scanned'] += 1
-                                    for strategy_name, reason in result['rejections'].items():
+                                    for strategy_name, rejection in result['rejections'].items():
                                         if strategy_name not in sweep_stats['strategy_rejections']:
                                             sweep_stats['strategy_rejections'][strategy_name] = {}
+                                        # rejection is now {"reason": ..., ...details} or legacy string
+                                        if isinstance(rejection, dict):
+                                            reason = rejection.get('reason', 'UNKNOWN')
+                                            details = {k: v for k, v in rejection.items() if k != 'reason'}
+                                        else:
+                                            reason = rejection
+                                            details = {}
                                         if reason not in sweep_stats['strategy_rejections'][strategy_name]:
-                                            sweep_stats['strategy_rejections'][strategy_name][reason] = []
-                                        sweep_stats['strategy_rejections'][strategy_name][reason].append(sym)
+                                            sweep_stats['strategy_rejections'][strategy_name][reason] = {}
+                                        sweep_stats['strategy_rejections'][strategy_name][reason][sym] = details
                                 
                                 # Aggregate bulk DB data
                                 collected = result.get('collected_data')
