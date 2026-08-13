@@ -1550,6 +1550,15 @@ class PaperTradingEngine:
     
     def check_exits(self, symbol, current_price):
         """Check all positions for exit conditions for a specific symbol"""
+        # B1: Tiered trailing MUST run on the high-frequency sentinel path.
+        # The sentinel calls check_exits directly every ~0.5s (not run_cycle, whose
+        # exit block is skipped by entry_only=True). Placing the tier call here is
+        # the only way a runner actually upgrades its callback (AVNT +141% bug).
+        try:
+            self.update_trailing_tier(symbol, current_price)
+        except Exception as e:
+            self.logger.warning(f"⚠️ update_trailing_tier failed in check_exits for {symbol}: {e}")
+
         closed_positions = []
 
         for position_key, position in list(self.positions.items()):
