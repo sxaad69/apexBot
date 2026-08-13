@@ -208,6 +208,7 @@ class Config:
         self.STRATEGY_A4_ENABLED = self._str_to_bool('true')
         self.STRATEGY_A5_ENABLED = self._str_to_bool('true')
         self.STRATEGY_A6_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A7_ENABLED = self._str_to_bool('true')
         self.A6_ALLOW_SHORT = self._str_to_bool('false')
         
         # Strategy-specific Risk Overrides
