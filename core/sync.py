@@ -8,6 +8,8 @@ Mixin design: ApexHunterBot inherits this, so all self.* references resolve to
 the bot instance exactly as before. Method names/signatures are unchanged.
 """
 
+from datetime import datetime
+
 
 class SyncMixin:
 

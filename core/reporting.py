@@ -12,6 +12,8 @@ Mixin design: PaperTradingEngine inherits this, so all self.* references resolve
 to the engine instance exactly as before. Method names/signatures are unchanged.
 """
 
+from datetime import datetime, timedelta
+
 
 class ReportingMixin:
 
