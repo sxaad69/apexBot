@@ -106,6 +106,12 @@ class CCXTExchangeClient(BaseExchangeClient):
                 
                 # Binance Testnet API keys are futures-only, fetching SPOT currencies crashes it
                 exchange.options['fetchCurrencies'] = False
+
+            # Paper mode only needs PUBLIC market data (candles, orderbook, tickers).
+            # fetchCurrencies hits a PRIVATE SAPI endpoint, which would fail on
+            # production when no valid production key is attached. Skip it entirely.
+            if getattr(self.config, 'TRADING_MODE', 'paper').lower() == 'paper':
+                exchange.options['fetchCurrencies'] = False
             
             # Load markets
             exchange.load_markets()
