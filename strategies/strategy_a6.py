@@ -65,6 +65,14 @@ class StrategyA6(BaseStrategy):
         # WSS Memory tracking (speed advantage over A5's REST calls)
         self.latest_orderbooks = {}
 
+        # Publish the orderbook feed to the engine so composite strategies (A8)
+        # and forensics can read the same real-time data without duplicating WSS.
+        try:
+            if hasattr(logger, 'engine') and logger.engine:
+                logger.engine.latest_orderbooks = self.latest_orderbooks
+        except Exception:
+            pass
+
         # --- RATE-LIMIT FIX (Task 1.3): Whale detection TTL cache ---
         # detect_whales() calls fetch_trades(symbol, limit=100) per imbalance
         # check. Whale trades in the last 5 min don't change every second, so
@@ -191,6 +199,25 @@ class StrategyA6(BaseStrategy):
         except Exception as e:
             self.logger.debug(f"[{self.name}] Orderbook parse failed: {e}")
             return 0.0
+
+    def fetch_orderbook_snapshot(self, symbol: str) -> Dict:
+        """Return signed imbalance + top-50 bid/ask notional depth from WSS memory.
+
+        Enrichment: gives Claude the raw signed imbalance (not abs) and the
+        orderbook depth needed to rule out thin-book artifacts (GPS-style check).
+        """
+        try:
+            orderbook = self.latest_orderbooks.get(symbol)
+            if not orderbook or 'bids' not in orderbook or 'asks' not in orderbook:
+                return {'imbalance': 0.0, 'bid_depth': 0.0, 'ask_depth': 0.0}
+            bid_vol = sum([price * amount for price, amount in orderbook['bids'][:50]])
+            ask_vol = sum([price * amount for price, amount in orderbook['asks'][:50]])
+            total_vol = bid_vol + ask_vol
+            imb = (bid_vol - ask_vol) / total_vol if total_vol > 0 else 0.0
+            return {'imbalance': imb, 'bid_depth': bid_vol, 'ask_depth': ask_vol}
+        except Exception as e:
+            self.logger.debug(f"[{self.name}] Orderbook snapshot failed for {symbol}: {e}")
+            return {'imbalance': 0.0, 'bid_depth': 0.0, 'ask_depth': 0.0}
 
     def detect_whales(self, symbol: str) -> Dict:
         """Detect large institutional trades in the last 5 minutes (REST fallback).
@@ -373,10 +400,24 @@ class StrategyA6(BaseStrategy):
                 f"[{self.name}] {symbol} scanning... Imbalance: {imbalance*100:.1f}% "
                 f"(Threshold: {effective_imbalance_threshold*100:.1f}%)"
             )
+            # Enrichment: signed imbalance + orderbook depth + whale + session
+            try:
+                snap = self.fetch_orderbook_snapshot(symbol)
+                whale = self.detect_whales(symbol)
+                sess_name, _, _ = self.get_current_session()
+            except Exception:
+                snap = {'imbalance': imbalance, 'bid_depth': 0.0, 'ask_depth': 0.0}
+                whale = {'count': 0, 'net_pressure': 0, 'total_value': 0}
+                sess_name = None
             return self.set_rejection({
                 "reason": "LOW_IMBALANCE",
-                "imbalance": round(abs(imbalance), 4),
+                "imbalance": round(snap['imbalance'], 4),
                 "threshold": round(effective_imbalance_threshold, 4),
+                "orderbook_depth": round(snap['bid_depth'], 2),
+                "orderbook_ask_depth": round(snap['ask_depth'], 2),
+                "whale_count": whale.get('count', 0),
+                "whale_net_pressure": whale.get('net_pressure', 0),
+                "whale_total_value": round(whale.get('total_value', 0), 2),
                 "regime": regime,
                 "adx": round(float(df['adx'].iloc[-1]) if 'adx' in df.columns else 0, 2),
                 "volatility": round(float(df['volatility'].iloc[-1]) if 'volatility' in df.columns else 0, 3),
@@ -385,6 +426,7 @@ class StrategyA6(BaseStrategy):
                 "price": round(current_price, 8),
                 "atr": round(float(df['atr'].iloc[-1]) if 'atr' in df.columns else 0, 8),
                 "trend_bias": trend_bias,
+                "session": sess_name,
             })
 
         # 7. Whale Confirmation

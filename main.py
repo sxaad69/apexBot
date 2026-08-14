@@ -16,7 +16,7 @@ import pandas as pd
 from config import Config
 from bot_logging.mongo_logger import MongoLogger
 from exchange import CCXTExchangeClient
-from strategies import StrategyA1, StrategyA2, StrategyA3, StrategyA4, StrategyA5, StrategyA6, StrategyA7
+from strategies import StrategyA1, StrategyA2, StrategyA3, StrategyA4, StrategyA5, StrategyA6, StrategyA7, StrategyA8
 from notifications import TelegramNotificationManager
 from risk import RiskManager
 from core.spot_logger import SpotLogger
@@ -142,6 +142,9 @@ class PaperTradingEngine(MarketDataMixin, AlgoOrdersMixin, ExitsMixin, EntryMixi
         if getattr(self.config, 'STRATEGY_A7_ENABLED', False):
             self.strategies.append(StrategyA7(self.config, self.logger))
 
+        if getattr(self.config, 'STRATEGY_A8_ENABLED', False):
+            self.strategies.append(StrategyA8(self.config, self.logger))
+
         # If no strategies explicitly enabled, enable all including A6
         if not self.strategies:
             self.strategies = [
@@ -151,7 +154,8 @@ class PaperTradingEngine(MarketDataMixin, AlgoOrdersMixin, ExitsMixin, EntryMixi
                 StrategyA4(config, logger),
                 StrategyA5(config, logger),
                 StrategyA6(config, logger),
-                StrategyA7(config, logger)
+                StrategyA7(config, logger),
+                StrategyA8(config, logger)
             ]
         
         # Inject exchange client into strategies for microstructure analysis (A5)
@@ -298,8 +302,57 @@ class PaperTradingEngine(MarketDataMixin, AlgoOrdersMixin, ExitsMixin, EntryMixi
 
                 if signal:
                     self.execute_entry(signal, strategy.name, symbol)
+                    # Enrichment: log the ENTERED evaluation to strategy_evaluations
+                    try:
+                        if hasattr(self.logger, 'db'):
+                            entry_t = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+                            ind = signal.get('indicators', {})
+                            self.logger.db.log_strategy_evaluation({
+                                'timestamp': entry_t, 'symbol': symbol,
+                                'strategy': strategy.name, 'outcome': 'ENTERED',
+                                'imbalance': ind.get('imbalance'), 'threshold': ind.get('threshold'),
+                                'orderbook_depth': ind.get('orderbook_depth'),
+                                'orderbook_ask_depth': ind.get('orderbook_ask_depth'),
+                                'whale_count': ind.get('whale_count'),
+                                'whale_net_pressure': ind.get('whale_net_pressure'),
+                                'whale_total_value': ind.get('whale_total_value'),
+                                'adx': ind.get('adx'), 'volatility': ind.get('volatility'),
+                                'regime': ind.get('regime'), 'volume_ratio': ind.get('volume_ratio'),
+                                'bar_move': ind.get('bar_move'),
+                                'ema200_distance': ind.get('ema200_distance'),
+                                'trend_bias': ind.get('trend_bias'), 'session': ind.get('session'),
+                                'price': ind.get('price') or signal.get('entry_price'),
+                                'atr': ind.get('atr'), 'confidence': signal.get('confidence'),
+                            })
+                    except Exception as e:
+                        self.logger.debug(f"[enrich] eval write failed for {symbol}: {e}")
                 elif hasattr(strategy, 'last_rejection') and strategy.last_rejection:
                     rejections[strategy.name] = strategy.last_rejection
+                    # Enrichment: log the REJECTED evaluation to strategy_evaluations
+                    try:
+                        if hasattr(self.logger, 'db'):
+                            rej = strategy.last_rejection
+                            if isinstance(rej, dict):
+                                ts = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+                                self.logger.db.log_strategy_evaluation({
+                                    'timestamp': ts, 'symbol': symbol,
+                                    'strategy': strategy.name, 'outcome': rej.get('reason'),
+                                    'imbalance': rej.get('imbalance'), 'threshold': rej.get('threshold'),
+                                    'orderbook_depth': rej.get('orderbook_depth'),
+                                    'orderbook_ask_depth': rej.get('orderbook_ask_depth'),
+                                    'whale_count': rej.get('whale_count'),
+                                    'whale_net_pressure': rej.get('whale_net_pressure'),
+                                    'whale_total_value': rej.get('whale_total_value'),
+                                    'adx': rej.get('adx'), 'volatility': rej.get('volatility'),
+                                    'regime': rej.get('regime'), 'volume_ratio': rej.get('volume_ratio'),
+                                    'bar_move': rej.get('bar_move'),
+                                    'ema200_distance': rej.get('ema200_distance'),
+                                    'trend_bias': rej.get('trend_bias'), 'session': rej.get('session'),
+                                    'price': rej.get('price'), 'atr': rej.get('atr'),
+                                    'confidence': rej.get('confidence'),
+                                })
+                    except Exception as e:
+                        self.logger.debug(f"[enrich] eval write failed for {symbol}: {e}")
 
         # Collect market analysis data for dashboard (Bulk Aggregation)
         collected_data = self._collect_market_analysis_data(symbol, df, current_price)
@@ -881,6 +934,35 @@ class ApexHunterBot(SyncMixin):
                 # Log the sweep summary to DB
                 if hasattr(self.logger, 'log_sweep_summary'):
                     self.logger.log_sweep_summary(sweep_stats)
+
+                # Enrichment: daily regime summary (upsert once per day)
+                try:
+                    if hasattr(self.logger, 'db'):
+                        utc_day = datetime.now().strftime('%Y-%m-%d')
+                        conn = self.logger.db._get_connection(self.logger.db.log_db)
+                        try:
+                            row = conn.execute(
+                                "SELECT COUNT(*), AVG(adx), AVG(volatility) FROM strategy_evaluations "
+                                "WHERE substr(timestamp,1,10) = ? AND adx IS NOT NULL", (utc_day,)
+                            ).fetchone()
+                            # move_count: count of distinct symbols with bar_move >= 15%
+                            mov = conn.execute(
+                                "SELECT COUNT(DISTINCT symbol) FROM strategy_evaluations "
+                                "WHERE substr(timestamp,1,10) = ? AND ABS(bar_move) >= 15.0", (utc_day,)
+                            ).fetchone()[0]
+                        finally:
+                            conn.close()
+                        n, avg_adx, avg_vol = (row[0] or 0), (row[1] or 0), (row[2] or 0)
+                        if n > 0:
+                            self.logger.db.log_daily_regime({
+                                'date': utc_day,
+                                'avg_adx': round(avg_adx, 2),
+                                'avg_volatility': round(avg_vol, 3),
+                                'dominant_regime': 'normal',  # refined by analysis later
+                                'move_count_15pct': mov or 0,
+                            })
+                except Exception as e:
+                    self.logger.debug(f"[enrich] daily regime write failed: {e}")
 
                 # Run spot analysis if enabled
                 try:

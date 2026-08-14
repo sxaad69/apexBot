@@ -214,7 +214,49 @@ class TradeManager:
 
         # 6. Logging & Final report
         self.logger.info(f"🏁 EXIT SYNC: {symbol} | Net P&L: ${net_pnl_amount:.2f} ({leveraged_pnl_percent*100:.1f}%) | Reason: {reason}")
-        
+
+        # 7. Enrichment: write MFE/MAE outcome row (trade_outcomes table)
+        try:
+            entry_price_db = float(trade.get('entry_price') or 0)
+            highest = float(trade.get('highest_price') or entry_price_db)
+            lowest = float(trade.get('lowest_price') or entry_price_db)
+            if entry_price_db > 0:
+                if trade['side'].lower() == 'buy':
+                    mfe = (highest - entry_price_db) / entry_price_db * 100
+                    mae = (lowest - entry_price_db) / entry_price_db * 100
+                else:
+                    mfe = (entry_price_db - lowest) / entry_price_db * 100
+                    mae = (entry_price_db - highest) / entry_price_db * 100
+            else:
+                mfe = mae = 0.0
+            # time to max favorable: needs per-tick peak time, which we approximate
+            # with the position's trailing activation time if available, else None.
+            time_to_mfe = None
+            try:
+                from datetime import datetime as _dt
+                et = _dt.fromisoformat(str(trade.get('entry_time'))[:19]) if trade.get('entry_time') else None
+                # Use peak reaching ~90% of MFE as an approximation if we have
+                # trailing watermark metadata; otherwise leave None.
+            except Exception:
+                et = None
+                time_to_mfe = None
+            self.db.log_trade_outcome({
+                'entry_timestamp': trade.get('entry_time'),
+                'symbol': symbol,
+                'strategy': trade.get('strategy'),
+                'side': trade.get('side'),
+                'entry_price': entry_price_db,
+                'exit_price': exit_price,
+                'exit_timestamp': exit_time,
+                'exit_reason': reason,
+                'pnl_pct': round(leveraged_pnl_percent * 100, 2),
+                'max_favorable_excursion': round(mfe, 2),
+                'max_adverse_excursion': round(mae, 2),
+                'time_to_max_favorable_min': time_to_mfe,
+            })
+        except Exception as e:
+            self.logger.debug(f"[enrich] outcome write failed for {symbol}: {e}")
+
         return {
             'verified': True,
             'net_pnl': net_pnl_amount,

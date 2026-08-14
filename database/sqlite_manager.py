@@ -239,7 +239,77 @@ class SQLiteManager:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_analysis_ts ON market_analysis(timestamp)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_signals_ts ON strategy_signals(timestamp)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_rejections_ts ON rejections(timestamp)')
-        
+
+        # --- ENRICHMENT SCHEMA (unified evaluation + outcome + regime tables) ---
+        # strategy_evaluations: one row per strategy evaluation (entered OR rejected),
+        # joined across A6/A7/A8 by (timestamp, symbol, strategy). The unified schema
+        # that replaces the ad-hoc rejections blob so cross-strategy/day SQL works.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS strategy_evaluations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                symbol TEXT,
+                strategy TEXT,
+                outcome TEXT,
+                imbalance REAL,
+                threshold REAL,
+                orderbook_depth REAL,
+                orderbook_ask_depth REAL,
+                whale_count INTEGER,
+                whale_net_pressure INTEGER,
+                whale_total_value REAL,
+                adx REAL,
+                volatility REAL,
+                regime TEXT,
+                volume_ratio REAL,
+                bar_move REAL,
+                ema200_distance REAL,
+                trend_bias TEXT,
+                session TEXT,
+                price REAL,
+                atr REAL,
+                confidence REAL,
+                extra TEXT
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_eval_ts_sym ON strategy_evaluations(timestamp, symbol, strategy)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_eval_outcome ON strategy_evaluations(strategy, outcome)')
+
+        # trade_outcomes: MFE/MAE per closed trade, written once at exit. Derived from
+        # highest_price/lowest_price tracked at WSS (0.5s) resolution. Joins back to
+        # strategy_evaluations via (entry_timestamp, symbol, strategy).
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS trade_outcomes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entry_timestamp TEXT,
+                symbol TEXT,
+                strategy TEXT,
+                side TEXT,
+                entry_price REAL,
+                exit_price REAL,
+                exit_timestamp TEXT,
+                exit_reason TEXT,
+                pnl_pct REAL,
+                max_favorable_excursion REAL,
+                max_adverse_excursion REAL,
+                time_to_max_favorable_min REAL
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_outcome_join ON trade_outcomes(entry_timestamp, symbol, strategy)')
+
+        # daily_regime_summary: one row per UTC day regardless of active strategies —
+        # avg ADX, avg volatility, dominant regime, count of moves >= 15%. Every other
+        # table joins to it by date so "was that a flat day" is a one-line lookup.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS daily_regime_summary (
+                date TEXT PRIMARY KEY,
+                avg_adx REAL,
+                avg_volatility REAL,
+                dominant_regime TEXT,
+                move_count_15pct INTEGER
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -269,6 +339,120 @@ class SQLiteManager:
                 conn.close()
         except Exception as e:
             print(f"❌ SQLite log_rejection error: {e}")
+            return False
+
+    def log_strategy_evaluation(self, data: Dict[str, Any]) -> bool:
+        """Log one strategy evaluation (entered OR rejected) to the unified schema.
+
+        data fields (all optional, nulls tolerated):
+          timestamp, symbol, strategy, outcome, imbalance, threshold,
+          orderbook_depth, orderbook_ask_depth, whale_count, whale_net_pressure,
+          whale_total_value, adx, volatility, regime, volume_ratio, bar_move,
+          ema200_distance, trend_bias, session, price, atr, confidence, extra
+        """
+        try:
+            conn = self._get_connection(self.log_db)
+            try:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO strategy_evaluations (
+                        timestamp, symbol, strategy, outcome, imbalance, threshold,
+                        orderbook_depth, orderbook_ask_depth, whale_count,
+                        whale_net_pressure, whale_total_value, adx, volatility,
+                        regime, volume_ratio, bar_move, ema200_distance, trend_bias,
+                        session, price, atr, confidence, extra
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ''', (
+                    data.get('timestamp'),
+                    data.get('symbol'),
+                    data.get('strategy'),
+                    data.get('outcome'),
+                    data.get('imbalance'),
+                    data.get('threshold'),
+                    data.get('orderbook_depth'),
+                    data.get('orderbook_ask_depth'),
+                    data.get('whale_count'),
+                    data.get('whale_net_pressure'),
+                    data.get('whale_total_value'),
+                    data.get('adx'),
+                    data.get('volatility'),
+                    data.get('regime'),
+                    data.get('volume_ratio'),
+                    data.get('bar_move'),
+                    data.get('ema200_distance'),
+                    data.get('trend_bias'),
+                    data.get('session'),
+                    data.get('price'),
+                    data.get('atr'),
+                    data.get('confidence'),
+                    json.dumps(data.get('extra', {}), default=str) if data.get('extra') else None
+                ))
+                conn.commit()
+                return True
+            finally:
+                conn.close()
+        except Exception as e:
+            print(f"❌ SQLite log_strategy_evaluation error: {e}")
+            return False
+
+    def log_trade_outcome(self, data: Dict[str, Any]) -> bool:
+        """Log MFE/MAE outcome for a closed trade (trade_outcomes table)."""
+        try:
+            conn = self._get_connection(self.log_db)
+            try:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO trade_outcomes (
+                        entry_timestamp, symbol, strategy, side, entry_price,
+                        exit_price, exit_timestamp, exit_reason, pnl_pct,
+                        max_favorable_excursion, max_adverse_excursion,
+                        time_to_max_favorable_min
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                ''', (
+                    data.get('entry_timestamp'),
+                    data.get('symbol'),
+                    data.get('strategy'),
+                    data.get('side'),
+                    data.get('entry_price'),
+                    data.get('exit_price'),
+                    data.get('exit_timestamp'),
+                    data.get('exit_reason'),
+                    data.get('pnl_pct'),
+                    data.get('max_favorable_excursion'),
+                    data.get('max_adverse_excursion'),
+                    data.get('time_to_max_favorable_min'),
+                ))
+                conn.commit()
+                return True
+            finally:
+                conn.close()
+        except Exception as e:
+            print(f"❌ SQLite log_trade_outcome error: {e}")
+            return False
+
+    def log_daily_regime(self, data: Dict[str, Any]) -> bool:
+        """Upsert one daily regime summary row (keyed by date)."""
+        try:
+            conn = self._get_connection(self.log_db)
+            try:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR REPLACE INTO daily_regime_summary (
+                        date, avg_adx, avg_volatility, dominant_regime, move_count_15pct
+                    ) VALUES (?,?,?,?,?)
+                ''', (
+                    data.get('date'),
+                    data.get('avg_adx'),
+                    data.get('avg_volatility'),
+                    data.get('dominant_regime'),
+                    data.get('move_count_15pct'),
+                ))
+                conn.commit()
+                return True
+            finally:
+                conn.close()
+        except Exception as e:
+            print(f"❌ SQLite log_daily_regime error: {e}")
             return False
             
     def get_setting(self, key: str, default: Any = None) -> Any:

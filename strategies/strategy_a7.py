@@ -72,6 +72,12 @@ class StrategyA7(BaseStrategy):
 
         df = self.calculate_atr(df)
 
+        # ADX for regime tagging (enrichment)
+        try:
+            df = self.calculate_adx(df)
+        except Exception:
+            df['adx'] = 0.0
+
         # Major trend guard
         if len(df) >= 200:
             df['ema_200'] = df['close'].ewm(span=200, adjust=False).mean()
@@ -116,45 +122,42 @@ class StrategyA7(BaseStrategy):
 
         vol_ratio = float(current['volume_ratio'])
         bar_move = float(current['bar_move'])
+        adx_val = round(float(current['adx']) if 'adx' in df.columns else 0.0, 2)
+        atr_val = round(float(current['atr']) if 'atr' in df.columns else 0.0, 8)
+        price_now = float(current['close'])
+        ema200_now = float(current['ema_200']) if 'ema_200' in df.columns else price_now
+
+        def _common(reason, **extra):
+            d = {
+                "reason": reason,
+                "volume_ratio": round(vol_ratio, 2),
+                "bar_move": round(bar_move, 2),
+                "price": round(price_now, 8),
+                "atr": atr_val,
+                "adx": adx_val,
+                "ema200_distance": round((price_now - ema200_now) / ema200_now, 4),
+            }
+            d.update(extra)
+            return self.set_rejection(d)
 
         # --- Core signal: volume spike + momentum ---
         if vol_ratio < self.volume_spike_mult:
-            return self.set_rejection({
-                "reason": "LOW_VOLUME_RATIO",
-                "volume_ratio": round(vol_ratio, 2),
-                "required": self.volume_spike_mult,
-                "bar_move": round(bar_move, 2),
-            })
+            return _common("LOW_VOLUME_RATIO", required=self.volume_spike_mult)
 
         if abs(bar_move) < self.min_move_pct:
-            return self.set_rejection({
-                "reason": "LOW_MOMENTUM",
-                "bar_move": round(bar_move, 2),
-                "required": self.min_move_pct,
-                "volume_ratio": round(vol_ratio, 2),
-            })
+            return _common("LOW_MOMENTUM", required=self.min_move_pct)
 
         # Direction: long-only for now (backtest edge was long side)
         side = 'buy'
         if bar_move < 0:
             # Negative move with high volume = distribution, not our long setup.
-            return self.set_rejection({
-                "reason": "NEGATIVE_MOMENTUM",
-                "bar_move": round(bar_move, 2),
-                "volume_ratio": round(vol_ratio, 2),
-            })
+            return _common("NEGATIVE_MOMENTUM")
 
         # EMA200 trend guard — only buy above the 200 EMA (confirmed uptrend)
         current_price = df['close'].iloc[-1]
         ema_200 = df['ema_200'].iloc[-1]
         if current_price < ema_200:
-            return self.set_rejection({
-                "reason": "BELOW_EMA200",
-                "price": round(current_price, 8),
-                "ema200": round(ema_200, 8),
-                "bar_move": round(bar_move, 2),
-                "volume_ratio": round(vol_ratio, 2),
-            })
+            return _common("BELOW_EMA200", ema200=round(ema_200, 8))
 
         # ATR-based dynamic stops
         stop_loss, take_profit = self.get_dynamic_stops(df, side, self.atr_sl_mult, self.atr_tp_mult)
@@ -184,5 +187,6 @@ class StrategyA7(BaseStrategy):
                 'volume_ratio': round(vol_ratio, 2),
                 'bar_move': round(bar_move, 2),
                 'atr': round(float(atr), 8),
+                'adx': round(float(df['adx'].iloc[-1]) if 'adx' in df.columns else 0.0, 2),
             }
         }
