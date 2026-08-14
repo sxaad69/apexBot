@@ -84,7 +84,7 @@ class Config:
         self.FUTURES_TAKE_PROFIT_PERCENT = float('10')
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float('5')
         self.FUTURES_MAX_DRAWDOWN_PERCENT = float('70')
-        self.FUTURES_MAX_OPEN_POSITIONS = int('15')
+        self.FUTURES_MAX_OPEN_POSITIONS = int('200')
 
         # --- Exposure & Reserve Management ---
         # FUTURES_MAX_EXPOSURE_NORMAL: Max % of capital for standard signals (Confidence < Threshold)
@@ -98,7 +98,7 @@ class Config:
 
         # Market Discovery Sync
         self.FUTURES_PAIRS = 'auto'
-        self.FUTURES_AUTO_TOP_N = int('1000')  # Full universe (all qualifying perps)
+        self.FUTURES_AUTO_TOP_N = int('100')  # Testnet: 100-coin universe to keep CPU light
         self.FUTURES_AUTO_MIN_VOLUME = float('500000')
         # Comma-separated list of base symbols to exclude from discovery/A6 watch/sweeps.
         # Matching is case-insensitive on the base symbol (e.g. 'BTC' excludes BTC/USDT).
@@ -202,12 +202,13 @@ class Config:
         
         # ===== Strategy Selection Configuration =====
         # NOTE: A3, A4, A5 enabled for TESTNET only. DISABLE for LIVE prod.
-        self.STRATEGY_A1_ENABLED = self._str_to_bool('false')
-        self.STRATEGY_A2_ENABLED = self._str_to_bool('false')
-        self.STRATEGY_A3_ENABLED = self._str_to_bool('false')
-        self.STRATEGY_A4_ENABLED = self._str_to_bool('false')
-        self.STRATEGY_A5_ENABLED = self._str_to_bool('false')
+        self.STRATEGY_A1_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A2_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A3_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A4_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A5_ENABLED = self._str_to_bool('true')
         self.STRATEGY_A6_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A7_ENABLED = self._str_to_bool('true')
         self.A6_ALLOW_SHORT = self._str_to_bool('false')
         
         # Strategy-specific Risk Overrides
@@ -240,7 +241,10 @@ class Config:
         self.ENABLE_EXCHANGE_STOPS = self._str_to_bool(os.getenv('ENABLE_EXCHANGE_STOPS', 'false'))
         self.EXCHANGE_TP_ORDER_TYPE = 'TAKE_PROFIT_MARKET'
 
-        self.MAX_DAILY_LOSS_PERCENT = float('15')
+        # NOTE: MAX_DAILY_LOSS_PERCENT is NOT overwritten here — it must stay at
+        # the value from FUTURES_MAX_DAILY_LOSS_PERCENT (line 144). A prior duplicate
+        # here set it to 15%, silently inflating the daily loss limit from 5% to 15%
+        # (the bug that let Aug-13's -$8.73 through without halting).
         
         # ===== Tiered Risk Management (Phase 14) =====
         self.TIERED_RISK_ENABLED = self._str_to_bool('true')
