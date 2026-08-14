@@ -568,7 +568,9 @@ def get_sweep_records(start_ms, end_ms):
             continue
         for strategy, rmap in (d.get("strategy_rejections") or {}).items():
             for reason, syms in (rmap or {}).items():
-                for sym in syms:
+                # Sweep stores either [symbol, ...] (legacy) or {symbol: details} (enriched).
+                entries = syms.items() if isinstance(syms, dict) else ((s, {}) for s in syms)
+                for sym, details in entries:
                     base = sym.split("/")[0]
                     scanned[base].add(reason)
                     events[base].append((ts, reason))
@@ -580,6 +582,7 @@ def get_sweep_records(start_ms, end_ms):
                             "strategy": strategy,
                             "reason": reason,
                             "layer": "STRATEGY_FILTER",
+                            "details": details,
                         }
 
     # Drop structural/noise reasons from both structures

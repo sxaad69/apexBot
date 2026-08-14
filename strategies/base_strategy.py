@@ -36,15 +36,27 @@ class BaseStrategy(ABC):
         self.db = None # Will be injected if available
         self.last_rejection = None
     
-    def set_rejection(self, reason: str):
-        """Set the reason for the most recent signal rejection"""
-        self.last_rejection = reason
+    def set_rejection(self, reason, details: Dict = None):
+        """Set the reason for the most recent signal rejection.
+
+        reason may be a plain string (backward compat) OR a dict like
+        {"reason": "LOW_IMBALANCE", "imbalance": 0.42, ...} so the sweep
+        can persist the signal context that caused the rejection.
+        """
+        if isinstance(reason, dict):
+            self.last_rejection = reason
+        else:
+            self.last_rejection = {"reason": reason}
+            if details:
+                self.last_rejection.update(details)
         return None  # Convenient for returning from generate_signal
     
     def log_strategy_skip(self, symbol: str, reason: str, details: Dict = None):
         """Log when a strategy sees market action but skips due to filters"""
         # 1. Store rejection for batch summary
-        self.last_rejection = reason
+        self.last_rejection = {"reason": reason}
+        if details:
+            self.last_rejection.update(details)
         
         # 2. Standard debug log
         self.logger.debug(f"[{self.name}] Technical Skip: {symbol} | Reason: {reason} | Details: {details}")

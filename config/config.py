@@ -221,6 +221,14 @@ class Config:
         # ONE place to control trailing. Change these two values only.
         self.TRAILING_STOP_ACTIVATION = float('5.0')  # % profit before trailing starts
         self.TRAILING_STOP_DISTANCE = float('3.0')    # % trail distance from peak
+        # Tiered trailing (B1): widen the exchange callback as a position proves it runs.
+        # Tier thresholds are profit % from entry; callback rates replace the trailing order.
+        self.TRAILING_TIER_1_AT = float('8.0')        # above this profit → tier 1
+        self.TRAILING_TIER_1_CALLBACK = float('5.0')  # tier 1 callback %
+        self.TRAILING_TIER_2_AT = float('20.0')       # above this profit → tier 2
+        self.TRAILING_TIER_2_CALLBACK = float('8.0')  # tier 2 callback %
+        # C1: re-entry blacklist — consecutive SL losses before blocking the symbol for the session
+        self.FUTURES_MAX_LOSS_STREAK = int(os.getenv('FUTURES_MAX_LOSS_STREAK', '2'))
         self.TRAILING_TP_ENABLED = self._str_to_bool('true')
 
         # Exchange-Side Execution
