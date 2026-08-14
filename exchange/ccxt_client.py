@@ -108,10 +108,11 @@ class CCXTExchangeClient(BaseExchangeClient):
                 exchange.options['fetchCurrencies'] = False
 
             # Paper mode only needs PUBLIC market data (candles, orderbook, tickers).
-            # fetchCurrencies hits a PRIVATE SAPI endpoint, which would fail on
-            # production when no valid production key is attached. Skip it entirely.
+            # fetchCurrencies/fetchMargins hit PRIVATE SAPI endpoints, which would fail
+            # on production when no valid production key is attached. Skip them entirely.
             if getattr(self.config, 'TRADING_MODE', 'paper').lower() == 'paper':
                 exchange.options['fetchCurrencies'] = False
+                exchange.options['fetchMargins'] = False
             
             # Load markets
             exchange.load_markets()
