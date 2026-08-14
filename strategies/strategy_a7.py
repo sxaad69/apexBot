@@ -42,7 +42,11 @@ class StrategyA7(BaseStrategy):
 
         # ATR stops for 5m (smaller than 15m ATR — use a wider multiplier so
         # the vol-sync layer assigns sane leverage)
-        self.atr_sl_mult = 3.0
+        # ⚠️ TESTNET EXPERIMENT: atr_sl_mult set very high (100x) to effectively
+        # REMOVE the hard stop and let the trailing stop be the real exit. This is
+        # ONLY to gather data on where A7 winners run. Must be restored (3.0) before
+        # any mainnet consideration.
+        self.atr_sl_mult = 100.0
         self.atr_tp_mult = 100.0  # trailing TP handles exit
 
         # 5m timeframe (independent fetch)
