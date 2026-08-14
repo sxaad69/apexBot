@@ -241,7 +241,10 @@ class Config:
         self.ENABLE_EXCHANGE_STOPS = self._str_to_bool(os.getenv('ENABLE_EXCHANGE_STOPS', 'false'))
         self.EXCHANGE_TP_ORDER_TYPE = 'TAKE_PROFIT_MARKET'
 
-        self.MAX_DAILY_LOSS_PERCENT = float('15')
+        # NOTE: MAX_DAILY_LOSS_PERCENT is NOT overwritten here — it must stay at
+        # the value from FUTURES_MAX_DAILY_LOSS_PERCENT (line 144). A prior duplicate
+        # here set it to 15%, silently inflating the daily loss limit from 5% to 15%
+        # (the bug that let Aug-13's -$8.73 through without halting).
         
         # ===== Tiered Risk Management (Phase 14) =====
         self.TIERED_RISK_ENABLED = self._str_to_bool('true')
