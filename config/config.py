@@ -118,7 +118,7 @@ class Config:
         self.TICKER_CACHE_TTL = float('5.0')
         self.BALANCE_CACHE_TTL = float('60.0')
         self.ORDER_STATUS_CACHE_TTL = float('5.0')
-        self.WHALE_CACHE_TTL = float('60.0')
+        self.WHALE_CACHE_TTL = float(os.getenv('WHALE_CACHE_TTL', '60.0'))
         
         # ===== Global Rate-Limit Budget (Task 1.2) =====
         self.RATE_LIMIT_MAX_WEIGHT_PER_MIN = int('1500')  # Binance cap is 2400
