@@ -62,6 +62,16 @@ class StrategyA6(BaseStrategy):
         self.min_order_value = float(os.getenv("MIN_FUTURES_ORDER_VALUE", 100))
         self.filters = get_strategy_filters(config)
 
+        # Indicator memoization: indicators are pure functions of the candle
+        # frame, which only changes when a 15m candle closes (~900s TTL). The
+        # sweep loop runs ~30-60s, so without this cache we recompute ADX/ATR/
+        # EMA200/volatility on the SAME candles ~15x per candle — the dominant
+        # CPU cost (profile: ADX alone = 72% of generate_signal). Keyed on
+        # (symbol, last_ts, last_close, last_volume) so a forming candle's
+        # changing close/volume forces a recompute at refetch boundaries.
+        self._indicator_cache = {}
+        self._indicator_cache_lock = threading.Lock()
+
         # WSS Memory tracking (speed advantage over A5's REST calls)
         self.latest_orderbooks = {}
 
@@ -290,8 +300,15 @@ class StrategyA6(BaseStrategy):
         if len(df) < 20:
             return 'unknown'
         try:
-            adx_series = self.calculate_adx(df)
-            adx = adx_series['adx'].iloc[-1] if isinstance(adx_series, pd.DataFrame) and 'adx' in adx_series.columns else df.get('adx', pd.Series([0])).iloc[-1]
+            # Reuse the 'adx' column already computed by calculate_indicators
+            # (called before get_market_regime in generate_signal). Only fall
+            # back to a full ADX recompute if the column is absent — this was
+            # the #1 redundant ADX pass burning CPU every sweep.
+            if 'adx' in df.columns:
+                adx = float(df['adx'].iloc[-1])
+            else:
+                adx_series = self.calculate_adx(df)
+                adx = adx_series['adx'].iloc[-1] if isinstance(adx_series, pd.DataFrame) and 'adx' in adx_series.columns else df.get('adx', pd.Series([0])).iloc[-1]
 
             returns = df['close'].pct_change().dropna()
             volatility = returns.tail(20).std() * 100
@@ -321,6 +338,47 @@ class StrategyA6(BaseStrategy):
     # =========================================================================
     # Indicator Calculation
     # =========================================================================
+
+    def _cached_indicators(self, symbol: str, df: pd.DataFrame) -> pd.DataFrame:
+        """Return the indicator-computed frame, memoized on the last candle.
+
+        Indicators are pure functions of the OHLCV frame. The frame is cached by
+        fetch_market_data for the candle TTL (~900s for 15m), so within that
+        window the input is identical every sweep. Memoizing here avoids
+        recomputing ADX/ATR/EMA200/volatility ~15x per candle. A new candle
+        (new last timestamp) or a changed forming-candle close/volume
+        invalidates the entry and forces a recompute.
+
+        Returns a copy so downstream code (filters, should_trade_symbol) cannot
+        mutate the cached frame and poison future sweeps. The copy is ~1000x
+        cheaper than recomputing ADX.
+        """
+        if df is None or len(df) == 0:
+            # Empty frame: no indicators possible; return as-is (matches old path).
+            return df
+        try:
+            last = df.iloc[-1]
+            cache_key = (symbol, df.index[-1], float(last['close']), float(last['volume']))
+            with self._indicator_cache_lock:
+                cached = self._indicator_cache.get(cache_key)
+                if cached is not None:
+                    return cached.copy()
+        except Exception:
+            # Never let a cache-key failure alter signal behavior: fall through
+            # to a straight recompute.
+            cache_key = None
+
+        df_ind = self.calculate_indicators(df)
+        df_ind = self.calculate_atr(df_ind)
+
+        if cache_key is not None:
+            with self._indicator_cache_lock:
+                # Bound the cache (one entry per symbol keyed on latest candle);
+                # cap at ~1200 entries to stay bounded even if symbols churn.
+                if len(self._indicator_cache) > 1200:
+                    self._indicator_cache.clear()
+                self._indicator_cache[cache_key] = df_ind.copy()
+        return df_ind
 
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate technical indicators."""
@@ -358,9 +416,8 @@ class StrategyA6(BaseStrategy):
         if not self.filters._check_stablecoin_filter(symbol):
             return self.set_rejection("STABLECOIN_FILTER")
 
-        # 2. Calculate indicators
-        df = self.calculate_indicators(df)
-        df = self.calculate_atr(df)
+        # 2. Calculate indicators (memoized on candle close — see _cached_indicators)
+        df = self._cached_indicators(symbol, df)
 
         # 3. Universal filters (volume, etc.)
         should_trade, filter_reason = self.filters.should_trade_symbol(df, symbol, self.name)

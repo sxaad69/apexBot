@@ -54,6 +54,13 @@ class StrategyA8(BaseStrategy):
 
         self.filters = get_strategy_filters(config)
 
+        # Indicator memoization (same pattern as A6/A7): 5m candle frame is
+        # cached for TTL 300s while sweeps run ~30-60s. Keyed on (symbol,
+        # last_ts, close, volume).
+        import threading
+        self._indicator_cache = {}
+        self._indicator_cache_lock = threading.Lock()
+
         self.logger.info(f"Strategy A8 initialized: Ignition(>= {self.ignition_threshold*100:.0f}% imb) → A7 confirm (vol x{self.volume_spike_mult} + {self.min_move_pct}%) → sizing | MAX-SL experiment")
 
     # =====================================================================
@@ -100,6 +107,29 @@ class StrategyA8(BaseStrategy):
     # =====================================================================
     # Layer 2 — Confirmation (A7's 5m acceleration)
     # =====================================================================
+    def _cached_indicators(self, symbol: str, df: pd.DataFrame) -> pd.DataFrame:
+        """Memoized wrapper around calculate_indicators (see A6 for rationale)."""
+        if df is None or len(df) == 0:
+            return df
+        try:
+            last = df.iloc[-1]
+            cache_key = (symbol, df.index[-1], float(last['close']), float(last['volume']))
+            with self._indicator_cache_lock:
+                cached = self._indicator_cache.get(cache_key)
+                if cached is not None:
+                    return cached.copy()
+        except Exception:
+            cache_key = None
+
+        df_ind = self.calculate_indicators(df)
+
+        if cache_key is not None:
+            with self._indicator_cache_lock:
+                if len(self._indicator_cache) > 1200:
+                    self._indicator_cache.clear()
+                self._indicator_cache[cache_key] = df_ind.copy()
+        return df_ind
+
     def _confirm_on_5m(self, symbol: str) -> Optional[Dict]:
         """Run A7's acceleration logic on the coin's own 5m frame. Returns signal or None."""
         try:
@@ -112,7 +142,7 @@ class StrategyA8(BaseStrategy):
         if df5 is None or len(df5) < self.min_candles:
             return None
 
-        df = self.calculate_indicators(df5)
+        df = self._cached_indicators(symbol, df5)
         current = df.iloc[-1]
         vol_ratio = float(current['volume_ratio'])
         bar_move = float(current['bar_move'])

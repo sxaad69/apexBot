@@ -56,7 +56,38 @@ class StrategyA7(BaseStrategy):
         # Universal filters
         self.filters = get_strategy_filters(config)
 
+        # Indicator memoization (same pattern as A6): the 5m candle frame is
+        # cached for its TTL (300s) while the sweep runs every ~30-60s, so we
+        # recompute ATR/ADX/EMA200/volume_ratio on the same candles ~5-10x per
+        # candle without a cache. Keyed on (symbol, last_ts, close, volume).
+        import threading
+        self._indicator_cache = {}
+        self._indicator_cache_lock = threading.Lock()
+
         self.logger.info(f"Strategy A7 initialized: 5m Acceleration (vol x{self.volume_spike_mult}, move >= {self.min_move_pct}%)")
+
+    def _cached_indicators(self, symbol: str, df: pd.DataFrame) -> pd.DataFrame:
+        """Memoized wrapper around calculate_indicators (see A6 for rationale)."""
+        if df is None or len(df) == 0:
+            return df
+        try:
+            last = df.iloc[-1]
+            cache_key = (symbol, df.index[-1], float(last['close']), float(last['volume']))
+            with self._indicator_cache_lock:
+                cached = self._indicator_cache.get(cache_key)
+                if cached is not None:
+                    return cached.copy()
+        except Exception:
+            cache_key = None
+
+        df_ind = self.calculate_indicators(df)
+
+        if cache_key is not None:
+            with self._indicator_cache_lock:
+                if len(self._indicator_cache) > 1200:
+                    self._indicator_cache.clear()
+                self._indicator_cache[cache_key] = df_ind.copy()
+        return df_ind
 
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate volume_ratio, ATR, EMA200, ADX."""
@@ -106,7 +137,7 @@ class StrategyA7(BaseStrategy):
         if df5 is None or len(df5) < self.min_candles:
             return self.set_rejection("INSUFFICIENT_DATA")
 
-        df = self.calculate_indicators(df5)
+        df = self._cached_indicators(symbol, df5)
 
         # Stablecoin filter
         if not self.filters._check_stablecoin_filter(symbol):
