@@ -98,7 +98,7 @@ class Config:
 
         # Market Discovery Sync
         self.FUTURES_PAIRS = 'auto'
-        self.FUTURES_AUTO_TOP_N = int('100')  # Testnet: 100-coin universe to keep CPU light
+        self.FUTURES_AUTO_TOP_N = int(os.getenv('FUTURES_AUTO_TOP_N', '100'))  # env-overridable universe size
         self.FUTURES_AUTO_MIN_VOLUME = float('500000')
         # Comma-separated list of base symbols to exclude from discovery/A6 watch/sweeps.
         # Matching is case-insensitive on the base symbol (e.g. 'BTC' excludes BTC/USDT).
