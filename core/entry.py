@@ -2,7 +2,7 @@
 Entry Mixin — extracted from main.py PaperTradingEngine (pure move, no logic change).
 
 Holds:
-  - execute_paper_trade   (the full signal→risk→entry pipeline; places live orders in live mode)
+  - execute_entry   (the full signal→risk→entry pipeline; places live orders in live mode)
 
 Mixin design: PaperTradingEngine inherits this, so all self.* references resolve
 to the engine instance exactly as before. Method names/signatures are unchanged.
@@ -13,7 +13,7 @@ from datetime import datetime
 
 class EntryMixin:
 
-    def execute_paper_trade(self, signal, strategy_name, symbol):
+    def execute_entry(self, signal, strategy_name, symbol):
         """Simulate trade execution with risk validation"""
         
         # 0. Concurrent Cooldown Matrix Restriction

@@ -297,7 +297,7 @@ class PaperTradingEngine(MarketDataMixin, AlgoOrdersMixin, ExitsMixin, EntryMixi
                 signal = strategy.generate_signal(df, **kwargs)
 
                 if signal:
-                    self.execute_paper_trade(signal, strategy.name, symbol)
+                    self.execute_entry(signal, strategy.name, symbol)
                 elif hasattr(strategy, 'last_rejection') and strategy.last_rejection:
                     rejections[strategy.name] = strategy.last_rejection
 
