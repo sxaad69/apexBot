@@ -226,6 +226,12 @@ class EntryMixin:
                 # This is the "Entry" side of the live trading connection.
                 # It only triggers if MODE=live and an exchange is connected.
                 order_metadata = {}
+                # Defaults so paper/simulated entries don't hit UnboundLocalError on the
+                # re-apply block below (these are only assigned inside the live bridge).
+                sl_order_id = None
+                tp_order_id = None
+                trailing_order_id = None
+                exchange_trailing = False
                 if self.mode == 'live' and self.exchange:
                     try:
                         self.logger.info(f"🚀 LIVE ENTRY: Placing {approved_params['side']} order for {symbol}...")
