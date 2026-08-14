@@ -233,7 +233,7 @@ class TrailingStopLayer:
                     symbol=symbol,
                     side=stop_side,
                     amount=size_qty,
-                    stopPrice=new_stop_price,
+                    triggerPrice=new_stop_price,
                     params=params
                 )
                 

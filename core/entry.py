@@ -298,7 +298,20 @@ class EntryMixin:
                         # Use grounded info for SL placement if filled
                         if order and order.get('average'):
                             entry_price = float(order['average'])
-                        
+
+                        # GUARD: if live verification failed, record_entry returns
+                        # {'verified': False, ...} WITHOUT a 'trade_id'. The order may
+                        # have filled but the position could not be confirmed (race /
+                        # auto-close). Aborting here prevents (a) the 'trade_id'
+                        # KeyError and (b) placing SL/TP on an unverified position.
+                        if not position.get('verified', True):
+                            self.logger.warning(
+                                f"⚠️ {symbol} entry unverified on exchange — aborting "
+                                f"SL/TP placement + DB record (order {order.get('id') if order else '?'} may be orphaned; "
+                                f"position will be reconciled by sync)."
+                            )
+                            raise RuntimeError("ENTRY_UNVERIFIED")
+
                         self.logger.info(f"✅ LIVE ENTRY SUCCESS: {order.get('id')} ({quantity} {symbol}) at {entry_price}")
                         
                         # --- [PHASE 15.2: EXCHANGE-SIDE SL/TP PLACEMENT] ---
