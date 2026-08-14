@@ -534,6 +534,17 @@ class ApexHunterBot(SyncMixin):
 
         self.engine = PaperTradingEngine(self.config, self.logger, self.telegram, mode=self.mode)
         self.logger.engine = self.engine
+
+        # Publish A6's shared orderbook feed to the engine so composite strategies
+        # (A8) and forensics can read the same real-time WSS book. A6 publishes at
+        # init but logger.engine isn't set yet then; this re-binds after wiring.
+        try:
+            for strat in self.engine.strategies:
+                if hasattr(strat, 'latest_orderbooks'):
+                    self.engine.latest_orderbooks = strat.latest_orderbooks
+                    break
+        except Exception:
+            pass
         
         # --- PERPETUAL STATE RECOVERY (Phase 14) ---
         # Recover peak_balance and total_capital from SQLite if they exist
