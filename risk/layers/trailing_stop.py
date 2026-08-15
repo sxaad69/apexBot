@@ -243,15 +243,19 @@ class TrailingStopLayer:
                     new_id = None
 
                 if new_id is None:
-                    # Legacy fallback (pre-Algo-API / non-Binance)
-                    new_order = self.exchange.exchange.create_stop_market_order(
-                        symbol=symbol,
-                        side=stop_side,
-                        amount=size_qty,
-                        triggerPrice=new_stop_price,
-                        params={'reduceOnly': True}
-                    )
-                    new_id = new_order.get('id') if new_order else None
+                    # Legacy fallback for non-Binance exchanges. Binance migrated all
+                    # conditional orders to the Algo API (2025-12-09), so the raw
+                    # ccxt call is guaranteed-unsupported there — skip it.
+                    exchange_id = getattr(self.config, 'FUTURES_EXCHANGE', 'binance').lower()
+                    if exchange_id != 'binance':
+                        new_order = self.exchange.exchange.create_stop_market_order(
+                            symbol=symbol,
+                            side=stop_side,
+                            amount=size_qty,
+                            triggerPrice=new_stop_price,
+                            params={'reduceOnly': True}
+                        )
+                        new_id = new_order.get('id') if new_order else None
 
                 if new_id:
                     self.logger.info(f"[Live] Updated Exchange Stop Loss for {symbol} to {new_stop_price} (ID: {new_id})")
