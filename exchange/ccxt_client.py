@@ -223,7 +223,9 @@ class CCXTExchangeClient(BaseExchangeClient):
         if self._is_banned():
             self.logger.debug(f"[trades] {symbol} skipped — IP banned until {self._ban_until:.0f}")
             return []
-        if not self.rate_limiter.acquire(weight=2, timeout=5):
+        # weight 8: whale enrichment is low-value, so budget it conservatively
+        # (8/1500 of the per-minute budget each) vs the true Binance weight.
+        if not self.rate_limiter.acquire(weight=8, timeout=5):
             self.logger.warning(f"⏳ Rate limiter timeout fetching trades for {symbol}. Returning empty.")
             return []
         try:

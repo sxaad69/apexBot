@@ -86,10 +86,15 @@ class StrategyA6(BaseStrategy):
         # --- RATE-LIMIT FIX (Task 1.3): Whale detection TTL cache ---
         # detect_whales() calls fetch_trades(symbol, limit=100) per imbalance
         # check. Whale trades in the last 5 min don't change every second, so
-        # we cache the result for 60s to avoid hammering REST.
+        # we cache the result to avoid hammering REST.
         self._whale_cache = {}          # symbol -> result dict
         self._whale_cache_ts = {}       # symbol -> last fetch epoch time
-        self._whale_cache_ttl = getattr(config, 'WHALE_CACHE_TTL', 60.0)
+        self._whale_cache_ttl = getattr(config, 'WHALE_CACHE_TTL', 300.0)
+        # Per-symbol staggered TTL: add deterministic jitter (0-20% of TTL) so
+        # the ~474 symbols' caches don't all expire on the same sweep boundary
+        # and fire hundreds of fetch_trades at once. This eliminated the
+        # backoff-churn loop (429 -> pause -> resume -> 429).
+        self._whale_cache_stagger = {}  # symbol -> deterministic jitter offset
         
         # Initialize WebSocket client once (Fixes memory leak and high CPU)
         self.wss_exchange = ccxt.pro.binance({
@@ -239,7 +244,12 @@ class StrategyA6(BaseStrategy):
         try:
             # --- CACHE HIT: return cached whale data if within TTL ---
             now = time_module.time()
-            if (now - self._whale_cache_ts.get(symbol, 0)) < self._whale_cache_ttl and symbol in self._whale_cache:
+            # Deterministic per-symbol jitter (0-20% of TTL) staggers expiry
+            # across the universe so sweeps don't all refetch whales at once.
+            if symbol not in self._whale_cache_stagger:
+                self._whale_cache_stagger[symbol] = (hash(symbol) % 20) / 100.0 * self._whale_cache_ttl
+            eff_ttl = self._whale_cache_ttl + self._whale_cache_stagger[symbol]
+            if (now - self._whale_cache_ts.get(symbol, 0)) < eff_ttl and symbol in self._whale_cache:
                 return self._whale_cache[symbol]
 
             # Use shared exchange client instead of creating new instances
