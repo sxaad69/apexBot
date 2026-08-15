@@ -212,6 +212,27 @@ class CCXTExchangeClient(BaseExchangeClient):
             self.logger.error(f"Failed to initialize {self.exchange_id}: {e}", exc_info=True)
             raise
     
+    def get_recent_trades(self, symbol: str, limit: int = 100) -> List:
+        """Fetch recent trades (rate-limited + ban-gated).
+
+        The A6 whale detector called raw ccxt ``exchange.fetch_trades`` per
+        symbol on every rejected-signal sweep, bypassing the rate limiter and
+        ban gate entirely — hundreds of unthrottled REST calls per sweep that
+        pushed the IP over Binance's request limit. Route through here.
+        """
+        if self._is_banned():
+            self.logger.debug(f"[trades] {symbol} skipped — IP banned until {self._ban_until:.0f}")
+            return []
+        if not self.rate_limiter.acquire(weight=2, timeout=5):
+            self.logger.warning(f"⏳ Rate limiter timeout fetching trades for {symbol}. Returning empty.")
+            return []
+        try:
+            return self.exchange.fetch_trades(symbol, limit=limit)
+        except Exception as e:
+            self._record_ban(e)
+            self.logger.warning(f"Rate-limit / fetch error for trades {symbol}: {e}. Returning empty.")
+            return []
+
     def get_ohlcv(self, symbol: str, timeframe: str = '15m', limit: int = 210) -> List:
         """Fetch OHLCV candles (rate-limited + ban-gated).
 

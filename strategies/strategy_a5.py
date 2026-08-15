@@ -94,14 +94,19 @@ class StrategyA5(BaseStrategy):
         try:
             # Get exchange client from engine if available
             if hasattr(self, 'exchange_client') and self.exchange_client:
-                exchange = self.exchange_client.exchange
+                # Route through the client so whale fetches respect the rate
+                # limiter + IP-ban cooldown (previously raw ccxt bypassed both).
+                if hasattr(self.exchange_client, 'get_recent_trades'):
+                    recent_trades = self.exchange_client.get_recent_trades(symbol, limit=100)
+                else:
+                    recent_trades = self.exchange_client.exchange.fetch_trades(symbol, limit=100)
             else:
                 # Fallback (less efficient)
                 exchange_class = getattr(ccxt, self.config.FUTURES_EXCHANGE.lower() if market_type == 'futures' else self.config.SPOT_EXCHANGE.lower())
                 exchange = exchange_class()
 
-            # Fetch recent trades (last 100)
-            recent_trades = exchange.fetch_trades(symbol, limit=100)
+                # Fetch recent trades (last 100)
+                recent_trades = exchange.fetch_trades(symbol, limit=100)
 
             if not recent_trades:
                 return {'count': 0, 'buy_pressure': 0, 'sell_pressure': 0, 'total_value': 0}

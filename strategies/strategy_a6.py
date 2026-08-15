@@ -244,7 +244,13 @@ class StrategyA6(BaseStrategy):
 
             # Use shared exchange client instead of creating new instances
             if hasattr(self, 'exchange_client') and self.exchange_client:
-                exchange = self.exchange_client.exchange
+                # Route through the client so whale fetches respect the rate
+                # limiter + IP-ban cooldown (previously raw ccxt bypassed both,
+                # causing ~300+ unthrottled fetch_trades calls per sweep).
+                if hasattr(self.exchange_client, 'get_recent_trades'):
+                    recent_trades = self.exchange_client.get_recent_trades(symbol, limit=100)
+                else:
+                    recent_trades = self.exchange_client.exchange.fetch_trades(symbol, limit=100)
             else:
                 # Absolute fallback only if injection failed
                 exchange_class = getattr(ccxt, getattr(self.config, 'FUTURES_EXCHANGE', 'binance').lower())
@@ -261,7 +267,8 @@ class StrategyA6(BaseStrategy):
                     else:
                         exchange.set_sandbox_mode(True)
 
-            recent_trades = exchange.fetch_trades(symbol, limit=100)
+                recent_trades = exchange.fetch_trades(symbol, limit=100)
+
             if not recent_trades:
                 return {'count': 0, 'buy_pressure': 0, 'sell_pressure': 0, 'net_pressure': 0, 'total_value': 0}
 

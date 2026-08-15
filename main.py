@@ -722,7 +722,7 @@ class ApexHunterBot(SyncMixin):
 
                 # 2. Iterate Memory instantly
                 active_symbols = list(set([p['symbol'] for p in self.engine.positions.values()]))
-                
+
                 # Periodic Telemetry (every 10s)
                 import time
                 now = time.time()
@@ -730,6 +730,20 @@ class ApexHunterBot(SyncMixin):
                 if show_telemetry and active_symbols:
                     self.logger.info(f"🛡️ Sentinel Monitoring: {len(active_symbols)} symbols via WSS Feed.")
                     last_telemetry = now
+
+                # --- IP BAN PAUSE ---
+                # While Binance is cooling down, skip the per-symbol exit polls too
+                # (positions are protected by exchange-side algo orders). The WSS
+                # mark-price stream still updates live_prices, so when the cooldown
+                # clears we resume with fresh prices and check_exits immediately.
+                if getattr(self.engine.exchange, '_is_banned', lambda: False)():
+                    if show_telemetry:
+                        self.logger.warning(
+                            f"🚫 Rate-limit cooldown active — pausing sentinel exit polls "
+                            f"(exchange-side SL/TP still protecting {len(active_symbols)} positions)."
+                        )
+                    time.sleep(5.0)
+                    continue
                 
                 for symbol in active_symbols:
                     if not self.running: break
@@ -842,6 +856,20 @@ class ApexHunterBot(SyncMixin):
                 # refreshes instead of the same first-100 getting priority forever.
                 self.engine._ohlcv_batch_count = 0
                 self.engine._batch_cap_skipped_symbols.clear()  # Reset skip tracking
+
+                # --- IP BAN CIRCUIT BREAKER ---
+                # If Binance is cooling us down (429 backoff or -1003 ban), abort the
+                # entire sweep instead of submitting hundreds of run_cycle jobs that
+                # each try fetch_market_data. The per-call ban gate alone isn't enough:
+                # with 5 workers draining a 480-symbol queue, blocked calls churn through
+                # the queue, and once the short backoff expires the sweep immediately
+                # resumes hammering — re-tripping the ban within the same sweep.
+                if getattr(self.engine.exchange, '_is_banned', lambda: False)():
+                    self.logger.warning(
+                        f"🚫 Rate-limit cooldown active — skipping this sweep "
+                        f"(resumes when the cooldown clears)."
+                    )
+                    continue
 
                 sweep_start_time = time.time()
                 sweep_stats = {
