@@ -18,10 +18,6 @@ not by which strategy owns them:
       below EMA200  -> size down (not block)
       volatile      -> size down (not block)
       whale conflict-> HARD BLOCK (legitimate contradiction)
-
-  EXPERIMENT MODE: atr_sl_mult=100 (max) so winners run to the trailing stop —
-  measures where A8 winners actually go (MFE) vs A7. Restore to a real stop
-  before any mainnet consideration.
 """
 
 import pandas as pd
@@ -49,8 +45,8 @@ class StrategyA8(BaseStrategy):
 
         # Layer 3 — sizing gates
         self.adx_min_size = 25     # below this -> size down
-        self.atr_sl_mult = 100.0   # TESTNET-EXPERIMENT: max stop (restore ~3-5 before mainnet)
-        self.atr_tp_mult = 100.0
+        self.atr_sl_mult = 3.0
+        self.atr_tp_mult = 3.0
 
         self.filters = get_strategy_filters(config)
 
@@ -61,7 +57,7 @@ class StrategyA8(BaseStrategy):
         self._indicator_cache = {}
         self._indicator_cache_lock = threading.Lock()
 
-        self.logger.info(f"Strategy A8 initialized: Ignition(>= {self.ignition_threshold*100:.0f}% imb) → A7 confirm (vol x{self.volume_spike_mult} + {self.min_move_pct}%) → sizing | MAX-SL experiment")
+        self.logger.info(f"Strategy A8 initialized: Ignition(>= {self.ignition_threshold*100:.0f}% imb) → A7 confirm (vol x{self.volume_spike_mult} + {self.min_move_pct}%) → sizing")
 
     # =====================================================================
     # Layer 1 — Ignition (real-time orderbook + whale, no lagging gates)
@@ -210,7 +206,7 @@ class StrategyA8(BaseStrategy):
         if current_price < conf['ema200']:
             size_multiplier = min(size_multiplier, 0.5)  # below EMA200 -> half size
 
-        # ATR-based stops (max-SL experiment)
+        # ATR-based stops
         stop_loss, take_profit = self.get_dynamic_stops(df, side, self.atr_sl_mult, self.atr_tp_mult)
         atr = conf['atr']
 
