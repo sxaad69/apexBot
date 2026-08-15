@@ -125,6 +125,13 @@ class AlgoOrdersMixin:
         cached = self._open_algo_cache.get(symbol)
         if cached and (now - cached[1]) < self._order_status_ttl:
             return cached[0]
+        # While the IP is banned, don't re-poll the Algo API (each call re-arms
+        # the ban). Serve the last-known open-algo set so exits still resolve
+        # from cache and no new REST traffic is generated.
+        if getattr(self.exchange, '_is_banned', lambda: False)():
+            if cached:
+                return cached[0]
+            return None
         try:
             resp = self.exchange.exchange.fapiPrivateGetOpenAlgoOrders({'symbol': self._algo_symbol(symbol)})
             algo_ids = set()
@@ -135,6 +142,8 @@ class AlgoOrdersMixin:
             self._open_algo_cache[symbol] = (algo_ids, now)
             return algo_ids
         except Exception as e:
+            if getattr(self.exchange, '_record_ban', None):
+                self.exchange._record_ban(e)
             self.logger.warning(f"Failed to fetch open algo orders for {symbol}: {e}")
             if cached:
                 return cached[0]

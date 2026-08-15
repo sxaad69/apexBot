@@ -217,7 +217,14 @@ class MarketDataMixin:
                         symbol = market_symbol
                         break
 
-            ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+            # Route through the client so candle fetches respect the rate limiter
+            # AND the IP-ban cooldown (previously bypassed both via raw ccxt).
+            ohlcv = self.exchange.get_ohlcv(symbol, timeframe, limit=limit)
+            if not ohlcv:
+                if cache_key in self._ohlcv_cache:
+                    self.logger.warning(f"Using cached candles for {symbol} (fetch returned empty/blocked).")
+                    return self._ohlcv_cache[cache_key]
+                return None
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)

@@ -45,6 +45,48 @@ class CCXTExchangeClient(BaseExchangeClient):
             f"CCXT client initialized: {self.exchange_id} "
             f"({config.EXCHANGE_ENVIRONMENT}) | Rate limiter: {max_weight}/min"
         )
+
+        # --- IP BAN COOLDOWN (self-sustaining -1003 ban fix) ---
+        # Binance bans the IP (-1003) when request rate spikes. The sentinel's
+        # per-symbol polls keep firing even WHILE banned, and each 418 response
+        # re-arms the ban window — so a cold-start burst turns into an hours-long
+        # self-sustaining ban. When a ban is detected we record the expiry and
+        # short-circuit all REST fetches (serve cache / safe defaults) until it
+        # clears, so the IP can actually cool down.
+        self._ban_until = 0.0            # epoch seconds; 0 == not banned
+
+    def _is_banned(self) -> bool:
+        """True if Binance is currently rate-limit-banning our IP."""
+        import time as _time
+        return getattr(self, '_ban_until', 0) > _time.time()
+
+    def _record_ban(self, error) -> None:
+        """Detect -1003 'banned until <ms>' / 429 and start a cooldown.
+
+        Called from every rate-limited fetch when an exception bubbles up.
+        - 418 'banned until <epoch_ms>': park until that time + a small grace
+          so we don't re-trip the instant the ban lifts.
+        - 429 (generic too-many-requests): back off briefly instead of hammering.
+        """
+        import time as _time
+        import re
+        msg = str(error)
+        m = re.search(r"banned until (\d+)", msg)
+        now = _time.time()
+        if m:
+            until = int(m.group(1)) / 1000.0
+            # Grace: resume a few seconds after the ban window so the first
+            # resumed calls land in a cool window, not right at the edge.
+            self._ban_until = max(self._ban_until, until + 5.0)
+            self.logger.warning(
+                f"🚫 BINANCE IP BAN — pausing REST calls until "
+                f"{self._ban_until:.0f} (now {now:.0f}; diff {(self._ban_until-now)/60:.1f} min)"
+            )
+        elif 'Too Many Requests' in msg or '429' in str(getattr(error, 'code', '')):
+            # Transient overload — short backoff so the sentinel stops polling.
+            if self._ban_until < now + 30.0:
+                self._ban_until = now + 30.0
+            self.logger.warning("🚦 Binance 429 — backing off REST for 30s.")
     
     def _get_credentials(self) -> Dict[str, str]:
         """Get API credentials for the exchange"""
@@ -126,6 +168,30 @@ class CCXTExchangeClient(BaseExchangeClient):
             self.logger.error(f"Failed to initialize {self.exchange_id}: {e}", exc_info=True)
             raise
     
+    def get_ohlcv(self, symbol: str, timeframe: str = '15m', limit: int = 210) -> List:
+        """Fetch OHLCV candles (rate-limited + ban-gated).
+
+        The old market-data path called raw ccxt ``exchange.fetch_ohlcv`` directly,
+        bypassing the rate limiter AND the ban gate — a cold-start burst of
+        per-symbol candle fetches could push the IP over the -1003 threshold and,
+        once banned, keep hammering with every sweep. Route all candle fetches
+        through here so the ban cooldown applies to them too.
+        """
+        import time as _time
+        if self._is_banned():
+            self.logger.debug(f"[ohlcv] {symbol} skipped — IP banned until {self._ban_until:.0f}")
+            return []
+        if not self.rate_limiter.acquire(weight=5, timeout=5):
+            self.logger.warning(f"⏳ Rate limiter timeout fetching {symbol} OHLCV. Returning empty.")
+            return []
+        try:
+            ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+            return ohlcv
+        except Exception as e:
+            self._record_ban(e)
+            self.logger.warning(f"Rate-limit / fetch error for {symbol}: {e}. Returning empty candles.")
+            return []
+
     def get_balance(self) -> Dict[str, Any]:
         """Get account balance (rate-limited + TTL-cached 60s).
 
@@ -137,6 +203,11 @@ class CCXTExchangeClient(BaseExchangeClient):
         ttl = getattr(self.config, 'BALANCE_CACHE_TTL', 60.0)
         if (now - getattr(self, '_balance_cache_ts', 0)) < ttl and getattr(self, '_balance_cache', None) is not None:
             return self._balance_cache
+        if self._is_banned():
+            # Serve stale cache (or empty) without hitting the API while banned.
+            if getattr(self, '_balance_cache', None) is not None:
+                return self._balance_cache
+            return {}
         try:
             if not self.rate_limiter.acquire(weight=1, timeout=5):
                 # On limiter timeout, fall back to stale cache if available
@@ -150,6 +221,7 @@ class CCXTExchangeClient(BaseExchangeClient):
             return balance
         except Exception as e:
             # On error, fall back to stale cache if available
+            self._record_ban(e)
             if getattr(self, '_balance_cache', None) is not None:
                 self.logger.warning(f"Rate-limit / fetch error for balance: {e}. Using cached balance.")
                 return self._balance_cache
@@ -187,6 +259,11 @@ class CCXTExchangeClient(BaseExchangeClient):
         cache_hit = (now - getattr(self, '_positions_cache_ts', 0)) < ttl and getattr(self, '_positions_cache', None) is not None
         if cache_hit:
             return _filter_by_symbol(self._positions_cache)
+        if self._is_banned():
+            # Serve stale cache (or empty) without hitting the API while banned.
+            if getattr(self, '_positions_cache', None) is not None:
+                return _filter_by_symbol(self._positions_cache)
+            return []
         if not self.rate_limiter.acquire(weight=5, timeout=5):
             # On limiter timeout, fall back to stale cache if available
             if getattr(self, '_positions_cache', None) is not None:
@@ -207,6 +284,7 @@ class CCXTExchangeClient(BaseExchangeClient):
             return _filter_by_symbol(active_positions)
         except Exception as e:
             # On error, fall back to stale cache if available
+            self._record_ban(e)
             if getattr(self, '_positions_cache', None) is not None:
                 self.logger.warning(f"Rate-limit / fetch error for positions: {e}. Using cached positions.")
                 return _filter_by_symbol(self._positions_cache)
@@ -221,6 +299,11 @@ class CCXTExchangeClient(BaseExchangeClient):
         cache_key = f"ticker_{symbol}"
         if (now - getattr(self, '_ticker_cache_ts', {}).get(cache_key, 0)) < ttl and cache_key in getattr(self, '_ticker_cache', {}):
             return self._ticker_cache[cache_key]
+        if self._is_banned():
+            # Serve stale cache (or empty) without hitting the API while banned.
+            if hasattr(self, '_ticker_cache') and cache_key in self._ticker_cache:
+                return self._ticker_cache[cache_key]
+            return {}
         if not self.rate_limiter.acquire(weight=2, timeout=5):
             # On limiter timeout, fall back to stale cache if available
             if hasattr(self, '_ticker_cache') and cache_key in self._ticker_cache:
@@ -236,6 +319,7 @@ class CCXTExchangeClient(BaseExchangeClient):
             return ticker
         except Exception as e:
             # On error, fall back to stale cache if available
+            self._record_ban(e)
             if hasattr(self, '_ticker_cache') and cache_key in self._ticker_cache:
                 self.logger.warning(f"Rate-limit / fetch error for ticker {symbol}: {e}. Using cached ticker.")
                 return self._ticker_cache[cache_key]
