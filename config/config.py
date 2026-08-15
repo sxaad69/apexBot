@@ -84,7 +84,7 @@ class Config:
         self.FUTURES_TAKE_PROFIT_PERCENT = float('10')
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float('5')
         self.FUTURES_MAX_DRAWDOWN_PERCENT = float('70')
-        self.FUTURES_MAX_OPEN_POSITIONS = int(os.getenv('FUTURES_MAX_OPEN_POSITIONS', '200'))
+        self.FUTURES_MAX_OPEN_POSITIONS = int(os.getenv('FUTURES_MAX_OPEN_POSITIONS', '15'))
 
         # --- Exposure & Reserve Management ---
         # FUTURES_MAX_EXPOSURE_NORMAL: Max % of capital for standard signals (Confidence < Threshold)
@@ -98,7 +98,7 @@ class Config:
 
         # Market Discovery Sync
         self.FUTURES_PAIRS = 'auto'
-        self.FUTURES_AUTO_TOP_N = int(os.getenv('FUTURES_AUTO_TOP_N', '100'))  # env-overridable universe size
+        self.FUTURES_AUTO_TOP_N = int(os.getenv('FUTURES_AUTO_TOP_N', '1000'))  # env-overridable universe size
         self.FUTURES_AUTO_MIN_VOLUME = float('500000')
         # Comma-separated list of base symbols to exclude from discovery/A6 watch/sweeps.
         # Matching is case-insensitive on the base symbol (e.g. 'BTC' excludes BTC/USDT).
@@ -212,8 +212,8 @@ class Config:
         self.STRATEGY_A4_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A5_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A6_ENABLED = self._str_to_bool('true')
-        self.STRATEGY_A7_ENABLED = self._str_to_bool('true')
-        self.STRATEGY_A8_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A7_ENABLED = self._str_to_bool('false')
+        self.STRATEGY_A8_ENABLED = self._str_to_bool('false')
         self.A8_IGNITION_THRESHOLD = float(os.getenv('A8_IGNITION_THRESHOLD', '0.40'))
         self.A6_ALLOW_SHORT = self._str_to_bool('false')
         
