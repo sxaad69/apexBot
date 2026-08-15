@@ -132,6 +132,14 @@ class AlgoOrdersMixin:
             if cached:
                 return cached[0]
             return None
+        # Go through the shared rate limiter so the sentinel's per-symbol
+        # openAlgoOrders polls obey the same budget + cold-start warmup as every
+        # other REST call (previously this bypassed the limiter entirely).
+        rate_limiter = getattr(self.exchange, 'rate_limiter', None)
+        if rate_limiter is not None and not rate_limiter.acquire(weight=3, timeout=5):
+            if cached:
+                return cached[0]
+            return None
         try:
             resp = self.exchange.exchange.fapiPrivateGetOpenAlgoOrders({'symbol': self._algo_symbol(symbol)})
             algo_ids = set()

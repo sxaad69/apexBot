@@ -199,7 +199,17 @@ class MarketDataMixin:
         # at OHLCV_BATCH_MAX to avoid bursting the rate limit. Symbols beyond
         # the cap use stale cache (or None) this sweep; they'll refresh next
         # sweep as the batch counter resets.
-        if self._ohlcv_batch_count >= self._ohlcv_batch_max:
+        batch_max = self._ohlcv_batch_max
+        # Scale the cap down during the cold-start warmup so the first sweeps
+        # attempt fewer candle refetches (each is weight 5) and the IP never
+        # bursts. The rate limiter's current-budget ratio tells us how far
+        # through warmup we are (1.0 == full budget == normal cap).
+        try:
+            ratio = self.exchange.rate_limiter._current_max_weight() / float(self.exchange.rate_limiter.max_weight_per_min)
+            batch_max = max(10, int(batch_max * ratio))
+        except Exception:
+            pass
+        if self._ohlcv_batch_count >= batch_max:
             if cache_key in self._ohlcv_cache:
                 return self._ohlcv_cache[cache_key]
             # Track batch-cap skips separately so we can suppress noise in logs

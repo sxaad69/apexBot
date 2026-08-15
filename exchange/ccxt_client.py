@@ -40,11 +40,19 @@ class CCXTExchangeClient(BaseExchangeClient):
         # Caps total REST weight/min regardless of code path. Binance futures
         # limit is 2,400 weight/min; we budget 1,500 for headroom.
         max_weight = getattr(config, 'RATE_LIMIT_MAX_WEIGHT_PER_MIN', 1500)
-        self.rate_limiter = RateLimiter(max_weight_per_min=max_weight, logger=logger)
+        # Cold-start warmup: ramp from a low budget to full over a few minutes
+        # so a fresh restart doesn't burst the API (all caches empty) and trip
+        # the -1003 IP ban. Defaults: 3 min warmup from 30% budget.
+        warmup_secs = float(getattr(config, 'RATE_LIMIT_WARMUP_SECONDS', 180.0))
+        warmup_floor = float(getattr(config, 'RATE_LIMIT_WARMUP_FLOOR_RATIO', 0.30))
+        self.rate_limiter = RateLimiter(max_weight_per_min=max_weight, logger=logger,
+                                        warmup_seconds=warmup_secs,
+                                        warmup_floor_ratio=warmup_floor)
         
         self.logger.system(
             f"CCXT client initialized: {self.exchange_id} "
-            f"({config.EXCHANGE_ENVIRONMENT}) | Rate limiter: {max_weight}/min"
+            f"({config.EXCHANGE_ENVIRONMENT}) | Rate limiter: {max_weight}/min "
+            f"(warmup {warmup_secs:.0f}s from {warmup_floor*100:.0f}%)"
         )
 
         # --- IP BAN COOLDOWN (self-sustaining -1003 ban fix) ---

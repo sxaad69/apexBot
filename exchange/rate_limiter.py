@@ -19,9 +19,18 @@ from typing import Optional
 class RateLimiter:
     """Token-bucket rate limiter keyed on Binance request weight."""
 
-    def __init__(self, max_weight_per_min: int = 1500, logger=None):
+    def __init__(self, max_weight_per_min: int = 1500, logger=None,
+                 warmup_seconds: float = 180.0, warmup_floor_ratio: float = 0.30):
         self.max_weight_per_min = max_weight_per_min
         self.logger = logger
+        # --- COLD-START WARMUP ---
+        # A fresh bot restart bursts the API (all caches empty: positions,
+        # tickers, algo-orders, OHLCV). Starting at a low budget and ramping
+        # to full over a few minutes smooths the burst so the -1003 IP ban
+        # never trips. time.monotonic() at creation ≈ process startup.
+        self.warmup_seconds = warmup_seconds
+        self.warmup_floor_ratio = min(max(warmup_floor_ratio, 0.05), 1.0)
+        self._started_at = time.monotonic()
         self._tokens = float(max_weight_per_min)   # start full
         self._last_refill = time.monotonic()
         self._lock = threading.Lock()
@@ -30,13 +39,23 @@ class RateLimiter:
         self.calls_made = 0
         self.waits_seconds = 0.0
 
+    def _current_max_weight(self) -> float:
+        """Ramped weight budget: floor ratio at startup, linear to full after warmup."""
+        elapsed = time.monotonic() - self._started_at
+        if elapsed >= self.warmup_seconds or self.warmup_seconds <= 0:
+            return float(self.max_weight_per_min)
+        progress = elapsed / self.warmup_seconds
+        ratio = self.warmup_floor_ratio + (1.0 - self.warmup_floor_ratio) * progress
+        return float(self.max_weight_per_min) * ratio
+
     def _refill(self):
-        """Refill tokens continuously at max_weight_per_min / 60 per second."""
+        """Refill tokens continuously at current (possibly ramped) weight budget per second."""
         now = time.monotonic()
         elapsed = now - self._last_refill
+        max_w = self._current_max_weight()
         self._tokens = min(
-            self.max_weight_per_min,
-            self._tokens + elapsed * (self.max_weight_per_min / 60.0)
+            max_w,
+            self._tokens + elapsed * (max_w / 60.0)
         )
         self._last_refill = now
 
@@ -60,7 +79,7 @@ class RateLimiter:
                     return True
                 # Not enough tokens — compute wait time
                 deficit = weight - self._tokens
-                wait_needed = deficit / (self.max_weight_per_min / 60.0)
+                wait_needed = deficit / (self._current_max_weight() / 60.0)
 
             if deadline is not None and time.monotonic() + wait_needed > deadline:
                 if self.logger:
@@ -88,6 +107,8 @@ class RateLimiter:
         with self._lock:
             return {
                 'max_weight_per_min': self.max_weight_per_min,
+                'current_budget': round(self._current_max_weight(), 2),
+                'warmup_seconds': self.warmup_seconds,
                 'tokens_available': round(self._tokens, 2),
                 'total_weight_consumed': self.total_weight_consumed,
                 'calls_made': self.calls_made,
