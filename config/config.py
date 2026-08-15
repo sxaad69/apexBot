@@ -84,7 +84,7 @@ class Config:
         self.FUTURES_TAKE_PROFIT_PERCENT = float('10')
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float('5')
         self.FUTURES_MAX_DRAWDOWN_PERCENT = float('70')
-        self.FUTURES_MAX_OPEN_POSITIONS = int('15')
+        self.FUTURES_MAX_OPEN_POSITIONS = int(os.getenv('FUTURES_MAX_OPEN_POSITIONS', '15'))
 
         # --- Exposure & Reserve Management ---
         # FUTURES_MAX_EXPOSURE_NORMAL: Max % of capital for standard signals (Confidence < Threshold)
@@ -98,7 +98,7 @@ class Config:
 
         # Market Discovery Sync
         self.FUTURES_PAIRS = 'auto'
-        self.FUTURES_AUTO_TOP_N = int('1000')  # Full universe (all qualifying perps)
+        self.FUTURES_AUTO_TOP_N = int(os.getenv('FUTURES_AUTO_TOP_N', '1000'))  # env-overridable universe size
         self.FUTURES_AUTO_MIN_VOLUME = float('500000')
         # Comma-separated list of base symbols to exclude from discovery/A6 watch/sweeps.
         # Matching is case-insensitive on the base symbol (e.g. 'BTC' excludes BTC/USDT).
@@ -118,7 +118,7 @@ class Config:
         self.TICKER_CACHE_TTL = float('5.0')
         self.BALANCE_CACHE_TTL = float('60.0')
         self.ORDER_STATUS_CACHE_TTL = float('5.0')
-        self.WHALE_CACHE_TTL = float('60.0')
+        self.WHALE_CACHE_TTL = float(os.getenv('WHALE_CACHE_TTL', '60.0'))
         
         # ===== Global Rate-Limit Budget (Task 1.2) =====
         self.RATE_LIMIT_MAX_WEIGHT_PER_MIN = int('1500')  # Binance cap is 2400
@@ -202,12 +202,19 @@ class Config:
         
         # ===== Strategy Selection Configuration =====
         # NOTE: A3, A4, A5 enabled for TESTNET only. DISABLE for LIVE prod.
+        self.STRATEGY_A1_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A2_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A3_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A4_ENABLED = self._str_to_bool('true')
         self.STRATEGY_A1_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A2_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A3_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A4_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A5_ENABLED = self._str_to_bool('false')
         self.STRATEGY_A6_ENABLED = self._str_to_bool('true')
+        self.STRATEGY_A7_ENABLED = self._str_to_bool('false')
+        self.STRATEGY_A8_ENABLED = self._str_to_bool('false')
+        self.A8_IGNITION_THRESHOLD = float(os.getenv('A8_IGNITION_THRESHOLD', '0.40'))
         self.A6_ALLOW_SHORT = self._str_to_bool('false')
         
         # Strategy-specific Risk Overrides
@@ -223,10 +230,12 @@ class Config:
         self.TRAILING_STOP_DISTANCE = float('3.0')    # % trail distance from peak
         # Tiered trailing (B1): widen the exchange callback as a position proves it runs.
         # Tier thresholds are profit % from entry; callback rates replace the trailing order.
-        self.TRAILING_TIER_1_AT = float('8.0')        # above this profit → tier 1
-        self.TRAILING_TIER_1_CALLBACK = float('5.0')  # tier 1 callback %
-        self.TRAILING_TIER_2_AT = float('20.0')       # above this profit → tier 2
-        self.TRAILING_TIER_2_CALLBACK = float('8.0')  # tier 2 callback %
+        # Env-overridable so testnet can exercise tiers at low thresholds without committing
+        # testnet-specific values to the repo.
+        self.TRAILING_TIER_1_AT = float(os.getenv('TRAILING_TIER_1_AT', '8.0'))  # above this profit → tier 1
+        self.TRAILING_TIER_1_CALLBACK = float(os.getenv('TRAILING_TIER_1_CALLBACK', '5.0'))  # tier 1 callback %
+        self.TRAILING_TIER_2_AT = float(os.getenv('TRAILING_TIER_2_AT', '20.0'))  # above this profit → tier 2
+        self.TRAILING_TIER_2_CALLBACK = float(os.getenv('TRAILING_TIER_2_CALLBACK', '8.0'))  # tier 2 callback %
         # C1: re-entry blacklist — consecutive SL losses before blocking the symbol for the session
         self.FUTURES_MAX_LOSS_STREAK = int(os.getenv('FUTURES_MAX_LOSS_STREAK', '2'))
         self.TRAILING_TP_ENABLED = self._str_to_bool('true')
@@ -240,7 +249,10 @@ class Config:
         self.ENABLE_EXCHANGE_STOPS = self._str_to_bool(os.getenv('ENABLE_EXCHANGE_STOPS', 'false'))
         self.EXCHANGE_TP_ORDER_TYPE = 'TAKE_PROFIT_MARKET'
 
-        self.MAX_DAILY_LOSS_PERCENT = float('15')
+        # NOTE: MAX_DAILY_LOSS_PERCENT is NOT overwritten here — it must stay at
+        # the value from FUTURES_MAX_DAILY_LOSS_PERCENT (line 144). A prior duplicate
+        # here set it to 15%, silently inflating the daily loss limit from 5% to 15%
+        # (the bug that let Aug-13's -$8.73 through without halting).
         
         # ===== Tiered Risk Management (Phase 14) =====
         self.TIERED_RISK_ENABLED = self._str_to_bool('true')

@@ -226,20 +226,39 @@ class TrailingStopLayer:
                     size_qty = float(self.exchange.exchange.amount_to_precision(symbol, size_qty))
                 except Exception:
                     pass
-                
-                params = {'reduceOnly': True}
-                
-                new_order = self.exchange.exchange.create_stop_market_order(
-                    symbol=symbol,
-                    side=stop_side,
-                    amount=size_qty,
-                    stopPrice=new_stop_price,
-                    params=params
-                )
-                
-                if new_order and 'id' in new_order:
-                    new_id = new_order['id']
-                    self.logger.debug(f"[Live] Updated Exchange Stop Loss for {symbol} to {new_stop_price} (ID: {new_id})")
+
+                # Place via the Algo Order API (same path as entry-side SL placement).
+                # Since 2025-12-09 Binance migrated all conditional orders to the Algo
+                # API; raw ccxt create_stop_market_order is unsupported for these.
+                new_id = None
+                try:
+                    if hasattr(self, 'engine') and hasattr(self.engine, '_place_exchange_conditional'):
+                        new_id = self.engine._place_exchange_conditional(
+                            symbol, stop_side, 'STOP_MARKET',
+                            quantity=size_qty,
+                            trigger_price=new_stop_price,
+                        )
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Algo-API stop move failed for {symbol}: {e}. Falling back to ccxt.")
+                    new_id = None
+
+                if new_id is None:
+                    # Legacy fallback for non-Binance exchanges. Binance migrated all
+                    # conditional orders to the Algo API (2025-12-09), so the raw
+                    # ccxt call is guaranteed-unsupported there — skip it.
+                    exchange_id = getattr(self.config, 'FUTURES_EXCHANGE', 'binance').lower()
+                    if exchange_id != 'binance':
+                        new_order = self.exchange.exchange.create_stop_market_order(
+                            symbol=symbol,
+                            side=stop_side,
+                            amount=size_qty,
+                            triggerPrice=new_stop_price,
+                            params={'reduceOnly': True}
+                        )
+                        new_id = new_order.get('id') if new_order else None
+
+                if new_id:
+                    self.logger.info(f"[Live] Updated Exchange Stop Loss for {symbol} to {new_stop_price} (ID: {new_id})")
                     self.db.update_trade_order_ids(trade_id, sl_order_id=new_id)
                     return new_id
                 return None
