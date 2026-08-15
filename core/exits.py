@@ -41,6 +41,17 @@ class ExitsMixin:
                     position['highest_price'] = current_price
                     # Persistent peak update (Phase 34)
                     self._persist_stop_watermark(position['trade_id'], peak=current_price)
+                # Track lowest price since entry too — this is the MAE (max adverse
+                # excursion) basis for LONG positions. Previously only the SHORT
+                # branch updated lowest_price, so MAE was always 0% for longs and
+                # trade_outcomes.max_adverse_excursion was meaningless.
+                if current_price < position['lowest_price']:
+                    position['lowest_price'] = current_price
+                    # Persist the trough to the DB column so record_exit computes a
+                    # real MAE (not just metadata). The ratchet layer also writes
+                    # lowest_price, but only after trailing activation — this covers
+                    # the pre-activation adverse moves too.
+                    self._persist_stop_watermark(position['trade_id'], trough=current_price)
                 
                 # Check for activation
                 profit_percent = (current_price - position['entry_price']) / position['entry_price']
@@ -462,7 +473,15 @@ class ExitsMixin:
                     meta['trailing_stop_active'] = pos.get('trailing_stop_active', False)
                     meta['trailing_stop_price'] = pos.get('stop_loss') # Use stop_loss as the source of truth
                     break
-            self.trade_manager.update_trade_params(trade_id, {'metadata': meta})
+            # Persist peak/trough to the DB COLUMNS too (not just metadata JSON) so
+            # record_exit computes MFE/MAE from real watermarks. update_trade_metadata
+            # maps highest_price/lowest_price keys to their columns.
+            col_updates = {'metadata': meta}
+            if peak is not None:
+                col_updates['highest_price'] = peak
+            if trough is not None:
+                col_updates['lowest_price'] = trough
+            self.trade_manager.update_trade_params(trade_id, col_updates)
         except Exception as e:
             self.logger.warning(f"Failed to persist stop watermark: {e}")
     def check_position_exit(self, position, current_price):
