@@ -4,6 +4,7 @@ Unified exchange client using CCXT library for multi-exchange support
 """
 
 import ccxt
+import time
 from typing import Dict, Any, List, Optional
 from .base_client import BaseExchangeClient
 from .rate_limiter import RateLimiter
@@ -59,6 +60,25 @@ class CCXTExchangeClient(BaseExchangeClient):
         """True if Binance is currently rate-limit-banning our IP."""
         import time as _time
         return getattr(self, '_ban_until', 0) > _time.time()
+
+    @staticmethod
+    def _is_ban_condition(error) -> bool:
+        """True if an exception is a -1003/418/429 rate-limit condition."""
+        import re
+        msg = str(error)
+        return ('banned until' in msg
+                or 'Too Many Requests' in msg
+                or '-1003' in msg
+                or str(getattr(error, 'code', '')) in ('429', '418'))
+
+    @staticmethod
+    def _parse_ban_until(error) -> float:
+        """Extract the epoch-seconds ban expiry from a -1003 message, else now."""
+        import re
+        m = re.search(r"banned until (\d+)", str(error))
+        if m:
+            return int(m.group(1)) / 1000.0
+        return __import__('time').time() + 30.0
 
     def _record_ban(self, error) -> None:
         """Detect -1003 'banned until <ms>' / 429 and start a cooldown.
@@ -156,9 +176,25 @@ class CCXTExchangeClient(BaseExchangeClient):
                 exchange.options['fetchCurrencies'] = False
                 exchange.options['fetchMargins'] = False
             
-            # Load markets
-            exchange.load_markets()
-            
+            # Load markets (ban-aware: if Binance is still cooling down from a
+            # -1003 ban, load_markets() raises 418 and would crash-loop via
+            # systemd restarts, re-arming the ban each time. Wait out the ban
+            # window instead of failing.)
+            try:
+                exchange.load_markets()
+            except Exception as e:
+                if self._is_ban_condition(e):
+                    until = self._parse_ban_until(e)
+                    wait_s = max(0.0, until - time.time())
+                    self.logger.warning(
+                        f"🚫 Binance still cooling down from IP ban — waiting "
+                        f"{wait_s/60:.1f} min before loading markets..."
+                    )
+                    time.sleep(wait_s + 5.0)
+                    exchange.load_markets()
+                else:
+                    raise
+
             return exchange
             
         except AttributeError:
