@@ -237,7 +237,7 @@ class Config:
         self.TRAILING_TIER_2_AT = float(os.getenv('TRAILING_TIER_2_AT', '20.0'))  # above this profit → tier 2
         self.TRAILING_TIER_2_CALLBACK = float(os.getenv('TRAILING_TIER_2_CALLBACK', '8.0'))  # tier 2 callback %
         # C1: re-entry blacklist — consecutive SL losses before blocking the symbol for the session
-        self.FUTURES_MAX_LOSS_STREAK = int(os.getenv('FUTURES_MAX_LOSS_STREAK', '2'))
+        self.FUTURES_MAX_LOSS_STREAK = int(os.getenv('FUTURES_MAX_LOSS_STREAK', '1'))
         self.TRAILING_TP_ENABLED = self._str_to_bool('true')
 
         # Exchange-Side Execution

@@ -442,14 +442,11 @@ class StrategyA6(BaseStrategy):
             self.log_strategy_skip(symbol, f"FILTER_{filter_reason.upper()}", {})
             return None
 
-        # 5. Market Regime Filter
-        # Reworked: 'volatile'/'unknown' no longer hard-block. Moonshots are volatile
-        # by definition, so a hard block kills the biggest winners (audit: +20.5% avg
-        # missed alpha on REGIME_BLOCKED). Instead we raise the imbalance bar below so
-        # volatile entries need stronger orderbook conviction, and skip the regime
-        # confidence bonus. The effective threshold is applied at the imbalance check.
+        # 5. Market Regime Filter (skip volatile/unknown)
         regime = self.get_market_regime(df)
-        regime_penalty = regime in ['volatile', 'unknown']
+        if regime in ['volatile', 'unknown']:
+            self.log_strategy_skip(symbol, "REGIME_BLOCKED", {"regime": regime})
+            return None
 
         # 5b. Major Trend Filter (EMA 200) - PREVENT FIGHTING THE TREND
         current_price = df['close'].iloc[-1]
@@ -464,15 +461,10 @@ class StrategyA6(BaseStrategy):
             self.logger.debug(f"[{self.name}] {symbol}: Waiting for WebSocket data...")
             return self.set_rejection("WAITING_FOR_WSS_DATA")
 
-        # Volatile/unknown regime: require stronger imbalance (70% vs 65% base)
-        effective_imbalance_threshold = self.imbalance_threshold
-        if regime_penalty:
-            effective_imbalance_threshold = max(self.imbalance_threshold, 0.70)
-
-        if abs(imbalance) < effective_imbalance_threshold:
+        if abs(imbalance) < self.imbalance_threshold:
             self.logger.debug(
                 f"[{self.name}] {symbol} scanning... Imbalance: {imbalance*100:.1f}% "
-                f"(Threshold: {effective_imbalance_threshold*100:.1f}%)"
+                f"(Threshold: {self.imbalance_threshold*100:.1f}%)"
             )
             # Enrichment: signed imbalance + orderbook depth + whale + session
             try:
@@ -486,7 +478,7 @@ class StrategyA6(BaseStrategy):
             return self.set_rejection({
                 "reason": "LOW_IMBALANCE",
                 "imbalance": round(snap['imbalance'], 4),
-                "threshold": round(effective_imbalance_threshold, 4),
+                "threshold": round(self.imbalance_threshold, 4),
                 "orderbook_depth": round(snap['bid_depth'], 2),
                 "orderbook_ask_depth": round(snap['ask_depth'], 2),
                 "whale_count": whale.get('count', 0),
@@ -542,31 +534,19 @@ class StrategyA6(BaseStrategy):
 
         # 11. Determine direction with TREND FILTER + Short Penalty
         side = None
-        size_multiplier = 1.0
-        if imbalance >= effective_imbalance_threshold:
+        if imbalance >= self.imbalance_threshold:
             if trend_bias != 'bullish':
-                # Reworked: strong orderbook (>=70%) overrides the lagging EMA200.
-                # The audit showed moonshots (BLUAI +88%, 龙虾 +61%) launch below the
-                # 200MA — the MA is slow, the orderbook is fast. Enter at 50% size
-                # instead of hard-rejecting, so we don't miss the start of new trends.
-                if imbalance >= 0.70:
-                    size_multiplier = 0.5
-                    self.logger.info(
-                        f"[{self.name}] {symbol} TREND-OVERRIDE: strong bid wall {imbalance*100:.1f}% "
-                        f"below EMA200 — entering at 50% size."
-                    )
-                else:
-                    return self.set_rejection({
-                        "reason": "TREND_MISMATCH_BEARISH",
-                        "imbalance": round(abs(imbalance), 4),
-                        "threshold": round(effective_imbalance_threshold, 4),
-                        "regime": regime,
-                        "ema200_distance": round((current_price - ema_200) / ema_200, 4),
-                        "trend_bias": trend_bias,
-                    })
+                return self.set_rejection({
+                    "reason": "TREND_MISMATCH_BEARISH",
+                    "imbalance": round(abs(imbalance), 4),
+                    "threshold": round(self.imbalance_threshold, 4),
+                    "regime": regime,
+                    "ema200_distance": round((current_price - ema_200) / ema_200, 4),
+                    "trend_bias": trend_bias,
+                })
             side = 'buy'
             self.logger.info(f"[{self.name}] {symbol} MASSIVE BID WALL: +{imbalance*100:.1f}% | Conf: {confidence:.2f} | Regime: {regime}")
-        elif imbalance <= -effective_imbalance_threshold:
+        elif imbalance <= -self.imbalance_threshold:
             if not getattr(self.config, 'A6_ALLOW_SHORT', True):
                 return self.set_rejection({
                     "reason": "SHORT_DISABLED_BY_CONFIG",
@@ -577,7 +557,7 @@ class StrategyA6(BaseStrategy):
                 return self.set_rejection({
                     "reason": "TREND_MISMATCH_BULLISH",
                     "imbalance": round(abs(imbalance), 4),
-                    "threshold": round(effective_imbalance_threshold, 4),
+                    "threshold": round(self.imbalance_threshold, 4),
                     "regime": regime,
                     "ema200_distance": round((current_price - ema_200) / ema_200, 4),
                     "trend_bias": trend_bias,
@@ -630,7 +610,6 @@ class StrategyA6(BaseStrategy):
             'strategy': self.name,
             'session': session_name,
             'regime': regime,
-            'size_multiplier': size_multiplier,
             'indicators': {
                 'imbalance': round(imbalance, 4),
                 'atr': round(atr, 8),

@@ -25,7 +25,7 @@ class EntryMixin:
             self.logger.warning(f"🚫 [COOLDOWN REJECTED] {symbol} hit an exit {elapsed_minutes:.1f}m ago. Under {cooldown_minutes}m cooling off period.")
             return
 
-        # C1: Re-entry blacklist — 2 consecutive SL losses on the same symbol blocks the session.
+        # C1: Re-entry blacklist — N consecutive SL losses on the same symbol blocks the session.
         # Kills the MORPHO/TA/Q repeat-loss pattern (audit: those 3 symbols lost ~$8.5 on 0 wins).
         max_streak = getattr(self.config, 'FUTURES_MAX_LOSS_STREAK', 2)
         streak = self.symbol_loss_streak.get(symbol.split('/')[0], 0)
