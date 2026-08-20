@@ -768,8 +768,14 @@ class ApexHunterBot(SyncMixin):
                 try:
                     live = self.engine.exchange.get_positions()
                     protected = set(p['symbol'] for p in live if abs(float(p.get('contracts', 0) or 0)) > 0)
-                except Exception:
-                    protected = set()
+                except Exception as e:
+                    self.logger.warning(f"⚠️ [B2] Could not fetch positions ({e}), skipping sweep this cycle")
+                    _t.sleep(interval)
+                    continue
+                if not protected:
+                    self.logger.warning("⚠️ [B2] Position fetch returned empty — skipping sweep to avoid wiping live algos")
+                    _t.sleep(interval)
+                    continue
                 try:
                     resp = self.engine.exchange.exchange.fapiPrivateGetOpenAlgoOrders()
                     orders = resp if isinstance(resp, list) else (resp.get('orders', []) if isinstance(resp, dict) else [])
