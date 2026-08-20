@@ -114,6 +114,34 @@ class ExitsMixin:
         elif net_pnl and net_pnl > 0:
             # profitable exit — reset streak
             self.symbol_loss_streak[base] = 0
+
+    def _ensure_hard_stop(self, position, sl_side, quantity):
+        """A3: guarantee a hard STOP_MARKET is live for a software-managed position.
+
+        Called when an exchange trailing upgrade fails and we drop to bot-side
+        sentinel control. The entry hard SL may be stale/missing; (re)place one at
+        the current stop_loss so the downside is never left open.
+        """
+        try:
+            stop_price = position.get('stop_loss')
+            if not stop_price or stop_price <= 0:
+                return
+            sl_price = float(self.exchange.exchange.price_to_precision(position['symbol'], stop_price))
+            qty = float(self.exchange.exchange.amount_to_precision(position['symbol'], quantity))
+            client_sl = f"apex{str(position['trade_id']).replace('-', '')[-10:]}SL"
+            new_sl_id = self._place_exchange_conditional(
+                position['symbol'], sl_side, 'STOP_MARKET',
+                quantity=qty,
+                trigger_price=sl_price,
+                client_algo_id=client_sl[:36],
+            )
+            if new_sl_id:
+                position['sl_order_id'] = new_sl_id
+                self.trade_manager.db.update_trade_order_ids(position['trade_id'], sl_order_id=new_sl_id)
+                self.logger.info(f"🛡️ [A3] Hard STOP re-placed for {position['symbol']} @ {sl_price} (algoId: {new_sl_id})")
+        except Exception as e:
+            self.logger.warning(f"[A3] _ensure_hard_stop error for {position.get('symbol')}: {e}")
+
     def update_trailing_tier(self, symbol, current_price):
         """B1: Tiered trailing for exchange-managed positions.
 
@@ -193,14 +221,65 @@ class ExitsMixin:
 
             self._cancel_exchange_conditional(symbol, trailing_id)
 
+            # B3: dedupe — a failed cancel (e.g. -2011 stale ID) can leave the OLD
+            # trailing still live, so re-placing here would stack duplicate
+            # TRAILING_STOP_MARKET orders (risking the per-symbol algo cap that blocks
+            # new callback orders). Enumerate the symbol's open algos and cancel any
+            # duplicate trailing-stops before placing the new one.
+            try:
+                algo_sym = symbol.replace('/', '').split(':')[0]
+                resp = self.exchange.exchange.fapiPrivateGetOpenAlgoOrders({'symbol': algo_sym})
+                orders = resp if isinstance(resp, list) else (resp.get('orders', []) if isinstance(resp, dict) else [])
+                for o in orders:
+                    if isinstance(o, dict) and o.get('algoType') == 'TRAILING_STOP_MARKET':
+                        try:
+                            self.exchange.exchange.fapiPrivateDeleteAlgoOrder({'symbol': algo_sym, 'algoId': o.get('algoId')})
+                        except Exception:
+                            pass
+                self._open_algo_cache.pop(symbol, None)
+            except Exception as _dedupe_e:
+                self.logger.debug(f"[tier] {symbol} B3 dedupe skipped: {_dedupe_e}")
+
+            # A1 FIX: Do NOT pass activate_price=current_price. For a live trailing
+            # re-place Binance rejects an activation at/behind the current mark with
+            # -2021 "Order would immediately trigger" (killed ZEC/HEI/RE/M upgrades).
+            # Arm the trailing just AHEAD of the current mark with a small buffer so it
+            # engages on the next favorable tick without being instantly triggerable.
+            #   long  (SELL trailing): activation must be ABOVE mark  -> mark * (1+buf)
+            #   short (BUY  trailing): activation must be BELOW mark -> mark * (1-buf)
+            rearm_buffer = getattr(self.config, 'TRAILING_REARM_BUFFER', 0.5) / 100.0
+            is_long = position.get('side') == 'buy'
+            try:
+                mark = float(self.exchange.exchange.fetch_ticker(symbol)['last'])
+            except Exception:
+                mark = current_price
+            if is_long:
+                activate = mark * (1 + rearm_buffer)
+            else:
+                activate = mark * (1 - rearm_buffer)
+            try:
+                activate = float(self.exchange.exchange.price_to_precision(symbol, activate))
+            except Exception:
+                pass
+
             client_tr = f"apex{str(position['trade_id']).replace('-', '')[-10:]}TR"
-            new_id = self._place_exchange_conditional(
-                symbol, sl_side, 'TRAILING_STOP_MARKET',
-                quantity=quantity,
-                activate_price=current_price,  # already past activation — keep it live
-                callback_rate=target_cb,
-                client_algo_id=client_tr[:36],
-            )
+            # E1: retry the re-place a few times to self-heal transient -2021/-2011
+            # placement failures instead of instantly stranding the position in
+            # software-managed mode (the ZEC disaster path).
+            import time as _time
+            new_id = None
+            _max_retries = getattr(self.config, 'TIER_REPLACE_RETRIES', 3)
+            for _attempt in range(max(1, _max_retries)):
+                new_id = self._place_exchange_conditional(
+                    symbol, sl_side, 'TRAILING_STOP_MARKET',
+                    quantity=quantity,
+                    activate_price=activate,
+                    callback_rate=target_cb,
+                    client_algo_id=client_tr[:36],
+                )
+                if new_id:
+                    break
+                _time.sleep(0.5)
             if new_id:
                 position['trailing_order_id'] = new_id
                 position['trailing_tier'] = target_tier
@@ -239,6 +318,13 @@ class ExitsMixin:
                 self.trade_manager.db.update_trade_metadata(
                     position['trade_id'], {'metadata': _meta}
                 )
+                # A3: ensure the position has REAL downside protection in software-managed
+                # mode. The hard STOP_MARKET (sl_order_id) may be stale/missing; re-place a
+                # hard stop at the current stop_loss level so a drop can't run away.
+                try:
+                    self._ensure_hard_stop(position, sl_side, quantity)
+                except Exception as _e:
+                    self.logger.warning(f"[tier] A3 hard-stop ensure failed for {symbol}: {_e}")
                 self.logger.warning(
                     f"⚠️ Trailing tier upgrade FAILED for {symbol} (old trailing cancelled). "
                     f"Fell back to bot-side sentinel — position now software-managed."
@@ -552,6 +638,28 @@ class ExitsMixin:
             if position['symbol'] != symbol:
                 continue
 
+            # E2: track MFE/MAE watermarks (highest/lowest price) from live ticks so the
+            # trade_outcomes table gets real max favorable/adverse excursion instead of 0.
+            try:
+                entry_px = float(position.get('entry_price') or 0)
+                if entry_px > 0 and current_price and current_price > 0:
+                    hi = float(position.get('highest_price') or entry_px)
+                    lo = float(position.get('lowest_price') or entry_px)
+                    changed = False
+                    if current_price > hi:
+                        position['highest_price'] = hi = current_price
+                        changed = True
+                    if current_price < lo:
+                        position['lowest_price'] = lo = current_price
+                        changed = True
+                    if changed:
+                        self.db.update_trade_metadata(position['trade_id'], {
+                            'highest_price': position['highest_price'],
+                            'lowest_price': position['lowest_price'],
+                        })
+            except Exception:
+                pass
+
             # --- [PHASE 15.3: EXCHANGE-SIDE SL/TP POLLING] ---
             # If we placed exchange orders, check their status FIRST before software checks.
             # Active only when EXCHANGE_SIDE_SL is true (the master switch).
@@ -577,7 +685,10 @@ class ExitsMixin:
                             # eliminates false positives from placement propagation lag
                             # (freshly placed orders may take a second to appear in the
                             # openAlgoOrders list — we must not record a phantom exit).
-                            pos_exists = len(self.exchange.get_positions(symbol)) > 0
+                            # A2: use a GROUND-TRUTH direct fetch, NOT get_positions()
+                            # (TTL-cache/rate-limit/ban fallbacks can falsely report the
+                            # position as gone — the ZEC phantom-close root cause).
+                            pos_exists = self.exchange.confirm_position_exists(symbol)
                             
                             # 1. Check SL — if its algoId dropped out of the open list, it fired
                             if sl_id and str(sl_id) not in open_algo_ids:

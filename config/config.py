@@ -217,6 +217,13 @@ class Config:
         self.A8_IGNITION_THRESHOLD = float(os.getenv('A8_IGNITION_THRESHOLD', '0.40'))
         self.A6_ALLOW_SHORT = self._str_to_bool('false')
         
+        # Per-strategy paper mode: strategies flagged as paper generate signals
+        # against live data (real orderbook/candles) but place zero orders.
+        # Env-overridable so each server controls its own mix.
+        self.STRATEGY_A6_PAPER = self._str_to_bool(os.getenv('STRATEGY_A6_PAPER', 'false'))
+        self.STRATEGY_A7_PAPER = self._str_to_bool(os.getenv('STRATEGY_A7_PAPER', 'false'))
+        self.STRATEGY_A8_PAPER = self._str_to_bool(os.getenv('STRATEGY_A8_PAPER', 'false'))
+        
         # Strategy-specific Risk Overrides
         self.STRATEGY_A3_SL_ROE = float('5.0')
         
@@ -236,6 +243,13 @@ class Config:
         self.TRAILING_TIER_1_CALLBACK = float(os.getenv('TRAILING_TIER_1_CALLBACK', '5.0'))  # tier 1 callback %
         self.TRAILING_TIER_2_AT = float(os.getenv('TRAILING_TIER_2_AT', '20.0'))  # above this profit → tier 2
         self.TRAILING_TIER_2_CALLBACK = float(os.getenv('TRAILING_TIER_2_CALLBACK', '8.0'))  # tier 2 callback %
+        # A1: buffer % ahead of current mark used to re-arm the exchange trailing on a
+        # tier upgrade (avoids -2021 "Order would immediately trigger" when activation
+        # is set at/behind the live mark).
+        self.TRAILING_REARM_BUFFER = float(os.getenv('TRAILING_REARM_BUFFER', '0.5'))
+        # E1: retries for the exchange trailing re-place on tier upgrade (self-heal
+        # transient -2021/-2011 instead of stranding the position software-managed).
+        self.TIER_REPLACE_RETRIES = int(os.getenv('TIER_REPLACE_RETRIES', '3'))
         # C1: re-entry blacklist — consecutive SL losses before blocking the symbol for the session
         self.FUTURES_MAX_LOSS_STREAK = int(os.getenv('FUTURES_MAX_LOSS_STREAK', '1'))
         self.TRAILING_TP_ENABLED = self._str_to_bool('true')
@@ -248,6 +262,9 @@ class Config:
         self.EXCHANGE_SIDE_SL = self._str_to_bool(os.getenv('EXCHANGE_SIDE_SL', 'false'))
         self.ENABLE_EXCHANGE_STOPS = self._str_to_bool(os.getenv('ENABLE_EXCHANGE_STOPS', 'false'))
         self.EXCHANGE_TP_ORDER_TYPE = 'TAKE_PROFIT_MARKET'
+        # B2: seconds between orphaned-algo-order sweeps (cancel SL/trailing/TP on
+        # symbols with no live position so they don't accumulate).
+        self.ORPHAN_SWEEP_INTERVAL = float(os.getenv('ORPHAN_SWEEP_INTERVAL', '300.0'))
 
         # NOTE: MAX_DAILY_LOSS_PERCENT is NOT overwritten here — it must stay at
         # the value from FUTURES_MAX_DAILY_LOSS_PERCENT (line 144). A prior duplicate
@@ -265,7 +282,10 @@ class Config:
         self.MIN_LIQUIDITY_DEPTH = float('10000')
         
         # ===== Circuit Breaker Configuration =====
-        self.ENABLE_CIRCUIT_BREAKER = self._str_to_bool('false')
+        # D2: consecutive-loss circuit breaker. Halts trading for TRADE_FAILURE_HALT_HOURS
+        # after CONSECUTIVE_LOSSES_THRESHOLD consecutive losses (a win resets the counter).
+        # Enabled by default (was false); env-overridable.
+        self.ENABLE_CIRCUIT_BREAKER = self._str_to_bool(os.getenv('ENABLE_CIRCUIT_BREAKER', 'true'))
         self.TRADE_FAILURE_HALT_HOURS = float('0.5')
         self.CONSECUTIVE_LOSSES_THRESHOLD = int('5')
         self.FLASH_CRASH_THRESHOLD = float('-10')

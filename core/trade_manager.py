@@ -143,24 +143,28 @@ class TradeManager:
         is_live = getattr(self.config, 'TRADING_MODE', 'paper') == 'live'
         if is_live and not skip_verification:
             try:
-                canonical_symbol = getattr(self.exchange, 'get_canonical_symbol', lambda s: s)(symbol)
-                
+                # A2 FIX: use GROUND-TRUTH direct fetch (confirm_position_exists) instead
+                # of get_positions() + symbol match. get_positions() is TTL-cached and can
+                # return a stale/empty list that falsely reports the position as gone,
+                # recording a phantom close with NO sell (the ZEC +71% bug).
                 verified = False
                 size = 0
-                
-                # Retry loop for race conditions
+
+                # Retry loop for race conditions — each attempt is a direct ground-truth fetch
                 for attempt in range(1, 4):
                     time.sleep(2)
-                    positions = self.exchange.get_positions()
-                    pos = next((p for p in positions if p['symbol'] == canonical_symbol), None)
-                    size = abs(float(pos.get('contracts', 0) if pos else 0))
-                    
-                    if size == 0:
+                    exists = self.exchange.confirm_position_exists(symbol)
+                    # If we cannot confirm it's gone, treat as still open (no phantom close)
+                    if not exists:
                         verified = True
                         break
-                        
-                    self.logger.warning(f"⚠️ [EXIT VERIFICATION] Attempt {attempt}/3: {symbol} still has {size} contracts. Retrying...")
-                
+                    # still open -> re-fetch for an accurate size on the failure log
+                    try:
+                        size = abs(float(self.exchange.get_positions(symbol)[0].get('contracts', 0)))
+                    except Exception:
+                        size = 0
+                    self.logger.warning(f"⚠️ [EXIT VERIFICATION] Attempt {attempt}/3: {symbol} still open. Retrying...")
+
                 if not verified:
                     self.logger.error(f"🚨 [VERIFICATION FAILED] {symbol} still has {size} contracts open after 3 attempts! NOT marking as CLOSED in DB.")
                     return {'verified': False, 'size': size}
@@ -211,6 +215,15 @@ class TradeManager:
                 conn.close()
         except Exception as e:
             self.logger.error(f"Failed to update trade exit in DB: {e}")
+
+        # B1: cancel the position's Algo API orders (SL/trailing/TP) on exit so they
+        # don't orphan on the now-closed symbol. Never blocks the exit if it fails.
+        if is_live:
+            try:
+                if hasattr(self.exchange, 'cancel_all_algo_orders'):
+                    self.exchange.cancel_all_algo_orders(symbol)
+            except Exception as e:
+                self.logger.warning(f"[B1] algo cleanup on exit failed for {symbol}: {e}")
 
         # 6. Logging & Final report
         self.logger.info(f"🏁 EXIT SYNC: {symbol} | Net P&L: ${net_pnl_amount:.2f} ({leveraged_pnl_percent*100:.1f}%) | Reason: {reason}")

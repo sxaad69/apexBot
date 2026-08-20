@@ -14,6 +14,7 @@ to the engine instance exactly as before. Method names/signatures are unchanged.
 """
 
 import time
+from typing import Dict
 
 
 class AlgoOrdersMixin:
@@ -156,3 +157,45 @@ class AlgoOrdersMixin:
             if cached:
                 return cached[0]
             return None
+
+    def cancel_position_algo_orders(self, position: Dict, symbol: str = None) -> int:
+        """B1: Cancel ALL algo orders (SL/trailing/TP) for a position/symbol.
+
+        Called when a position exits. Standard cancel_all_orders() does NOT touch
+        Binance Algo API orders (migrated 2025-12-09), so orphaned SL/trailing/TP
+        accumulate on closed symbols (we saw ~14 orphans). This cancels the tracked
+        IDs plus any remaining open algos for the symbol.
+
+        Returns the number of algo orders cancelled.
+        """
+        cancelled = 0
+        sym = symbol or (position.get('symbol') if isinstance(position, dict) else position)
+        if not sym:
+            return 0
+        algo_sym = self._algo_symbol(sym)
+
+        # 1. Cancel tracked IDs on the position
+        tracked = []
+        if isinstance(position, dict):
+            for key in ('sl_order_id', 'tp_order_id', 'trailing_order_id'):
+                oid = position.get(key)
+                if oid:
+                    tracked.append(str(oid))
+
+        # 2. Enumerate any remaining open algos for the symbol
+        open_ids = self._get_cached_open_algo_ids(sym)
+        to_cancel = set(tracked)
+        if open_ids:
+            to_cancel |= set(open_ids)
+
+        for algo_id in sorted(to_cancel):
+            try:
+                self.exchange.exchange.fapiPrivateDeleteAlgoOrder({
+                    'symbol': algo_sym, 'algoId': algo_id})
+                cancelled += 1
+            except Exception:
+                pass  # already gone
+        if cancelled:
+            self._open_algo_cache.pop(sym, None)
+            self.logger.info(f"🗑️ [B1] Canceled {cancelled} algo order(s) for {sym} on exit")
+        return cancelled

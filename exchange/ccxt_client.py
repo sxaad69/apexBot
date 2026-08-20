@@ -357,7 +357,45 @@ class CCXTExchangeClient(BaseExchangeClient):
                 return _filter_by_symbol(self._positions_cache)
             self.logger.error(f"Error fetching positions: {e}", exc_info=True)
             return []
-    
+
+    def confirm_position_exists(self, symbol: str) -> bool:
+        """A2: Ground-truth check whether a position is still open on the exchange.
+
+        Bypasses the TTL cache and the ban/limiter 'return []' fallbacks that can
+        FALSELY report a position as gone (the phantom-close / 4USDT root cause).
+        Does a fresh direct fetch with a small retry. Used ONLY for exit verification
+        (not the 0.5s sentinel poll), so the extra REST weight is acceptable.
+        """
+        import time as _time
+        sym = symbol
+        attempts = 0
+        while attempts < 3:
+            try:
+                if self._is_banned():
+                    # Don't hammer while banned, but do NOT trust empty as "gone".
+                    # Fall back to whatever the cache says, but flag uncertainty.
+                    cached = getattr(self, '_positions_cache', None)
+                    if cached is not None:
+                        return any(p.get('symbol') == sym for p in cached)
+                    return True  # unknown -> treat as still open (safe: no phantom close)
+                # direct fetch through the shared limiter (single call, small weight)
+                rate_limiter = getattr(self, 'rate_limiter', None)
+                if rate_limiter is not None and not rate_limiter.acquire(weight=5, timeout=8):
+                    # timeout on the limiter -> don't trust empty; return True (still open)
+                    return True
+                positions = self.exchange.fetch_positions([sym])
+                active = [p for p in positions if abs(float(p.get('contracts', 0) or 0)) > 0]
+                # update the cache so downstream calls agree with this ground truth
+                self._positions_cache = active
+                self._positions_cache_ts = _time.time()
+                return len(active) > 0
+            except Exception as e:
+                self._record_ban(e)
+                attempts += 1
+                _time.sleep(0.5)
+        # After retries, uncertain -> do NOT trust empty (avoid phantom close)
+        return True
+
     def get_ticker(self, symbol: str) -> Dict[str, Any]:
         """Get current ticker data (TTL-cached to avoid hammering Binance REST)."""
         import time as _time
@@ -497,9 +535,44 @@ class CCXTExchangeClient(BaseExchangeClient):
                 self.logger.info(f"Cleared lingering physical orders for {symbol}")
             except Exception as clean_e:
                 self.logger.warning(f"Failed to clean up orders after closing {symbol}: {clean_e}")
+
+            # B1: also cancel Algo API orders (SL/trailing/TP). cancel_all_orders does
+            # NOT touch them (Binance migrated conditionals to the Algo API 2025-12-09),
+            # so orphaned algos would accumulate on the now-closed symbol.
+            try:
+                self.cancel_all_algo_orders(symbol)
+            except Exception as clean_e2:
+                self.logger.warning(f"Failed to clean up algo orders after closing {symbol}: {clean_e2}")
             
             self.logger.info(f"Closed position for {symbol}")
             return result
         except Exception as e:
             self.logger.error(f"Error closing position: {e}", exc_info=True)
             return {}
+
+    def cancel_all_algo_orders(self, symbol: str) -> int:
+        """B1: Cancel ALL open Binance Algo API orders (SL/TP/trailing) for a symbol.
+
+        Standard cancel_all_orders does NOT touch Algo API orders (Binance migrated
+        conditional orders to /fapi/v1/algoOrder on 2025-12-09). Without this, orphaned
+        SL/trailing/TP orders accumulate on closed symbols. Returns count cancelled.
+        """
+        algo_sym = symbol.replace('/', '').split(':')[0]
+        cancelled = 0
+        try:
+            resp = self.exchange.fapiPrivateGetOpenAlgoOrders({'symbol': algo_sym})
+            orders = resp if isinstance(resp, list) else (resp.get('orders', []) if isinstance(resp, dict) else [])
+            for o in orders:
+                algo_id = o.get('algoId') if isinstance(o, dict) else None
+                if algo_id is None:
+                    continue
+                try:
+                    self.exchange.fapiPrivateDeleteAlgoOrder({'symbol': algo_sym, 'algoId': algo_id})
+                    cancelled += 1
+                except Exception:
+                    pass  # already gone
+        except Exception as e:
+            self.logger.warning(f"⚠️ cancel_all_algo_orders failed for {symbol}: {e}")
+        if cancelled:
+            self.logger.info(f"🗑️ [B1] Canceled {cancelled} algo order(s) for {symbol}")
+        return cancelled

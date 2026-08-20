@@ -56,6 +56,51 @@ class PositionSyncer:
         """Helper to format a table row"""
         return " | ".join(str(val).ljust(width) for val, width in zip(data, widths))
 
+    def sweep_orphan_algos(self, live_positions: Dict[str, Any]) -> int:
+        """B2: Cancel Algo API orders (SL/trailing/TP) that are orphaned on symbols
+        with no live exchange position.
+
+        Standard cancel_all_orders does NOT touch Algo API orders (Binance migrated
+        conditionals to /fapi/v1/algoOrder on 2025-12-09), so orphans accumulate on
+        closed symbols. Returns number cancelled.
+        """
+        cancelled = 0
+        # Symbols that HAVE a live position -> their algos are legitimate, skip them
+        protected = set(live_positions.keys())
+        try:
+            # Open algo orders are queryable per-symbol; iterate the union of symbols
+            # that appear in open positions + DB trades, plus the open-algo list is
+            # symbol-scoped. We approximate: cancel algos on any symbol NOT in `protected`.
+            db_syms = self.get_db_open_trades().keys()
+            # check symbols we know about; also check all open positions' symbols
+            check_syms = set()
+            try:
+                resp = self.exchange.exchange.fapiPrivateGetOpenAlgoOrders()
+                orders = resp if isinstance(resp, list) else (resp.get('orders', []) if isinstance(resp, dict) else [])
+                # Build map symbol -> [algoIds]
+                algo_by_sym = {}
+                for o in orders:
+                    s = o.get('symbol')
+                    if s:
+                        algo_by_sym.setdefault(s, []).append(o.get('algoId'))
+                for s, ids in algo_by_sym.items():
+                    canonical = s + '/USDT:USDT' if not s.endswith(':USDT') else s
+                    if canonical in protected:
+                        continue
+                    for algo_id in ids:
+                        try:
+                            self.exchange.exchange.fapiPrivateDeleteAlgoOrder({'symbol': s, 'algoId': algo_id})
+                            cancelled += 1
+                        except Exception:
+                            pass
+                    if ids:
+                        self.logger.info(f"🧹 [B2] Swept {len(ids)} orphan algo order(s) for {s}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ [B2] orphan algo sweep query failed: {e}")
+        except Exception as e:
+            self.logger.warning(f"⚠️ [B2] orphan algo sweep error: {e}")
+        return cancelled
+
     def run_sync(self):
         print(f"\n{'='*80}")
         print(f"🔄 APEX HUNTER POSITION SYNC - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
@@ -63,6 +108,14 @@ class PositionSyncer:
 
         db_trades = self.get_db_open_trades()
         live_positions = self.get_live_positions()
+
+        # B2: sweep orphaned Algo orders (SL/trailing/TP) on symbols with no live position
+        try:
+            swept = self.sweep_orphan_algos(live_positions)
+            if swept:
+                print(f"🧹 [B2] Swept {swept} orphan Algo order(s)\n")
+        except Exception as e:
+            print(f"⚠️ [B2] orphan sweep error: {e}")
         
         # Fetch current tickers for price-based logic
         symbols_to_fetch = list(set(list(db_trades.keys()) + list(live_positions.keys())))

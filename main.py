@@ -302,57 +302,8 @@ class PaperTradingEngine(MarketDataMixin, AlgoOrdersMixin, ExitsMixin, EntryMixi
 
                 if signal:
                     self.execute_entry(signal, strategy.name, symbol)
-                    # Enrichment: log the ENTERED evaluation to strategy_evaluations
-                    try:
-                        if hasattr(self.logger, 'db'):
-                            entry_t = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
-                            ind = signal.get('indicators', {})
-                            self.logger.db.log_strategy_evaluation({
-                                'timestamp': entry_t, 'symbol': symbol,
-                                'strategy': strategy.name, 'outcome': 'ENTERED',
-                                'imbalance': ind.get('imbalance'), 'threshold': ind.get('threshold'),
-                                'orderbook_depth': ind.get('orderbook_depth'),
-                                'orderbook_ask_depth': ind.get('orderbook_ask_depth'),
-                                'whale_count': ind.get('whale_count'),
-                                'whale_net_pressure': ind.get('whale_net_pressure'),
-                                'whale_total_value': ind.get('whale_total_value'),
-                                'adx': ind.get('adx'), 'volatility': ind.get('volatility'),
-                                'regime': ind.get('regime'), 'volume_ratio': ind.get('volume_ratio'),
-                                'bar_move': ind.get('bar_move'),
-                                'ema200_distance': ind.get('ema200_distance'),
-                                'trend_bias': ind.get('trend_bias'), 'session': ind.get('session'),
-                                'price': ind.get('price') or signal.get('entry_price'),
-                                'atr': ind.get('atr'), 'confidence': signal.get('confidence'),
-                            })
-                    except Exception as e:
-                        self.logger.debug(f"[enrich] eval write failed for {symbol}: {e}")
                 elif hasattr(strategy, 'last_rejection') and strategy.last_rejection:
                     rejections[strategy.name] = strategy.last_rejection
-                    # Enrichment: log the REJECTED evaluation to strategy_evaluations
-                    try:
-                        if hasattr(self.logger, 'db'):
-                            rej = strategy.last_rejection
-                            if isinstance(rej, dict):
-                                ts = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
-                                self.logger.db.log_strategy_evaluation({
-                                    'timestamp': ts, 'symbol': symbol,
-                                    'strategy': strategy.name, 'outcome': rej.get('reason'),
-                                    'imbalance': rej.get('imbalance'), 'threshold': rej.get('threshold'),
-                                    'orderbook_depth': rej.get('orderbook_depth'),
-                                    'orderbook_ask_depth': rej.get('orderbook_ask_depth'),
-                                    'whale_count': rej.get('whale_count'),
-                                    'whale_net_pressure': rej.get('whale_net_pressure'),
-                                    'whale_total_value': rej.get('whale_total_value'),
-                                    'adx': rej.get('adx'), 'volatility': rej.get('volatility'),
-                                    'regime': rej.get('regime'), 'volume_ratio': rej.get('volume_ratio'),
-                                    'bar_move': rej.get('bar_move'),
-                                    'ema200_distance': rej.get('ema200_distance'),
-                                    'trend_bias': rej.get('trend_bias'), 'session': rej.get('session'),
-                                    'price': rej.get('price'), 'atr': rej.get('atr'),
-                                    'confidence': rej.get('confidence'),
-                                })
-                    except Exception as e:
-                        self.logger.debug(f"[enrich] eval write failed for {symbol}: {e}")
 
         # Collect market analysis data for dashboard (Bulk Aggregation)
         collected_data = self._collect_market_analysis_data(symbol, df, current_price)
@@ -773,9 +724,101 @@ class ApexHunterBot(SyncMixin):
             # High-frequency tick (500ms) for ultra-fast reaction
             time.sleep(0.5)
 
+    def _seed_symbol_loss_streak(self):
+        """D4: seed the in-memory C1 re-entry blacklist from the DB at startup so a
+        restart doesn't wipe a symbol's consecutive-SL-loss streak (MORPHO/TA/Q pattern)."""
+        try:
+            db = getattr(self, 'db', None)
+            if not db:
+                return
+            conn = db._get_connection(db.main_db)
+            try:
+                rows = conn.execute(
+                    "SELECT symbol, reason, pnl_amount FROM trades "
+                    "WHERE status='CLOSED' ORDER BY exit_time DESC"
+                ).fetchall()
+            finally:
+                conn.close()
+            streak = {}
+            for row in rows:
+                sym = (row['symbol'] or '').split('/')[0]
+                if not sym:
+                    continue
+                if 'stop_loss' in str(row['reason'] or '').lower():
+                    streak[sym] = streak.get(sym, 0) + 1
+                elif row['pnl_amount'] and row['pnl_amount'] > 0:
+                    streak[sym] = 0  # win resets the consecutive streak
+            self.symbol_loss_streak = streak
+            seeded = {k: v for k, v in streak.items() if v > 0}
+            if seeded:
+                self.logger.info(f"[D4] Seeded symbol loss-streak blacklist from DB: {seeded}")
+        except Exception as e:
+            self.logger.warning(f"[D4] Failed to seed symbol loss-streak from DB: {e}")
+
+    def _run_periodic_sweep(self):
+        """B2: periodically sweep orphaned Algo API orders (SL/trailing/TP) on
+        symbols with no live exchange position. Standard cancel_all_orders does NOT
+        touch Algo API orders, so orphans would otherwise accumulate on closed symbols."""
+        import time as _t
+        interval = getattr(self.config, 'ORPHAN_SWEEP_INTERVAL', 300.0)
+        self.logger.info(f"🧹 Orphan Algo sweep thread started (every {interval:.0f}s).")
+        while self.running:
+            try:
+                # live positions -> symbols to protect (their algos are legitimate)
+                try:
+                    live = self.engine.exchange.get_positions()
+                    protected = set(p['symbol'] for p in live if abs(float(p.get('contracts', 0) or 0)) > 0)
+                except Exception:
+                    protected = set()
+                try:
+                    resp = self.engine.exchange.exchange.fapiPrivateGetOpenAlgoOrders()
+                    orders = resp if isinstance(resp, list) else (resp.get('orders', []) if isinstance(resp, dict) else [])
+                    algo_by_sym = {}
+                    for o in orders:
+                        s = o.get('symbol')
+                        if s:
+                            algo_by_sym.setdefault(s, []).append(o.get('algoId'))
+                    for s, ids in algo_by_sym.items():
+                        canonical = s + '/USDT:USDT' if not s.endswith(':USDT') else s
+                        if canonical in protected:
+                            continue
+                        for algo_id in ids:
+                            try:
+                                self.engine.exchange.exchange.fapiPrivateDeleteAlgoOrder({'symbol': s, 'algoId': algo_id})
+                            except Exception:
+                                pass
+                        if ids:
+                            self.logger.info(f"🧹 [B2] Swept {len(ids)} orphan algo order(s) for {s}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ [B2] periodic orphan sweep error: {e}")
+                # Paper signal resolution: resolve open paper signals against current mark prices
+                try:
+                    has_paper = any(
+                        getattr(self.config, f'STRATEGY_{s.name.split(":")[0].strip()}_PAPER', False)
+                        for s in self.strategies
+                    )
+                    if has_paper and hasattr(self.logger, 'db'):
+                        marks = {}
+                        for sym, price in self.engine.current_prices.items():
+                            marks[sym] = price
+                        resolved = self.logger.db.resolve_paper_signals(marks)
+                        if resolved:
+                            self.logger.info(f"📋 [PAPER] Resolved {resolved} paper signal(s)")
+                except Exception as e:
+                    self.logger.debug(f"📋 [PAPER] resolve error: {e}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ [B2] sweep thread error: {e}")
+            _t.sleep(interval)
+
     def run(self, interval=60):
         """Run the bot"""
         self.running = True
+
+        # D4: seed the in-memory C1 re-entry blacklist from DB so streaks survive restarts
+        try:
+            self._seed_symbol_loss_streak()
+        except Exception as e:
+            self.logger.warning(f"[D4] seed symbol loss-streak failed: {e}")
 
         # Setup signal handler for graceful shutdown
         signal.signal(signal.SIGINT, self.signal_handler)
@@ -817,6 +860,14 @@ class ApexHunterBot(SyncMixin):
             daemon=True
         )
         self.sentinel_thread.start()
+
+        # B2: periodic orphan-algo sweep (separate thread, low frequency)
+        self.sweep_thread = threading.Thread(
+            target=self._run_periodic_sweep,
+            name="OrphanAlgoSweep",
+            daemon=True
+        )
+        self.sweep_thread.start()
 
         # Startup reconciliation handled in __init__ (Phase 14)
 
@@ -973,35 +1024,6 @@ class ApexHunterBot(SyncMixin):
                 # Log the sweep summary to DB
                 if hasattr(self.logger, 'log_sweep_summary'):
                     self.logger.log_sweep_summary(sweep_stats)
-
-                # Enrichment: daily regime summary (upsert once per day)
-                try:
-                    if hasattr(self.logger, 'db'):
-                        utc_day = datetime.now().strftime('%Y-%m-%d')
-                        conn = self.logger.db._get_connection(self.logger.db.log_db)
-                        try:
-                            row = conn.execute(
-                                "SELECT COUNT(*), AVG(adx), AVG(volatility) FROM strategy_evaluations "
-                                "WHERE substr(timestamp,1,10) = ? AND adx IS NOT NULL", (utc_day,)
-                            ).fetchone()
-                            # move_count: count of distinct symbols with bar_move >= 15%
-                            mov = conn.execute(
-                                "SELECT COUNT(DISTINCT symbol) FROM strategy_evaluations "
-                                "WHERE substr(timestamp,1,10) = ? AND ABS(bar_move) >= 15.0", (utc_day,)
-                            ).fetchone()[0]
-                        finally:
-                            conn.close()
-                        n, avg_adx, avg_vol = (row[0] or 0), (row[1] or 0), (row[2] or 0)
-                        if n > 0:
-                            self.logger.db.log_daily_regime({
-                                'date': utc_day,
-                                'avg_adx': round(avg_adx, 2),
-                                'avg_volatility': round(avg_vol, 3),
-                                'dominant_regime': 'normal',  # refined by analysis later
-                                'move_count_15pct': mov or 0,
-                            })
-                except Exception as e:
-                    self.logger.debug(f"[enrich] daily regime write failed: {e}")
 
                 # Run spot analysis if enabled
                 try:

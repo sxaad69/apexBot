@@ -16,6 +16,28 @@ class EntryMixin:
     def execute_entry(self, signal, strategy_name, symbol):
         """Simulate trade execution with risk validation"""
         
+        # PAPER MODE: strategy flagged as paper — log signal, skip all execution
+        strategy_prefix = strategy_name.split(':')[0].strip()  # "A8: Ignition..." -> "A8"
+        paper_flag = f'STRATEGY_{strategy_prefix}_PAPER'
+        if getattr(self.config, paper_flag, False):
+            self.logger.info(
+                f"📋 [PAPER] {strategy_name} {symbol} {signal.get('side','?').upper()} "
+                f"@ {signal.get('entry_price','?')} | SL={signal.get('stop_loss','?')} "
+                f"TP={signal.get('take_profit','?')} | Conf={signal.get('confidence',0):.2f}"
+            )
+            if hasattr(self.logger, 'db'):
+                self.logger.db.log_paper_signal({
+                    'strategy': strategy_name,
+                    'symbol': symbol,
+                    'side': signal.get('side'),
+                    'entry_price': signal.get('entry_price'),
+                    'stop_loss': signal.get('stop_loss'),
+                    'take_profit': signal.get('take_profit'),
+                    'confidence': signal.get('confidence'),
+                    'indicators': signal.get('indicators'),
+                })
+            return
+
         # 0. Concurrent Cooldown Matrix Restriction
         import time
         cooldown_minutes = getattr(self.config, 'FUTURES_SYMBOL_COOLDOWN_MINUTES', 15)
