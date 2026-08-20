@@ -779,7 +779,14 @@ class ApexHunterBot(SyncMixin):
                         if s:
                             algo_by_sym.setdefault(s, []).append(o.get('algoId'))
                     for s, ids in algo_by_sym.items():
-                        canonical = s + '/USDT:USDT' if not s.endswith(':USDT') else s
+                        # Binance algo API uses bare symbols ("DODOXUSDT");
+                        # ccxt positions use unified format ("DODOX/USDT:USDT").
+                        if s.endswith('USDT') and '/' not in s:
+                            canonical = s[:-4] + '/USDT:USDT'
+                        elif not s.endswith(':USDT'):
+                            canonical = s + '/USDT:USDT'
+                        else:
+                            canonical = s
                         if canonical in protected:
                             continue
                         for algo_id in ids:
