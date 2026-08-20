@@ -764,14 +764,17 @@ class ApexHunterBot(SyncMixin):
         self.logger.info(f"🧹 Orphan Algo sweep thread started (every {interval:.0f}s).")
         while self.running:
             try:
-                # live positions -> symbols to protect (their algos are legitimate)
+                # Use in-memory positions dict (always authoritative, no rate-limit risk).
+                # Exchange API fallback is skipped — rate-limit timeouts cause stale cache
+                # that misses positions, leading to live algos being wrongly swept.
+                protected = set()
                 try:
-                    live = self.engine.exchange.get_positions()
-                    protected = set(p['symbol'] for p in live if abs(float(p.get('contracts', 0) or 0)) > 0)
-                except Exception as e:
-                    self.logger.warning(f"⚠️ [B2] Could not fetch positions ({e}), skipping sweep this cycle")
-                    _t.sleep(interval)
-                    continue
+                    for pos in self.engine.positions.values():
+                        sym = pos.get('symbol', '')
+                        if sym:
+                            protected.add(sym)
+                except Exception:
+                    pass
                 if not protected:
                     self.logger.warning("⚠️ [B2] Position fetch returned empty — skipping sweep to avoid wiping live algos")
                     _t.sleep(interval)
