@@ -158,6 +158,49 @@ class AlgoOrdersMixin:
                 return cached[0]
             return None
 
+    def discover_position_algos(self, symbol):
+        """T1: Discover existing open algo orders for a symbol and classify them.
+
+        Returns dict {'sl_order_id', 'tp_order_id', 'trailing_order_id',
+                      'open_count'} or None when the query failed (unknown state).
+        Used by startup sync/adoption so pre-existing exchange-side algos
+        (placed by a previous session or manually) become tracked instead of
+        invisible — enabling Phase 15.3 fill detection instead of blind
+        bot-side double tracking.
+        """
+        result = {'sl_order_id': None, 'tp_order_id': None,
+                  'trailing_order_id': None, 'open_count': 0}
+        rate_limiter = getattr(self.exchange, 'rate_limiter', None)
+        if rate_limiter is not None and not rate_limiter.acquire(weight=3, timeout=5):
+            return None
+        try:
+            resp = self.exchange.exchange.fapiPrivateGetOpenAlgoOrders(
+                {'symbol': self._algo_symbol(symbol)})
+            orders = resp if isinstance(resp, list) else (
+                resp.get('orders', []) if isinstance(resp, dict) else [])
+            open_ids = set()
+            for o in orders:
+                if not isinstance(o, dict) or o.get('algoId') is None:
+                    continue
+                oid = str(o['algoId'])
+                open_ids.add(oid)
+                result['open_count'] += 1
+                otype = str(o.get('type') or o.get('algoType') or '').upper()
+                if otype == 'STOP_MARKET' and not result['sl_order_id']:
+                    result['sl_order_id'] = oid
+                elif otype == 'TAKE_PROFIT_MARKET' and not result['tp_order_id']:
+                    result['tp_order_id'] = oid
+                elif otype == 'TRAILING_STOP_MARKET' and not result['trailing_order_id']:
+                    result['trailing_order_id'] = oid
+            # Refresh the shared per-symbol cache so Phase 15.3 agrees with this ground truth
+            self._open_algo_cache[symbol] = (open_ids, time.time())
+            return result
+        except Exception as e:
+            if getattr(self.exchange, '_record_ban', None):
+                self.exchange._record_ban(e)
+            self.logger.warning(f"[T1] algo discovery failed for {symbol}: {e}")
+            return None
+
     def cancel_position_algo_orders(self, position: Dict, symbol: str = None) -> int:
         """B1: Cancel ALL algo orders (SL/trailing/TP) for a position/symbol.
 
