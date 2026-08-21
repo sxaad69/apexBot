@@ -185,7 +185,9 @@ class AlgoOrdersMixin:
                 oid = str(o['algoId'])
                 open_ids.add(oid)
                 result['open_count'] += 1
-                otype = str(o.get('type') or o.get('algoType') or '').upper()
+                # Binance Algo API puts the conditional type in 'orderType'
+                # ('algoType' is always 'CONDITIONAL'; ccxt-style 'type' absent)
+                otype = str(o.get('orderType') or o.get('type') or '').upper()
                 if otype == 'STOP_MARKET' and not result['sl_order_id']:
                     result['sl_order_id'] = oid
                 elif otype == 'TAKE_PROFIT_MARKET' and not result['tp_order_id']:
