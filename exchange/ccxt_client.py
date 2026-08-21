@@ -396,6 +396,43 @@ class CCXTExchangeClient(BaseExchangeClient):
         # After retries, uncertain -> do NOT trust empty (avoid phantom close)
         return True
 
+    def fetch_position_size(self, symbol: str) -> float:
+        """Ground-truth fetch of a single position's contract size.
+
+        Bypasses the TTL cache and ban/limiter fallbacks the same way
+        confirm_position_exists does, but returns the actual size (0 if
+        no position) so callers can both verify AND get the quantity.
+        Used by record_entry verification (the S1 fix).
+        """
+        import time as _time
+        sym = symbol
+        for attempt in range(3):
+            try:
+                if self._is_banned():
+                    cached = getattr(self, '_positions_cache', None)
+                    if cached is not None:
+                        for p in cached:
+                            if p.get('symbol') == sym:
+                                return abs(float(p.get('contracts', 0) or 0))
+                    return 0.0
+                rate_limiter = getattr(self, 'rate_limiter', None)
+                if rate_limiter is not None and not rate_limiter.acquire(weight=5, timeout=8):
+                    cached = getattr(self, '_positions_cache', None)
+                    if cached is not None:
+                        for p in cached:
+                            if p.get('symbol') == sym:
+                                return abs(float(p.get('contracts', 0) or 0))
+                    return 0.0
+                positions = self.exchange.fetch_positions([sym])
+                active = [p for p in positions if abs(float(p.get('contracts', 0) or 0)) > 0]
+                if active:
+                    return abs(float(active[0].get('contracts', 0) or 0))
+                return 0.0
+            except Exception as e:
+                self._record_ban(e)
+                _time.sleep(0.5)
+        return 0.0
+
     def get_ticker(self, symbol: str) -> Dict[str, Any]:
         """Get current ticker data (TTL-cached to avoid hammering Binance REST)."""
         import time as _time

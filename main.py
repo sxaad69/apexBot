@@ -822,6 +822,31 @@ class ApexHunterBot(SyncMixin):
                             self.logger.info(f"📋 [PAPER] Resolved {resolved} paper signal(s)")
                 except Exception as e:
                     self.logger.debug(f"📋 [PAPER] resolve error: {e}")
+                # S2: Periodic DB↔exchange reconciliation — detect orphan positions
+                # that filled on exchange but weren't recorded in DB (the AIOT/MORPHO
+                # bug from stale get_positions() cache). Detection only; adoption
+                # happens at next startup via _sync_open_trades() (S1 prevents recurrence).
+                try:
+                    db = self.logger.db if hasattr(self.logger, 'db') else None
+                    if db is not None and self.mode == 'live':
+                        db_open = db.get_trades(status='OPEN')
+                        db_syms = {t['symbol'] for t in db_open}
+                        # Check protected set (already built above for B2)
+                        orphans = protected - db_syms
+                        if orphans:
+                            self.logger.warning(
+                                f"🔄 [S2] {len(orphans)} exchange position(s) not in DB: "
+                                f"{', '.join(sorted(orphans)[:10])} — "
+                                f"will be adopted at next restart"
+                            )
+                        zombies = db_syms - protected
+                        if zombies and len(zombies) < 5:
+                            self.logger.warning(
+                                f"👻 [S2-ZOMBIE] {len(zombies)} DB position(s) "
+                                f"not on exchange: {', '.join(sorted(zombies))}"
+                            )
+                except Exception as e:
+                    self.logger.debug(f"[S2] reconciliation error: {e}")
             except Exception as e:
                 self.logger.warning(f"⚠️ [B2] sweep thread error: {e}")
             _t.sleep(interval)

@@ -31,24 +31,23 @@ class TradeManager:
         is_live = getattr(self.config, 'TRADING_MODE', 'paper') == 'live'
         if is_live and not skip_verification:
             try:
-                canonical_symbol = getattr(self.exchange, 'get_canonical_symbol', lambda s: s)(symbol)
-                
+                # S1 FIX: Use ground-truth direct fetch (fetch_position_size) instead
+                # of get_positions() (TTL-cached). Same root cause as A2's phantom-close:
+                # get_positions() returns stale/empty under rate limiting, causing position
+                # to fill on exchange but NOT be recorded in DB (the AIOT/MORPHO bug).
                 verified = False
                 actual_size = 0
-                
-                # Retry loop for race conditions
+
                 for attempt in range(1, 4):
-                    time.sleep(2) # Wait for fill
-                    positions = self.exchange.get_positions()
-                    pos = next((p for p in positions if p['symbol'] == canonical_symbol), None)
-                    actual_size = abs(float(pos.get('contracts', 0) if pos else 0))
-                    
+                    time.sleep(2)  # Wait for fill
+                    actual_size = self.exchange.fetch_position_size(symbol)
+
                     if actual_size > 0:
                         verified = True
                         break
-                        
+
                     self.logger.warning(f"⚠️ [ENTRY VERIFICATION] Attempt {attempt}/3: {symbol} has 0 contracts. Retrying...")
-                
+
                 if not verified:
                     self.logger.error(f"🚨 [ENTRY VERIFICATION FAILED] {symbol} has 0 contracts on exchange after 3 attempts! NOT recording trade in DB.")
                     return {'verified': False, 'size': 0}

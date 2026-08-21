@@ -9,6 +9,7 @@ to the engine instance exactly as before. Method names/signatures are unchanged.
 """
 
 from datetime import datetime
+import time as _time
 
 
 class EntryMixin:
@@ -38,11 +39,24 @@ class EntryMixin:
                 })
             return
 
+        # S3: Entry cooldown — on margin/verification failures, skip symbol for N minutes.
+        # Stops PIXEL-style spam (24 failed attempts with -2019 margin insufficient).
+        entry_cooldown_minutes = getattr(self.config, 'ENTRY_COOLDOWN_MINUTES', 30)
+        if not hasattr(self, '_entry_cooldowns'):
+            self._entry_cooldowns = {}
+        cooldown_until = self._entry_cooldowns.get(symbol, 0)
+        if cooldown_until and _time.time() < cooldown_until:
+            remaining = int((cooldown_until - _time.time()) / 60)
+            self.logger.warning(
+                f"🚫 [ENTRY COOLDOWN] {symbol} in cooldown for {remaining}m more "
+                f"(failed entry attempt). Skipping."
+            )
+            return
+
         # 0. Concurrent Cooldown Matrix Restriction
-        import time
         cooldown_minutes = getattr(self.config, 'FUTURES_SYMBOL_COOLDOWN_MINUTES', 15)
         last_liquidation = self.recent_liquidations.get(symbol, 0)
-        elapsed_minutes = (time.time() - last_liquidation) / 60
+        elapsed_minutes = (_time.time() - last_liquidation) / 60
         if elapsed_minutes < cooldown_minutes:
             self.logger.warning(f"🚫 [COOLDOWN REJECTED] {symbol} hit an exit {elapsed_minutes:.1f}m ago. Under {cooldown_minutes}m cooling off period.")
             return
@@ -468,6 +482,16 @@ class EntryMixin:
                             
                     except Exception as e:
                         self.logger.error(f"🚨 LIVE ENTRY ATTEMPT FAILED for {symbol}: {e}")
+                        # S3: On margin/verification failures, cooldown this symbol
+                        err_str = str(e).lower()
+                        if '-2019' in err_str or 'margin' in err_str or 'ENTRY_UNVERIFIED' in err_str:
+                            cooldown = getattr(self.config, 'ENTRY_COOLDOWN_MINUTES', 30) * 60
+                            self._entry_cooldowns[symbol] = _time.time() + cooldown
+                            self.logger.warning(
+                                f"🚫 [ENTRY COOLDOWN] {symbol} will be skipped for "
+                                f"{getattr(self.config, 'ENTRY_COOLDOWN_MINUTES', 30)}m "
+                                f"(error: {str(e)[:80]})"
+                            )
                         return
 
                 # --- UNIFIED POSITION TRACKING ---
