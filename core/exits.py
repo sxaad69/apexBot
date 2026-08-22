@@ -586,40 +586,31 @@ class ExitsMixin:
         return False, None
     def calculate_dynamic_leverage(self, strategy_name, confidence):
         """
-        Calculate dynamic leverage based on:
-        - Strategy confidence (0.0 to 1.0)
-        - Configured max leverage
-        - Current drawdown state
-
-        Returns:
-            int: Leverage to use (1 to MAX_LEVERAGE)
+        Tier-based leverage (2026-08-22 flip):
+          - conf >= TIER_HOT_CONF (0.90) -> TIER_HOT_LEV (3x)
+          - else                         -> TIER_BASE_LEV (2x)
+        Hard-capped by LEV_CAP (5x) and drawdown-adjusted max.
+        Old ladder (0.55/0.65/0.75 thresholds) was dead code for A6 whose
+        scores all sat above 0.75 - every trade took max leverage.
         """
-        # Get max leverage from config
-        max_leverage = getattr(self.config, 'FUTURES_MAX_LEVERAGE', 10)
+        cap = min(
+            int(getattr(self.config, 'LEV_CAP', 5)),
+            int(getattr(self.config, 'FUTURES_MAX_LEVERAGE', 5)),
+        )
 
-        # Calculate current drawdown
+        # Drawdown guard preserved: shrink the cap while underwater
         initial_capital = getattr(self.config, 'INITIAL_CAPITAL', 100)
         current_capital = self.total_capital
-
         if current_capital < initial_capital:
             drawdown_percent = ((initial_capital - current_capital) / initial_capital) * 100
-            # Use config's drawdown-adjusted leverage
-            max_leverage = self.config.get_drawdown_adjusted_leverage(drawdown_percent)
+            cap = min(cap, self.config.get_drawdown_adjusted_leverage(drawdown_percent))
 
-        # Dynamic leverage based on actual strategy confidence output
-        # Adjusted thresholds to match real strategy performance (0.40-0.70 range)
-        if confidence > 0.75:  # A5 exceptional signals
-            leverage = max_leverage  # Use full power
-        elif confidence > 0.65:  # A1-A4 strong signals
-            leverage = max_leverage * 0.7  # Use 70% of max power
-        elif confidence > 0.55:  # Medium signals
-            leverage = max_leverage * 0.4  # Use 40% of max power
-        else:
-            leverage = 1.0  # Low confidence: no leverage
+        hot_conf = float(getattr(self.config, 'TIER_HOT_CONF', 0.90))
+        lev = int(getattr(self.config, 'TIER_HOT_LEV', 3)) if confidence >= hot_conf \
+            else int(getattr(self.config, 'TIER_BASE_LEV', 2))
 
-        leverage = max(1, int(leverage))  # Ensure integer, minimum 1x
+        return max(1, min(lev, cap))
 
-        return min(leverage, max_leverage)
     def check_exits(self, symbol, current_price):
         """Check all positions for exit conditions for a specific symbol"""
         # B1: Tiered trailing MUST run on the high-frequency sentinel path.

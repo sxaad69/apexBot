@@ -18,11 +18,11 @@ class TradeManager:
         self.logger = logger
         self.active_positions = {} 
 
-    def record_entry(self, symbol: str, strategy_name: str, side: str, size: float, 
-                      leverage: int, stop_loss: float, take_profit: float, 
+    def record_entry(self, symbol: str, strategy_name: str, side: str, size: float,
+                      leverage: int, stop_loss: float, take_profit: float,
                       order_response: Optional[Dict] = None, planned_price: float = 0,
                       skip_verification: bool = False, confidence: float = 0.0,
-                      stop_loss_roe: float = 5.0):
+                      stop_loss_roe: float = 5.0, signal_meta: Optional[Dict] = None):
         """
         Grounded Entry Recorder with Post-Entry Verification.
         Only marks trade as OPEN if exchange confirms position is > 0.
@@ -70,6 +70,16 @@ class TradeManager:
         entry_fee = size * fee_pct
 
         # 2. Prepare Position Object
+        # metadata = exchange fill + (optional) signal build-up DNA merged on top
+        meta_obj: Dict[str, Any] = {}
+        if order_response:
+            try:
+                meta_obj = json.loads(json.dumps(order_response))
+            except Exception:
+                meta_obj = {}
+        if signal_meta:
+            meta_obj.update(signal_meta)
+
         position = {
             'trade_id': trade_id,
             'entry_time': entry_time.isoformat(),
@@ -86,7 +96,7 @@ class TradeManager:
             'trailing_stop_active': False,
             'highest_price': entry_price,
             'lowest_price': entry_price,
-            'metadata': json.dumps(order_response) if order_response else "{}",
+            'metadata': json.dumps(meta_obj),
             'exchange_order_id': order_response.get('id') if order_response else None,
             'confidence': confidence,
             'stop_loss_roe': stop_loss_roe

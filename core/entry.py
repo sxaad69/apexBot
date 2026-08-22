@@ -61,6 +61,17 @@ class EntryMixin:
             self.logger.warning(f"🚫 [COOLDOWN REJECTED] {symbol} hit an exit {elapsed_minutes:.1f}m ago. Under {cooldown_minutes}m cooling off period.")
             return
 
+        # Tier-Flip gates (2026-08-22)
+        # NOTE: numeric dead-zone (0.87-0.89) intentionally REMOVED — its poison
+        # was session-boost inflation + asia hours, both eliminated at source.
+        # Replay showed the band would now kill genuine boosted-session runners.
+        if not getattr(self.config, 'ASIA_TRADING_ENABLED', False):
+            utc_hour = datetime.utcnow().hour
+            if utc_hour < int(getattr(self.config, 'ASIA_END_HOUR_UTC', 8)):
+                self.logger.debug(f"🌙 [ASIA OFF] {symbol} signal skipped ({utc_hour:02d}:00 UTC window disabled)")
+                return
+
+
         # C1: Re-entry blacklist — N consecutive SL losses on the same symbol blocks the session.
         # Kills the MORPHO/TA/Q repeat-loss pattern (audit: those 3 symbols lost ~$8.5 on 0 wins).
         max_streak = getattr(self.config, 'FUTURES_MAX_LOSS_STREAK', 2)
@@ -117,19 +128,18 @@ class EntryMixin:
                 margin_mode = getattr(self.config, 'FUTURES_MARGIN_MODE', 'ISOLATED')
                 self.exchange.set_margin_mode(symbol, margin_mode)
 
-            # --- Confidence-Based Position Sizing ---
-            # Higher conviction signals deserve proportionally more capital
+            # --- Tier-Flip Position Sizing (2026-08-22) ---
+            # Two tiers from 231-trade truth analysis:
+            #   conf >= TIER_HOT_CONF -> HOT (25% / 3x)   [the money cell]
+            #   everything else       -> BASE (10% / 2x)
             confidence = signal.get('confidence', 0.5)
-            if confidence >= 0.95:
-                base_size_pct = 0.20  # 20% — Top conviction (C2: big winners were >=0.95)
-            elif confidence >= 0.90:
-                base_size_pct = 0.15  # 15% — Elite conviction
-            elif confidence >= 0.80:
-                base_size_pct = 0.12  # 12% — High conviction
-            elif confidence >= 0.70:
-                base_size_pct = 0.10  # 10% — Standard
+            hot_conf = float(getattr(self.config, 'TIER_HOT_CONF', 0.90))
+            if confidence >= hot_conf:
+                base_size_pct = float(getattr(self.config, 'TIER_HOT_SIZE', 0.25))
+                tier_tag = "HOT"
             else:
-                base_size_pct = 0.07  # 7% — Low conviction, cautious
+                base_size_pct = float(getattr(self.config, 'TIER_BASE_SIZE', 0.10))
+                tier_tag = "BASE"
 
             total_capital = self.total_capital
 
@@ -315,8 +325,16 @@ class EntryMixin:
                             side=approved_params['side'].lower(),
                             amount=quantity
                         )
-                        
+
                         # --- [PHASE 15.1: ENTRY GROUNDING via TradeManager] ---
+                        # Persist the signal's build-up DNA with the fill
+                        # (forensics + compositional gates later).
+                        signal_extra = {
+                            'indicators': signal.get('indicators') or {},
+                            'regime': signal.get('regime'),
+                            'session': signal.get('session'),
+                            'tier': 'HOT' if confidence >= float(getattr(self.config, 'TIER_HOT_CONF', 0.90)) else 'BASE',
+                        }
                         position = self.trade_manager.record_entry(
                             symbol=symbol,
                             strategy_name=strategy_name,
@@ -328,8 +346,10 @@ class EntryMixin:
                             order_response=order,
                             planned_price=entry_price,
                             confidence=approved_params.get('confidence', 0.0),
-                            stop_loss_roe=approved_params.get('stop_loss_roe', 5.0)
+                            stop_loss_roe=approved_params.get('stop_loss_roe', 5.0),
+                            signal_meta=signal_extra
                         )
+
                         
                         # Use grounded info for SL placement if filled
                         if order and order.get('average'):

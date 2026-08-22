@@ -294,6 +294,23 @@ class Config:
         self.LOSS_CB_ENABLED = self._str_to_bool('true')
         self.LOSS_CB_PCT = float('10.0')
         self.LOSS_CB_COOLDOWN_MINUTES = int('30')
+
+        # ===== Tier-Flip Signal System (2026-08-22) =====
+        # Evidence-based tiers from 231 exchange-truth trades:
+        # - conf >=0.90 x lev 4-5x = money cell (+$37.71, 58% WR) -> HOT 25%/3x
+        # - session boost REMOVED at source (inflated minimum-walls = old dead zone)
+        # - asia hours off (33% WR bleed, -$13.40)
+        # NOTE: numeric 0.87-0.89 dead-zone rejected by replay — with boost gone
+        # the band executes genuine runners; poison cause removed at source instead.
+        self.TIER_HOT_CONF = float(os.getenv('TIER_HOT_CONF', '0.90'))
+        self.TIER_HOT_SIZE = float(os.getenv('TIER_HOT_SIZE', '0.25'))
+        self.TIER_HOT_LEV = int(os.getenv('TIER_HOT_LEV', '3'))
+        self.TIER_BASE_SIZE = float(os.getenv('TIER_BASE_SIZE', '0.10'))
+        self.TIER_BASE_LEV = int(os.getenv('TIER_BASE_LEV', '2'))
+        self.LEV_CAP = int(os.getenv('LEV_CAP', '5'))
+        self.ASIA_TRADING_ENABLED = self._str_to_bool(os.getenv('ASIA_TRADING_ENABLED', 'false'))
+        self.ASIA_END_HOUR_UTC = int(os.getenv('ASIA_END_HOUR_UTC', '8'))
+
         
         # ===== Telegram Integration (3 Separate Bots) =====
         # Futures Bot

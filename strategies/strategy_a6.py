@@ -49,10 +49,13 @@ class StrategyA6(BaseStrategy):
         self.atr_tp_mult = 100.0
 
         # Session-based confidence floors (UTC hours)
+        # NOTE: session BOOST removed from the confidence formula (2026-08-22):
+        # boosted minimum-walls were inflating mid-band scores (the 0.87-0.88
+        # dead zone). Sessions now differ only by FLOOR strictness.
         self.sessions = {
             'asia':    {'start': 0,  'end': 8,  'confidence_floor': 0.82, 'confidence_boost': 0.00},
-            'europe':  {'start': 8,  'end': 14, 'confidence_floor': 0.78, 'confidence_boost': 0.05},
-            'us_peak': {'start': 14, 'end': 21, 'confidence_floor': 0.85, 'confidence_boost': 0.10},
+            'europe':  {'start': 8,  'end': 14, 'confidence_floor': 0.78, 'confidence_boost': 0.00},
+            'us_peak': {'start': 14, 'end': 21, 'confidence_floor': 0.82, 'confidence_boost': 0.00},
             'us_late': {'start': 21, 'end': 24, 'confidence_floor': 0.82, 'confidence_boost': 0.00},
         }
 
@@ -521,8 +524,8 @@ class StrategyA6(BaseStrategy):
         if regime in ['strong_trend', 'moderate_trend']:
             confidence += 0.10
 
-        # Session boost
-        confidence += confidence_boost
+        # Session boost REMOVED (2026-08-22): score is session-blind now.
+        # Floors above remain the only session-specific gate.
 
         # 10. Enforce session-specific confidence floor
         if confidence < confidence_floor:
