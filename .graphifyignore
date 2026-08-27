@@ -1,0 +1,15 @@
+test agency/
+tmp/
+.freebuff/
+.tmp/
+venv/
+__pycache__/
+*.db
+*.db-shm
+*.db-wal
+data/
+logs/
+scratch/
+backtest/__pycache__/
+audit/__pycache__/
+.worktrees/

@@ -1,9 +1,21 @@
 import asyncio
-import json
+import time
 import threading
 import logging
 import websockets
 from typing import Dict, Any
+
+try:
+    import orjson as _json_lib
+
+    def _json_loads(s):
+        return _json_lib.loads(s if isinstance(s, (bytes, bytearray)) else s.encode() if isinstance(s, str) else s)
+except ImportError:
+    import json as _json_lib
+
+    def _json_loads(s):
+        return _json_lib.loads(s)
+
 
 class BinanceFuturesWSSManager:
     """
@@ -11,15 +23,17 @@ class BinanceFuturesWSSManager:
     Subscribes to the global mark price array stream (!markPrice@arr@1s)
     to provide real-time price updates for all symbols simultaneously.
     """
-    
+
     def __init__(self, logger=None, testnet=False):
         if testnet:
             self.url = "wss://fstream.binancefuture.com/ws/!markPrice@arr@1s"
         else:
             self.url = "wss://fstream.binance.com/ws/!markPrice@arr@1s"
-            
+
         self.logger = logger or logging.getLogger(__name__)
         self.live_prices: Dict[str, float] = {}
+        # Cache raw->standardized symbols to avoid 4× str.endswith per item per second
+        self._symbol_cache: Dict[str, str] = {}
         self.is_running = False
         self._stop_event = asyncio.Event()
         self._thread = None
@@ -30,7 +44,7 @@ class BinanceFuturesWSSManager:
         """Start the WSS manager in a dedicated background thread."""
         if self.is_running:
             return
-        
+
         self.is_running = True
         self._thread = threading.Thread(target=self._run_thread, daemon=True)
         self._thread.start()
@@ -73,26 +87,30 @@ class BinanceFuturesWSSManager:
     def _handle_message(self, message: str):
         """Parse the Binance array payload and update live_prices."""
         try:
-            data = json.loads(message)
+            data = _json_loads(message)
             if not isinstance(data, list):
                 return
-            
+
             for item in data:
                 symbol_raw = item.get('s')  # e.g., "BTCUSDT"
                 price_raw = item.get('p')   # e.g., "65000.50"
-                
+
                 if symbol_raw and price_raw:
-                    # Convert raw symbol to standardized format (BTCUSDT -> BTC/USDT)
-                    symbol = self._standardize_symbol(symbol_raw)
-                    self.live_prices[symbol] = float(price_raw)
-            
-            # Periodic heartbeat (every 60s)
-            import time
+                    # Dict-lookup fast path; fallback to computed + cache
+                    symbol = self._symbol_cache.get(symbol_raw)
+                    if symbol is None:
+                        symbol = self._standardize_symbol(symbol_raw)
+                        self._symbol_cache[symbol_raw] = symbol
+                    try:
+                        self.live_prices[symbol] = float(price_raw)
+                    except (ValueError, TypeError):
+                        continue
+
             now = time.time()
             if now - self._last_heartbeat > 60:
                 self.logger.info(f"📡 WSS Heartbeat: {len(self.live_prices)} symbols updated in cache.")
                 self._last_heartbeat = now
-                    
+
         except Exception as e:
             self.logger.error(f"❌ Error parsing WSS message: {e}")
 

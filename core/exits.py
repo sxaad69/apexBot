@@ -459,7 +459,8 @@ class ExitsMixin:
                                     if t:
                                         meta = {}
                                         try: meta = json.loads(t['metadata']) if t['metadata'] else {}
-                                        except: pass
+                                        except Exception:
+                                            pass
                                         base_qty = meta.get('executed_qty')
                                     if not base_qty and pos.get('entry_price', 0) > 0:
                                         leverage = pos.get('leverage', 1)
@@ -473,7 +474,8 @@ class ExitsMixin:
                             try:
                                 new_tp_price = float(self.exchange.exchange.price_to_precision(symbol, new_tp_price))
                                 base_qty = float(self.exchange.exchange.amount_to_precision(symbol, base_qty))
-                            except: pass
+                            except Exception:
+                                pass
                             
                             new_tp_order = self.exchange.exchange.create_stop_market_order(
                                 symbol,
@@ -499,7 +501,8 @@ class ExitsMixin:
                                     self.logger.info(f"🎯 [RACE DETECTED] TP already filled for {symbol} during ratchet. Recording exit.")
                                     if sl_order_id:
                                         try: self.exchange.exchange.cancel_order(sl_order_id, symbol)
-                                        except: pass
+                                        except Exception:
+                                            pass
                                     self.trade_manager.record_exit(
                                         symbol=symbol, trade_id=trade_id, reason='take_profit',
                                         current_price=old_order.get('average') or current_price,
@@ -644,10 +647,17 @@ class ExitsMixin:
                         position['lowest_price'] = lo = current_price
                         changed = True
                     if changed:
-                        self.db.update_trade_metadata(position['trade_id'], {
-                            'highest_price': position['highest_price'],
-                            'lowest_price': position['lowest_price'],
-                        })
+                        # Throttle DB writes: persist watermark at most every N seconds per trade.
+                        # In-memory hi/lo stay fresh every tick; flush to DB on interval or at exit.
+                        now_ts = __import__('time').time()
+                        last_wm = float(position.get('_last_wm_persist', 0) or 0)
+                        interval = float(getattr(self.config, 'WATERMARK_PERSIST_INTERVAL', 30.0))
+                        if now_ts - last_wm >= interval:
+                            self.db.update_trade_metadata(position['trade_id'], {
+                                'highest_price': position['highest_price'],
+                                'lowest_price': position['lowest_price'],
+                            })
+                            position['_last_wm_persist'] = now_ts
             except Exception:
                 pass
 
@@ -726,6 +736,14 @@ class ExitsMixin:
                         # 4. If any fired on exchange, bypass software checks and record exit
                         if exchange_exit_triggered:
                             self.logger.info(f"⚡ EXCHANGE-SIDE EXIT DETECTED: {symbol} hit {exchange_exit_reason}")
+                            # Flush watermark before recording exit (throttled writes may be stale)
+                            try:
+                                self.db.update_trade_metadata(position['trade_id'], {
+                                    'highest_price': position.get('highest_price', position.get('entry_price')),
+                                    'lowest_price': position.get('lowest_price', position.get('entry_price')),
+                                })
+                            except Exception:
+                                pass
                             try:
                                 # Ensure all IDs are cleared in DB
                                 self.trade_manager.db.update_trade_order_ids(position['trade_id'], sl_order_id=None, tp_order_id=None)
@@ -782,6 +800,14 @@ class ExitsMixin:
                 strategy_name = position['strategy']
                 leverage = position.get('leverage', 1)
 
+                # Flush watermark before software exit (throttled writes may be stale)
+                try:
+                    self.db.update_trade_metadata(position['trade_id'], {
+                        'highest_price': position.get('highest_price', position.get('entry_price')),
+                        'lowest_price': position.get('lowest_price', position.get('entry_price')),
+                    })
+                except Exception:
+                    pass
                 # --- LIVE EXECUTION (Phase 14) ---
                 close_order = None
                 if self.mode == 'live':

@@ -55,3 +55,4 @@ plotly==6.9.0
 # Code Quality (Optional)
 black==26.5.1
 flake8==7.3.0
+orjson>=3.10

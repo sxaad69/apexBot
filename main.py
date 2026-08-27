@@ -656,31 +656,29 @@ class ApexHunterBot(SyncMixin):
     
     def _run_priority_exit_thread(self):
         """Continuous dedicated Risk Engine thread guarantees 0ms stops using WebSocket data."""
-        import time
         self.logger.info("🛡️ Priority Exit Sentinel Thread activated (WebSocket Mode).")
-        # Sentinel Telemetry Tracking
         last_telemetry = 0
+        last_heartbeat = 0
+        loop_count = 0
+        tick = float(getattr(self.config, 'SENTINEL_TICK_SECONDS', 0.5))
 
         while self.running:
             try:
-                # 1. Fetch Global Data for strict sync if needed
-                global_positions = None
-                if self.mode == 'live' or getattr(self.config, 'FUTURES_STRICT_SYNC', False):
-                    try:
-                        ex_positions = self.engine.exchange.get_positions()
-                        global_positions = [p for p in ex_positions if abs(float(p.get('contracts', 0) or 0)) > 0]
-                    except: pass
-
-                # 2. Iterate Memory instantly
                 active_symbols = list(set([p['symbol'] for p in self.engine.positions.values()]))
 
-                # Periodic Telemetry (every 10s)
-                import time
                 now = time.time()
                 show_telemetry = now - last_telemetry > 10
                 if show_telemetry and active_symbols:
-                    self.logger.info(f"🛡️ Sentinel Monitoring: {len(active_symbols)} symbols via WSS Feed.")
+                    self.logger.info(f"🛡️ Sentinel Monitoring: {len(active_symbols)} symbols via WSS Feed. [tick={tick:.1f}s]")
                     last_telemetry = now
+                # Watchdog heartbeat file
+                if now - last_heartbeat > 5:
+                    try:
+                        import pathlib as _hb_path
+                        _hb_path.Path('data/sentinel_heartbeat').write_text(str(int(now)))
+                    except Exception:
+                        pass
+                    last_heartbeat = now
 
                 # --- IP BAN PAUSE ---
                 # While Binance is cooling down, skip the per-symbol exit polls too
@@ -721,8 +719,17 @@ class ApexHunterBot(SyncMixin):
             except Exception as e:
                 self.logger.error(f"Priority Exit Thread Error: {e}")
             
-            # High-frequency tick (500ms) for ultra-fast reaction
-            time.sleep(0.5)
+            # Configurable tick — default 0.5s, overridden via SENTINEL_TICK_SECONDS for CPU savings
+            loop_count += 1
+            # Lightweight metrics line every 60 ticks (~60s at 1s tick, ~30s at 0.5s)
+            if loop_count % 120 == 0 and active_symbols:
+                try:
+                    rl = getattr(self.engine.exchange, 'rate_limiter', None)
+                    avail = getattr(rl, 'available_weight', '?') if rl else '?'
+                    self.logger.info(f"📊 Sentinel: {len(active_symbols)} positions | loop {loop_count} | rate_budget={avail}")
+                except Exception:
+                    pass
+            time.sleep(tick)
 
     def _seed_symbol_loss_streak(self):
         """D4: seed the in-memory C1 re-entry blacklist from the DB at startup so a
