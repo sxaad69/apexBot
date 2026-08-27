@@ -305,150 +305,7 @@ class PaperTradingEngine(MarketDataMixin, AlgoOrdersMixin, ExitsMixin, EntryMixi
                 elif hasattr(strategy, 'last_rejection') and strategy.last_rejection:
                     rejections[strategy.name] = strategy.last_rejection
 
-        # Collect market analysis data for dashboard (Bulk Aggregation)
-        collected_data = self._collect_market_analysis_data(symbol, df, current_price)
-
-        return {'symbol': symbol, 'rejections': rejections, 'collected_data': collected_data}
-
-    def _collect_market_analysis_data(self, symbol, df, current_price):
-        """Collect and save market analysis data for dashboard"""
-        try:
-            # Get current date and hour
-            now = datetime.now()
-            current_date = now.strftime('%Y-%m-%d')
-            current_hour = now.strftime('%H:00')
-
-            # Count total analyses performed this hour
-            total_analyses = 0
-            futures_analyses = 0
-            spot_analyses = 0
-            pairs_analyzed = set([symbol])  # Start with current pair
-            strategies_active = [s.name for s in self.strategies]
-
-            # Count signals generated this hour
-            strategy_signals = {'A1': 0, 'A2': 0, 'A3': 0, 'A4': 0, 'A5': 0}
-
-            # Detailed rejection tracking
-            filter_rejections = {
-                'volume': [],
-                'adx': [],
-                'volatility': [],
-                'other': []
-            }
-
-            # Import strategy filters to get detailed rejection reasons
-            from strategies.filters import get_strategy_filters
-            strategy_filters = get_strategy_filters(self.config)
-
-            # Generate signals for each strategy to count them and capture rejections
-            for strategy in self.strategies:
-                total_analyses += 1
-                futures_analyses += 1
-
-                # Check filters first (this captures detailed rejection reasons)
-                should_trade, filter_reason = strategy_filters.should_trade_symbol(df, symbol, strategy.name)
-
-                if not should_trade:
-                    # Categorize rejection reason
-                    if 'Volume <' in filter_reason and 'x average' in filter_reason:
-                        filter_rejections['volume'].append({
-                            'strategy': strategy.name,
-                            'symbol': symbol,
-                            'reason': filter_reason,
-                            'timestamp': now
-                        })
-                    elif 'ADX <' in filter_reason:
-                        filter_rejections['adx'].append({
-                            'strategy': strategy.name,
-                            'symbol': symbol,
-                            'reason': filter_reason,
-                            'timestamp': now
-                        })
-                    elif 'Volatility >' in filter_reason:
-                        filter_rejections['volatility'].append({
-                            'strategy': strategy.name,
-                            'symbol': symbol,
-                            'reason': filter_reason,
-                            'timestamp': now
-                        })
-                    else:
-                        filter_rejections['other'].append({
-                            'strategy': strategy.name,
-                            'symbol': symbol,
-                            'reason': filter_reason,
-                            'timestamp': now
-                        })
-
-                    # Log the filter rejection (same as current logging)
-                    self.logger.debug(f"[{strategy.name}] {symbol} FILTERED: {filter_reason}")
-                    continue
-
-                # Generate signal only if filters pass
-                import inspect
-                kwargs = {}
-                sig = inspect.signature(strategy.generate_signal)
-                if 'symbol' in sig.parameters:
-                    kwargs['symbol'] = symbol
-                if 'market_type' in sig.parameters:
-                    kwargs['market_type'] = 'futures'
-                    
-                signal = strategy.generate_signal(df, **kwargs)
-                if signal:
-                    strategy_name = signal.get('strategy', strategy.name)
-                    if strategy_name in strategy_signals:
-                        strategy_signals[strategy_name] += 1
-
-            # Calculate rejection counts (detailed + legacy aggregate)
-            volume_rejections = len(filter_rejections['volume'])
-            adx_rejections = len(filter_rejections['adx'])
-            volatility_rejections = len(filter_rejections['volatility'])
-            other_rejections = len(filter_rejections['other'])
-            total_rejections = volume_rejections + adx_rejections + volatility_rejections + other_rejections
-
-            # Calculate metrics
-            signals_generated = sum(strategy_signals.values())
-            conversion_rate = (signals_generated / max(total_analyses, 1) * 100)
-
-            # Prepare market analysis data
-            analysis_data = {
-                'date': current_date,
-                'hour': current_hour,
-                'trading_type': 'futures',  # This is futures trading engine
-                'total_analyses': total_analyses,
-                'futures_analyses': futures_analyses,
-                'spot_analyses': spot_analyses,
-                'pairs_analyzed': list(pairs_analyzed),
-                'strategies_active': strategies_active,
-                'current_price': current_price,
-                'timestamp': now
-            }
-
-            # Prepare hourly metrics data (with detailed rejections)
-            metrics_data = {
-                'date': current_date,
-                'hour': current_hour,
-                'trading_type': 'futures',
-                'signals_generated': signals_generated,
-                'trades_executed': len([p for p in self.positions.values() if p['symbol'] == symbol]),  # Current positions
-                'volume_rejections': volume_rejections,
-                'adx_rejections': adx_rejections,
-                'volatility_rejections': volatility_rejections,
-                'other_rejections': other_rejections,
-                'total_rejections': total_rejections,
-                'conversion_rate': conversion_rate,
-                'detailed_rejections': filter_rejections,  # Full detailed rejection data
-                'timestamp': now
-            }
-
-            # Return data for bulk aggregation instead of saving immediately
-            return {
-                'analysis': analysis_data,
-                'metrics': metrics_data
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error collecting market analysis data: {e}")
-            return None
+        return {'symbol': symbol, 'rejections': rejections}
 
 class ApexHunterBot(SyncMixin):
     """Main bot orchestrator"""
@@ -990,12 +847,7 @@ class ApexHunterBot(SyncMixin):
                     # Wait for completion of this concurrent batch to prevent unbounded memory growth
                     concurrent.futures.wait(futures)
 
-                    # Aggregate results
-                    bulk_analysis = []
-
-                    bulk_metrics = {'signals_generated': 0, 'trades_executed': 0, 'total_rejections': 0}
-                    last_metrics_info = None
-
+                    # Aggregate results (rejections only)
                     for future in futures:
                         try:
                             result = future.result()
@@ -1019,35 +871,8 @@ class ApexHunterBot(SyncMixin):
                                             sweep_stats['strategy_rejections'][strategy_name][reason] = {}
                                         sweep_stats['strategy_rejections'][strategy_name][reason][sym] = details
                                 
-                                # Aggregate bulk DB data
-                                collected = result.get('collected_data')
-                                if collected:
-                                    if collected.get('analysis'):
-                                        bulk_analysis.append(collected['analysis'])
-
-                                    if collected.get('metrics'):
-                                        m = collected['metrics']
-                                        bulk_metrics['signals_generated'] += m.get('signals_generated', 0)
-                                        bulk_metrics['trades_executed'] += m.get('trades_executed', 0)
-                                        bulk_metrics['total_rejections'] += m.get('total_rejections', 0)
-                                        last_metrics_info = m
                         except Exception as e:
                             self.logger.error(f"Error getting future result: {e}")
-                            
-                    # Bulk Save to Database
-                    # [DISABLED] market_analysis is redundant and causes high CPU/disk I/O. 
-                    # All data is already captured in trades + rejections + sweep_summary.
-                    # if bulk_analysis and hasattr(self.logger, 'save_market_analysis_bulk'):
-                    #     self.logger.save_market_analysis_bulk(bulk_analysis)
-                        
-                    if last_metrics_info and hasattr(self.logger, 'save_hourly_metrics'):
-                        unified_metrics = last_metrics_info.copy()
-                        unified_metrics.update(bulk_metrics)
-                        self.logger.save_hourly_metrics(
-                            unified_metrics['date'], 
-                            unified_metrics['hour'], 
-                            unified_metrics
-                        )
                             
                 sweep_stats['duration_sec'] = time.time() - sweep_start_time
                 # Track batch-cap skips for visibility
