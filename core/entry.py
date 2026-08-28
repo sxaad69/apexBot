@@ -21,6 +21,37 @@ class EntryMixin:
         strategy_prefix = strategy_name.split(':')[0].strip()  # "A8: Ignition..." -> "A8"
         paper_flag = f'STRATEGY_{strategy_prefix}_PAPER'
         if getattr(self.config, paper_flag, False):
+            # Mirror live's one-position-per-symbol guard + re-entry cooldown so
+            # paper behavior == live behavior for the same signal stream. Without
+            # this the gate re-logged the SAME 15m-candle signal every sweep
+            # (~60s), flooding paper_signals with duplicates that never resolve.
+            if hasattr(self.logger, 'db'):
+                try:
+                    conn = self.logger.db._get_connection(self.logger.db.log_db)
+                    try:
+                        cursor = conn.cursor()
+                        # a) open paper position on this symbol blocks a second one
+                        cursor.execute(
+                            "SELECT COUNT(*) FROM paper_signals "
+                            "WHERE strategy = ? AND symbol = ? AND outcome IS NULL",
+                            (strategy_name, symbol)
+                        )
+                        if cursor.fetchone()[0] > 0:
+                            return
+                        # b) resolved paper exit -> re-entry cooldown (same as live)
+                        cooldown_min = float(getattr(self.config, 'FUTURES_SYMBOL_COOLDOWN_MINUTES', 15))
+                        cursor.execute(
+                            "SELECT COUNT(*) FROM paper_signals "
+                            "WHERE strategy = ? AND symbol = ? AND outcome IS NOT NULL "
+                            "AND resolved_at >= datetime('now', ?)",
+                            (strategy_name, symbol, f'-{int(cooldown_min)} minutes')
+                        )
+                        if cursor.fetchone()[0] > 0:
+                            return
+                    finally:
+                        conn.close()
+                except Exception as e:
+                    self.logger.warning(f"[PAPER] dedupe guard query failed: {e}")
             self.logger.info(
                 f"📋 [PAPER] {strategy_name} {symbol} {signal.get('side','?').upper()} "
                 f"@ {signal.get('entry_price','?')} | SL={signal.get('stop_loss','?')} "
