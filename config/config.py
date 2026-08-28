@@ -238,6 +238,7 @@ class Config:
         self.STRATEGY_A6_PAPER = self._str_to_bool(os.getenv('STRATEGY_A6_PAPER', 'false'))
         self.STRATEGY_A7_PAPER = self._str_to_bool(os.getenv('STRATEGY_A7_PAPER', 'false'))
         self.STRATEGY_A8_PAPER = self._str_to_bool(os.getenv('STRATEGY_A8_PAPER', 'false'))
+        self.STRATEGY_A9_PAPER = self._str_to_bool(os.getenv('STRATEGY_A9_PAPER', 'false'))
         
         # Strategy-specific Risk Overrides
         self.STRATEGY_A3_SL_ROE = float('5.0')
