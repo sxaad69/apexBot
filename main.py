@@ -781,7 +781,7 @@ class ApexHunterBot(SyncMixin):
                 try:
                     has_paper = any(
                         getattr(self.config, f'STRATEGY_{s.name.split(":")[0].strip()}_PAPER', False)
-                        for s in self.strategies
+                        for s in self.engine.strategies
                     )
                     if has_paper and hasattr(self.logger, 'db'):
                         marks = {}
@@ -791,7 +791,7 @@ class ApexHunterBot(SyncMixin):
                         if resolved:
                             self.logger.info(f"📋 [PAPER] Resolved {resolved} paper signal(s)")
                 except Exception as e:
-                    self.logger.debug(f"📋 [PAPER] resolve error: {e}")
+                    self.logger.warning(f"📋 [PAPER] resolve error: {e}")
                 # S2: Periodic DB↔exchange reconciliation — detect orphan positions
                 # that filled on exchange but weren't recorded in DB (the AIOT/MORPHO
                 # bug from stale get_positions() cache). Detection only; adoption
