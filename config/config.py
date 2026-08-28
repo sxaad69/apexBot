@@ -228,6 +228,7 @@ class Config:
         self.STRATEGY_A6_ENABLED = self._str_to_bool('true')
         self.STRATEGY_A7_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A7_ENABLED', 'false'))
         self.STRATEGY_A8_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A8_ENABLED', 'false'))
+        self.STRATEGY_A9_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A9_ENABLED', 'false'))
         self.A8_IGNITION_THRESHOLD = float(os.getenv('A8_IGNITION_THRESHOLD', '0.40'))
         self.A6_ALLOW_SHORT = self._str_to_bool('false')
         

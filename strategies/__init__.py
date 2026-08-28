@@ -11,6 +11,7 @@ from .strategy_a5 import StrategyA5
 from .strategy_a6 import StrategyA6
 from .strategy_a7 import StrategyA7
 from .strategy_a8 import StrategyA8
+from .strategy_a9 import StrategyA9
 from .strategy_a6_backtester import StrategyA6Backtester
 
-__all__ = ['BaseStrategy', 'StrategyA1', 'StrategyA2', 'StrategyA3', 'StrategyA4', 'StrategyA5', 'StrategyA6', 'StrategyA7', 'StrategyA8', 'StrategyA6Backtester']
+__all__ = ['BaseStrategy', 'StrategyA1', 'StrategyA2', 'StrategyA3', 'StrategyA4', 'StrategyA5', 'StrategyA6', 'StrategyA7', 'StrategyA8', 'StrategyA9', 'StrategyA6Backtester']
