@@ -89,7 +89,16 @@ class StrategyFilters:
         return current_volume >= (avg_volume * self.volume_multiplier)
 
     def _check_minimum_volume(self, df) -> bool:
-        """Check minimum USD volume"""
+        """Check minimum USD volume.
+
+        Phase-1 core fix: the absolute floor dropped 10k -> 2.5k AND a relative
+        accelerator escape was added. Microcap runners trade under $10k/15m in
+        the early innings (forensics: BTR +469% was rejected x3791 on the $10k
+        floor alone); an absolute-only floor blinds A6 to them. A coin that is
+        genuinely accelerating (current bar volume >= MIN_VOLUME_RATIO_ESCAPE x
+        its own 20-bar average) passes regardless of absolute USD — the illiquidity
+        guard remains for dead coins that can't even muster relative demand.
+        """
         if 'volume' not in df.columns or 'close' not in df.columns:
             return False
 
@@ -97,7 +106,16 @@ class StrategyFilters:
         current_price = df.iloc[-1]['close']
 
         volume_usdt = current_volume * current_price
-        return volume_usdt >= self.min_volume_usdt
+        if volume_usdt >= self.min_volume_usdt:
+            return True
+
+        ratio_escape = getattr(self.config, 'MIN_VOLUME_RATIO_ESCAPE', 1.5)
+        if len(df) >= 20:
+            avg_volume = df['volume'].rolling(20).mean().iloc[-1]
+            if avg_volume > 0 and (current_volume / avg_volume) >= ratio_escape:
+                return True
+
+        return False
 
     def _check_volatility_filter(self, df) -> bool:
         """Check if volatility is within limits"""

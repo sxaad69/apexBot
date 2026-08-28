@@ -85,6 +85,13 @@ class Config:
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float('5')
         self.FUTURES_MAX_DRAWDOWN_PERCENT = float('70')
         self.FUTURES_MAX_OPEN_POSITIONS = int(os.getenv('FUTURES_MAX_OPEN_POSITIONS', '15'))
+        # Core-fix leverage ceiling (Phase 1): 5x base, 6x only for high-confidence
+        # signals (conf >= TIER_HOT_CONF). Forensics: conf rescues 3-5x but dies at 10x
+        # (12.5% win); 10x raw stops get hit by wick noise (0 wins in 17 SLs).
+        # FUTURES_MAX_LEVERAGE (line 83) stays as the ABSOLUTE emergency ceiling;
+        # these two are the working caps used by the risk layers and entry sizing.
+        self.LEV_CAP_BASE = int(os.getenv('LEV_CAP_BASE', '5'))
+        self.LEV_CAP_HIGH_CONF = int(os.getenv('LEV_CAP_HIGH_CONF', '6'))
 
         # --- Exposure & Reserve Management ---
         # FUTURES_MAX_EXPOSURE_NORMAL: Max % of capital for standard signals (Confidence < Threshold)
@@ -142,6 +149,11 @@ class Config:
         self.GLOBAL_STOP_LOSS_ROE = float('10.0')
         self.MAX_ROE_DRAWDOWN = float('10.0')
         self.MAX_EQUITY_RISK_PERCENT = float('5.0')
+        # Phase-1 core fix: enforce a minimum RAW price distance to the stop.
+        # At 10x the ATR stop collapses to ~0.71% raw (wick-noise distance) and
+        # hits 0-for-17; 2.5% is the noise-survival floor from the SL forensics.
+        # Vol-sync layers may set a wider stop; this only widens too-tight ones.
+        self.MIN_RAW_STOP_PERCENT = float(os.getenv('MIN_RAW_STOP_PERCENT', '2.5'))
         self.TAKE_PROFIT_PERCENT = self.FUTURES_TAKE_PROFIT_PERCENT
         self.MAX_DAILY_LOSS_PERCENT = self.FUTURES_MAX_DAILY_LOSS_PERCENT
         self.MAX_DRAWDOWN_PERCENT = self.FUTURES_MAX_DRAWDOWN_PERCENT
@@ -313,6 +325,20 @@ class Config:
         self.ASIA_TRADING_ENABLED = self._str_to_bool(os.getenv('ASIA_TRADING_ENABLED', 'false'))
         self.ASIA_END_HOUR_UTC = int(os.getenv('ASIA_END_HOUR_UTC', '8'))
 
+        # ===== Momentum Confirmation Gate (Phase 1 core fix) =====
+        # A wall/imbalance signal alone no longer executes. The engine holds a
+        # pending signal for up to MOMENTUM_MAX_WAIT_SECONDS and only commits if
+        # price confirms >= MOMENTUM_MIN_MOVE_PCT in the signal side with volume
+        # ratio >= MOMENTUM_MIN_VOL_RATIO on the next data window. Kills the
+        # dead-entry bucket (24 entries / 12% win / -$8.28 this week) while
+        # keeping genuine runners (fwd 8%+ = 90% win). Opt-out via .env.
+        self.MOMENTUM_GATE_ENABLED = self._str_to_bool(os.getenv('MOMENTUM_GATE_ENABLED', 'true'))
+        self.MOMENTUM_GATE_STRATEGIES = [s.strip().upper() for s in
+                                         os.getenv('MOMENTUM_GATE_STRATEGIES', 'A6').split(',') if s.strip()]
+        self.MOMENTUM_MIN_MOVE_PCT = float(os.getenv('MOMENTUM_MIN_MOVE_PCT', '0.5'))
+        self.MOMENTUM_MIN_VOL_RATIO = float(os.getenv('MOMENTUM_MIN_VOL_RATIO', '1.5'))
+        self.MOMENTUM_MAX_WAIT_SECONDS = float(os.getenv('MOMENTUM_MAX_WAIT_SECONDS', '900'))
+
         
         # ===== Telegram Integration (3 Separate Bots) =====
         # Futures Bot
@@ -376,7 +402,8 @@ class Config:
         self.TESTING_MODE = self._str_to_bool('false')
         self.TESTING_ADX_MIN = float('15')
         self.TESTING_VOLUME_MULT = float('0.8')
-        self.MIN_VOLUME_USDT = float('10000')
+        self.MIN_VOLUME_USDT = float('2500')
+        self.MIN_VOLUME_RATIO_ESCAPE = float('1.5')
         self.MAX_VOLATILITY_PERCENT = float('5.0')
         self.FORCE_TRADES = self._str_to_bool('false')
 
@@ -513,6 +540,23 @@ class Config:
             return max(1, int(self.MAX_LEVERAGE * 0.7))
         else:
             return self.MAX_LEVERAGE
+
+    def get_leverage_cap(self, confidence: float) -> int:
+        """
+        Phase-1 core fix: confidence-aware leverage cap.
+
+        Forensics on 283 mainnet trades (Aug 7-27):
+          - conf >= 0.90 at 5x sees 60% win / +1.64 avg (rescues the move)
+          - conf >= 0.90 at 6-10x collapses (10x = 12.5% win, -1.15 avg)
+          - high leverage shrinks the RAW stop to wick-noise distance (0 wins in
+            17 SLs at 10x), so the cap doubles as the raw-stop-floor protection.
+        Returns the effective working cap: 5x base, 6x for conf >= TIER_HOT_CONF,
+        never above the ABSOLUTE emergency ceiling (FUTURES_MAX_LEVERAGE).
+        """
+        hot_conf = getattr(self, 'TIER_HOT_CONF', 0.90)
+        cap = getattr(self, 'LEV_CAP_HIGH_CONF', 6) if float(confidence) >= hot_conf \
+            else getattr(self, 'LEV_CAP_BASE', 5)
+        return max(1, min(int(cap), int(getattr(self, 'FUTURES_MAX_LEVERAGE', 10))))
     
     def is_live_trading(self) -> bool:
         """Check if bot is in live trading mode"""

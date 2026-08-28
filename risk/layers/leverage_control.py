@@ -25,7 +25,11 @@ class LeverageControlLayer:
 
     def _get_drawdown_adjusted_max(self, drawdown_pct: float) -> int:
         """Reduce maximum allowed leverage as drawdown increases."""
-        base_max = getattr(self.config, 'FUTURES_MAX_LEVERAGE', 10)
+        # Phase-1 core fix: base off the WORKING cap (get_leverage_cap) not the
+        # absolute emergency ceiling, so 5x/6x stays the default and drawdown
+        # only tightens further from there.
+        get_cap = getattr(self.config, 'get_leverage_cap', None)
+        base_max = get_cap(0.90) if callable(get_cap) else getattr(self.config, 'FUTURES_MAX_LEVERAGE', 10)
         if drawdown_pct < 5:
             return base_max           # Full range available
         elif drawdown_pct < 10:
@@ -40,7 +44,9 @@ class LeverageControlLayer:
         Evaluate and set dynamic leverage using ATR + Confidence hybrid model.
         """
         equity_risk_pct  = getattr(self.config, 'MAX_EQUITY_RISK_PERCENT', 3.0)
-        abs_max_leverage = getattr(self.config, 'FUTURES_MAX_LEVERAGE', 10)
+        get_cap          = getattr(self.config, 'get_leverage_cap', None)
+        abs_max_leverage = get_cap(confidence) if callable(get_cap) \
+            else getattr(self.config, 'FUTURES_MAX_LEVERAGE', 10)
         min_atr_pct      = getattr(self.config, 'MIN_ATR_PERCENT', 0.1)
         confidence       = trade_params.get('confidence', 0.5)
         current_drawdown = account_state.get('drawdown_percent', 0)

@@ -19,8 +19,15 @@ class StopLossManagementLayer:
             override_key = f"{strategy_tag.split(':')[0]}_STOP_LOSS_ROE"
             global_target_roe = getattr(self.config, override_key, 10.0)
         
-        # Max leverage boundaries
-        max_leverage = getattr(self.config, 'FUTURES_MAX_LEVERAGE', 10)
+        # Max leverage boundaries (Phase-1 core fix: working cap is now
+        # confidence-aware via config.get_leverage_cap — 5x base, 6x conf>=0.90 —
+        # NOT the absolute FUTURES_MAX_LEVERAGE which is only the emergency ceiling).
+        confidence = trade_params.get('confidence', 0.5)
+        max_leverage = getattr(self.config, 'get_leverage_cap', None)
+        if callable(max_leverage):
+            max_leverage = max_leverage(confidence)
+        else:
+            max_leverage = getattr(self.config, 'FUTURES_MAX_LEVERAGE', 10)
         
         # 2. Check if strategy provided a technical Stop Loss (ATR)
         strategy_sl = trade_params.get('stop_loss')
@@ -28,6 +35,20 @@ class StopLossManagementLayer:
         if strategy_sl and entry_price > 0:
             # Calculate the percentage distance of the ATR stop loss
             distance_percent = abs(entry_price - strategy_sl) / entry_price * 100
+
+            # Phase-1 core fix: enforce a minimum RAW stop distance. At high
+            # leverage the ATR stop collapses to wick-noise distance (0.71% at
+            # 10x, 0-for-17 SLs). Wide the stop to the floor if the strategy
+            # placed it closer; leverage then recomputes OFF the wider distance,
+            # so the ROE risk stays bounded without forcing leverage down to 1x.
+            min_raw = getattr(self.config, 'MIN_RAW_STOP_PERCENT', 2.5)
+            if distance_percent < min_raw:
+                self.logger.warning(f"[{strategy_tag}] ATR stop too tight ({distance_percent:.2f}% raw < {min_raw}% floor). Widening.")
+                distance_percent = min_raw
+                if side == 'buy':
+                    strategy_sl = entry_price * (1 - distance_percent / 100)
+                else:
+                    strategy_sl = entry_price * (1 + distance_percent / 100)
             
             if distance_percent > 0:
                 # 3. Volatility-Adjusted Leverage

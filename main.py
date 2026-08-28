@@ -49,6 +49,7 @@ class PaperTradingEngine(MarketDataMixin, AlgoOrdersMixin, ExitsMixin, EntryMixi
         import threading
         self.recent_liquidations = {}
         self.symbol_loss_streak = {}  # C1: consecutive SL losses per symbol (re-entry blacklist)
+        self._momentum_pending = {}   # Phase-1: momentum gate — "strategy:symbol" -> pending signal + refs
         self.trade_lock = threading.Lock()
 
         # --- RATE-LIMIT FIX: OHLCV cache to avoid hammering Binance REST ---
@@ -301,11 +302,112 @@ class PaperTradingEngine(MarketDataMixin, AlgoOrdersMixin, ExitsMixin, EntryMixi
                 signal = strategy.generate_signal(df, **kwargs)
 
                 if signal:
+                    # Phase-1 MOMENTUM GATE: wall/imbalance signals are held for
+                    # confirmation instead of executing instantly. Only commit when
+                    # price confirms the move with volume on the next data window.
+                    if self._momentum_gate_applies(strategy.name) and self._momentum_gate_blocked(symbol, strategy.name, signal, df):
+                        # not yet confirmed (or awaiting) — rejections captured below
+                        self.logger.info(f"⏳ [MOMENTUM GATE] {strategy.name} {symbol} signal held for confirmation")
+                        continue
+
                     self.execute_entry(signal, strategy.name, symbol)
                 elif hasattr(strategy, 'last_rejection') and strategy.last_rejection:
                     rejections[strategy.name] = strategy.last_rejection
 
         return {'symbol': symbol, 'rejections': rejections}
+
+    # =====================================================================
+    # Phase-1 MOMENTUM GATE (core entry-path fix)
+    # A wall/imbalance signal alone no longer executes. The signal is parked
+    # in self._momentum_pending; on the next data window we re-check the same
+    # strategy's signal and only commit if price confirmed >= MIN_MOVE_PCT in
+    # the signal side with volume ratio >= MIN_VOL_RATIO. Pending entries that
+    # never confirm expire after MAX_WAIT_SECONDS (dead-entry killer).
+    # =====================================================================
+    def _momentum_gate_applies(self, strategy_name):
+        """Gate applies only to strategies listed in MOMENTUM_GATE_STRATEGIES
+        (A6 by default). Momentum-native strategies bypass via the front hook."""
+        if not getattr(self.config, 'MOMENTUM_GATE_ENABLED', False):
+            return False
+        prefix = str(strategy_name).split(':')[0].strip().upper()
+        scoped = getattr(self.config, 'MOMENTUM_GATE_STRATEGIES', [])
+        if not scoped:
+            return prefix == 'A6'
+        return prefix in scoped
+
+    def _momentum_gate_blocked(self, symbol, strategy_name, signal, df):
+        """Returns True if the signal must be HELD (not executed this sweep).
+        Stores the pending signal; checks confirmation on subsequent sweeps.
+        Stale pendings (wall died, no new signal) are pruned on every call so
+        they can't leak into the next signal cycle for that symbol."""
+        import time as _t
+        key = f"{strategy_name}:{symbol}"
+        now = _t.time()
+        max_wait_local = getattr(self.config, 'MOMENTUM_MAX_WAIT_SECONDS', 900)
+
+        # Prune expired pendings regardless of whether a new signal arrived
+        expired = [k for k, p in self._momentum_pending.items()
+                   if (now - p.get('ts', 0)) > (p.get('max_wait', max_wait_local) * 2)]
+        for k in expired:
+            self.logger.warning(
+                f"⏱️ [MOMENTUM GATE] {k} pruned — signal died before confirmation"
+            )
+            del self._momentum_pending[k]
+
+        # Build the confirmation basis from the candle (volume ratio vs 20-bar avg)
+        vol_ratio = 0.0
+        move_pct = 0.0
+        try:
+            if df is not None and len(df) > 20 and 'volume' in df.columns and 'close' in df.columns:
+                cur_vol = float(df.iloc[-1]['volume'])
+                avg_vol = float(df['volume'].rolling(20).mean().iloc[-1])
+                vol_ratio = cur_vol / avg_vol if avg_vol > 0 else 0.0
+                # Move measured against the entry reference of the held signal
+                ref_price = self._momentum_pending.get(key, {}).get('ref_price')
+                if ref_price:
+                    px = float(df.iloc[-1]['close'])
+                    move_pct = (px - ref_price) / ref_price * 100
+                    if signal.get('side') == 'sell':
+                        move_pct = -move_pct
+        except Exception as e:
+            self.logger.debug(f"[MOMENTUM GATE] calc error {symbol}: {e}")
+
+        pending = self._momentum_pending.get(key)
+        if pending is None:
+            # First sighting: park the signal, ask for confirmation on next sweep
+            self._momentum_pending[key] = {
+                'signal': dict(signal),
+                'ts': now,
+                'ref_price': float(df.iloc[-1]['close']) if df is not None and len(df) else signal.get('entry_price'),
+            }
+            return True
+
+        # Held signal — check confirmation
+        min_move = getattr(self.config, 'MOMENTUM_MIN_MOVE_PCT', 0.5)
+        min_vol = getattr(self.config, 'MOMENTUM_MIN_VOL_RATIO', 1.5)
+        max_wait = getattr(self.config, 'MOMENTUM_MAX_WAIT_SECONDS', 120)
+
+        if move_pct >= min_move and vol_ratio >= min_vol:
+            self.logger.info(
+                f"✅ [MOMENTUM GATE] {strategy_name} {symbol} CONFIRMED "
+                f"(move {move_pct:+.2f}%, vol x{vol_ratio:.2f}) → executing"
+            )
+            del self._momentum_pending[key]
+            return False  # not blocked — caller executes the fresh signal
+
+        if (now - pending['ts']) > max_wait:
+            self.logger.warning(
+                f"⏱️ [MOMENTUM GATE] {strategy_name} {symbol} EXPIRED after {max_wait:.0f}s "
+                f"(move {move_pct:+.2f}%, vol x{vol_ratio:.2f}) — dropped, no entry"
+            )
+            del self._momentum_pending[key]
+            return True  # still no entry this sweep
+
+        self.logger.debug(
+            f"[MOMENTUM GATE] {strategy_name} {symbol} waiting "
+            f"(move {move_pct:+.2f}%, vol x{vol_ratio:.2f}, needed {min_move:+}%/{min_vol}x)"
+        )
+        return True
 
 class ApexHunterBot(SyncMixin):
     """Main bot orchestrator"""
