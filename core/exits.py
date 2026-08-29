@@ -150,12 +150,14 @@ class ExitsMixin:
         stop cutting winners early (audit: 53% of trailing exits were premature).
         Tier 0 (<+8%): keep entry callback. Tier 1 (+8%): 5%. Tier 2 (+20%): 8%.
 
-        Each tier change cancels the live trailing algo order and re-places it with
-        the wider callbackRate, then persists the new trailing_order_id.
-
-        DIAGNOSTIC: every position evaluated logs its skip reason so we can observe
-        why a runner (e.g. AGT) may not upgrade — flag state, missing trailing id,
-        unresolved quantity, etc. Remove verbose per-tick logs after root-causing.
+        KEEP-ALIVE (2026-08-29): each tier change now places the new (wider)
+        trailing FIRST and keeps the previous tier's order live as a fallback
+        until the new tier's activation price is actually reached (Binance
+        isActivated). The old cancel-then-place flow stranded ZEST: tier-2's
+        activate (0.17082) was never hit (peak 0.17037), so after tier-1 was
+        cancelled NO callback was armed and +20% rode back to the hard SL.
+        The fallback is retired by the arming check below and cleaned up by
+        cancel_position_algo_orders on exit.
         """
         if not getattr(self.config, 'EXCHANGE_SIDE_SL', False):
             return
@@ -178,6 +180,38 @@ class ExitsMixin:
                     f"exchange_trailing={position.get('exchange_trailing')})"
                 )
                 continue
+
+            # --- Keep-alive retirement: the previous tier's trailing stays live as
+            # a FALLBACK until the current tier's activation price is actually
+            # reached. Once price trades through the activation (Binance arms the
+            # order at that point), the wider tier is in control and the tighter
+            # fallback is cancelled.
+            fallback_id = position.get('trailing_fallback_id')
+            fallback_activate = position.get('trailing_activate_price')
+            if fallback_id and fallback_activate:
+                _is_long = position.get('side') == 'buy'
+                _armed = (current_price >= float(fallback_activate)) if _is_long \
+                    else (current_price <= float(fallback_activate))
+                if _armed:
+                    self._cancel_exchange_conditional(symbol, fallback_id)
+                    position['trailing_fallback_id'] = None
+                    position['trailing_activate_price'] = None
+                    self._open_algo_cache.pop(symbol, None)
+                    try:
+                        import json as _json
+                        _meta = _json.loads(position.get('metadata') or '{}')
+                    except Exception:
+                        _meta = {}
+                    _meta['trailing_fallback_id'] = None
+                    _meta['trailing_activate_price'] = None
+                    self.trade_manager.db.update_trade_metadata(
+                        position['trade_id'], {'metadata': _meta}
+                    )
+                    self.logger.info(
+                        f"[tier] {symbol}: tier armed @ {fallback_activate} — retired fallback "
+                        f"trailing (algoId: {fallback_id})"
+                    )
+                    trailing_id = position.get('trailing_order_id')
 
             entry = float(position.get('entry_price') or 0)
             if entry <= 0:
@@ -203,7 +237,11 @@ class ExitsMixin:
                 f"cur_tier={current_tier} | trailing_id={trailing_id}"
             )
 
-            # Widen: cancel live trailing, re-place with wider callback
+            # Widen with KEEP-ALIVE: place the new (wider) trailing FIRST, keep the
+            # previous tier's order live as fallback. The old flow cancelled the
+            # armed trailing before placing the new one — if the new activation was
+            # never reached (price peaked at the upgrade moment), the position had
+            # NO armed callback left (the ZEST +20% → hard-SL gap).
             sl_side = 'sell' if position.get('side') == 'buy' else 'buy'
             size = float(position.get('size') or 0)
             lev = float(position.get('leverage') or 1)
@@ -218,27 +256,6 @@ class ExitsMixin:
             if quantity <= 0:
                 self.logger.warning(f"[tier] {symbol}: invalid quantity {quantity} for tier upgrade. Skipping.")
                 continue
-
-            self._cancel_exchange_conditional(symbol, trailing_id)
-
-            # B3: dedupe — a failed cancel (e.g. -2011 stale ID) can leave the OLD
-            # trailing still live, so re-placing here would stack duplicate
-            # TRAILING_STOP_MARKET orders (risking the per-symbol algo cap that blocks
-            # new callback orders). Enumerate the symbol's open algos and cancel any
-            # duplicate trailing-stops before placing the new one.
-            try:
-                algo_sym = symbol.replace('/', '').split(':')[0]
-                resp = self.exchange.exchange.fapiPrivateGetOpenAlgoOrders({'symbol': algo_sym})
-                orders = resp if isinstance(resp, list) else (resp.get('orders', []) if isinstance(resp, dict) else [])
-                for o in orders:
-                    if isinstance(o, dict) and o.get('algoType') == 'TRAILING_STOP_MARKET':
-                        try:
-                            self.exchange.exchange.fapiPrivateDeleteAlgoOrder({'symbol': algo_sym, 'algoId': o.get('algoId')})
-                        except Exception:
-                            pass
-                self._open_algo_cache.pop(symbol, None)
-            except Exception as _dedupe_e:
-                self.logger.debug(f"[tier] {symbol} B3 dedupe skipped: {_dedupe_e}")
 
             # A1 FIX: Do NOT pass activate_price=current_price. For a live trailing
             # re-place Binance rejects an activation at/behind the current mark with
@@ -281,12 +298,20 @@ class ExitsMixin:
                     break
                 _time.sleep(0.5)
             if new_id:
+                # Only the immediately-previous tier stays as fallback — retire a
+                # stale one from an earlier upgrade first (keeps per-symbol algo
+                # count bounded: SL + TP + 2 trailings).
+                old_fallback = position.get('trailing_fallback_id')
+                if old_fallback and str(old_fallback) != str(trailing_id):
+                    self._cancel_exchange_conditional(symbol, old_fallback)
+                position['trailing_fallback_id'] = trailing_id  # old tier stays LIVE
+                position['trailing_activate_price'] = activate
                 position['trailing_order_id'] = new_id
                 position['trailing_tier'] = target_tier
                 # Invalidate the openAlgo cache so exit-detection re-fetches and does not
                 # treat the cancelled old trailing id as a fired exit (phantom-exit bug).
                 self._open_algo_cache.pop(symbol, None)
-                # Persist tier + order id for restart recovery
+                # Persist tier + order ids for restart recovery
                 try:
                     import json as _json
                     _meta = _json.loads(position.get('metadata') or '{}')
@@ -294,41 +319,27 @@ class ExitsMixin:
                     _meta = {}
                 _meta['trailing_tier'] = target_tier
                 _meta['trailing_order_id'] = new_id
+                _meta['trailing_fallback_id'] = trailing_id
+                _meta['trailing_activate_price'] = activate
                 self.trade_manager.db.update_trade_metadata(
                     position['trade_id'], {'metadata': _meta}
                 )
                 self.logger.info(
                     f"🎯 TRAILING TIER UPGRADE: {symbol} → tier {target_tier} "
-                    f"(callback {target_cb}%) at +{profit_percent*100:.1f}% profit (algoId: {new_id})"
+                    f"(callback {target_cb}%) at +{profit_percent*100:.1f}% profit (algoId: {new_id}); "
+                    f"previous tier kept LIVE as fallback (algoId: {trailing_id}) until {activate} arms"
                 )
             else:
-                # Re-place failed. The old trailing is already cancelled, so the position
-                # would have NO trailing AND (if exchange_trailing stayed True) the bot would
-                # also skip software checks → unprotected. Drop exchange_trailing so the
-                # bot-side sentinel takes over this position (no unprotected window).
-                position['exchange_trailing'] = False
-                position['trailing_order_id'] = None
-                try:
-                    import json as _json
-                    _meta = _json.loads(position.get('metadata') or '{}')
-                except Exception:
-                    _meta = {}
-                _meta['exchange_trailing'] = False
-                _meta['trailing_order_id'] = None
-                self.trade_manager.db.update_trade_metadata(
-                    position['trade_id'], {'metadata': _meta}
-                )
-                # A3: ensure the position has REAL downside protection in software-managed
-                # mode. The hard STOP_MARKET (sl_order_id) may be stale/missing; re-place a
-                # hard stop at the current stop_loss level so a drop can't run away.
-                try:
-                    self._ensure_hard_stop(position, sl_side, quantity)
-                except Exception as _e:
-                    self.logger.warning(f"[tier] A3 hard-stop ensure failed for {symbol}: {_e}")
+                # Re-place failed, but the OLD trailing was never cancelled — it is
+                # still armed and protecting the position. Keep it as the active
+                # trailing, leave trailing_tier unchanged, and retry the upgrade on
+                # a later tick. No sentinel takeover needed (that path is kept only
+                # for the case where the old order is confirmed gone).
                 self.logger.warning(
-                    f"⚠️ Trailing tier upgrade FAILED for {symbol} (old trailing cancelled). "
-                    f"Fell back to bot-side sentinel — position now software-managed."
+                    f"⚠️ Trailing tier upgrade FAILED for {symbol} — old trailing "
+                    f"(algoId: {trailing_id}) still live and armed; will retry next tick."
                 )
+                continue
     def update_trailing_take_profit(self, symbol, current_price):
         """Update trailing take profit for all positions on a symbol."""
         if not getattr(self.config, 'TRAILING_TP_ENABLED', True):
@@ -673,6 +684,7 @@ class ExitsMixin:
                 sl_id = position.get('sl_order_id')
                 tp_id = position.get('tp_order_id')
                 trailing_id = position.get('trailing_order_id')
+                fallback_trailing_id = position.get('trailing_fallback_id')
                 
                 if sl_id or tp_id or trailing_id:
                     try:
@@ -696,33 +708,47 @@ class ExitsMixin:
                                 exchange_exit_triggered = True
                                 exchange_exit_reason = 'stop_loss'
                                 filled_order = {'id': sl_id}
-                                # Cancel orphan TP + trailing
+                                # Cancel orphan TP + trailing (active tier + fallback)
                                 if tp_id:
                                     self._cancel_exchange_conditional(symbol, tp_id)
                                 if trailing_id:
                                     self._cancel_exchange_conditional(symbol, trailing_id)
-                        
-                            # 2. Check Trailing (native exchange trailing fired first)
-                            if not exchange_exit_triggered and trailing_id and str(trailing_id) not in open_algo_ids:
+                                if fallback_trailing_id:
+                                    self._cancel_exchange_conditional(symbol, fallback_trailing_id)
+
+                            # 2. Check Trailing (native exchange trailing fired first).
+                            # Either the active tier OR the kept-alive fallback may
+                            # fire — watch both ids; whichever drops out closed the
+                            # position (pos_exists cross-check below filters lag).
+                            tracked_trailing = [t for t in (trailing_id, fallback_trailing_id) if t]
+                            fired_trailing = next(
+                                (str(t) for t in tracked_trailing if str(t) not in open_algo_ids), None
+                            )
+                            if not exchange_exit_triggered and tracked_trailing and fired_trailing:
                                 exchange_exit_triggered = True
                                 exchange_exit_reason = 'trailing_stop'
-                                filled_order = {'id': trailing_id}
-                                # Cancel orphan SL + TP
+                                filled_order = {'id': fired_trailing}
+                                # Cancel orphan SL + TP + sibling trailing
                                 if sl_id:
                                     self._cancel_exchange_conditional(symbol, sl_id)
                                 if tp_id:
                                     self._cancel_exchange_conditional(symbol, tp_id)
-                        
+                                for t in tracked_trailing:
+                                    if str(t) != fired_trailing:
+                                        self._cancel_exchange_conditional(symbol, t)
+
                             # 3. Check TP (if SL/trailing didn't fill)
                             if not exchange_exit_triggered and tp_id and str(tp_id) not in open_algo_ids:
                                 exchange_exit_triggered = True
                                 exchange_exit_reason = 'take_profit'
                                 filled_order = {'id': tp_id}
-                                # Cancel orphan SL + trailing
+                                # Cancel orphan SL + trailing (active tier + fallback)
                                 if sl_id:
                                     self._cancel_exchange_conditional(symbol, sl_id)
                                 if trailing_id:
                                     self._cancel_exchange_conditional(symbol, trailing_id)
+                                if fallback_trailing_id:
+                                    self._cancel_exchange_conditional(symbol, fallback_trailing_id)
                         
                             # A fired conditional order always closes the position on the
                             # exchange. If the position still exists, the "missing" order

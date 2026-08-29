@@ -114,7 +114,11 @@ class SyncMixin:
                             'sl_order_id': db_trade.get('sl_order_id'),
                             'tp_order_id': db_trade.get('tp_order_id'),
                             'trailing_order_id': metadata.get('trailing_order_id'),
-                            'exchange_trailing': metadata.get('exchange_trailing', False)
+                            'exchange_trailing': metadata.get('exchange_trailing', False),
+                            # Keep-alive fallback trailing (previous tier, still live
+                            # until the current tier's activation arms)
+                            'trailing_fallback_id': metadata.get('trailing_fallback_id'),
+                            'trailing_activate_price': metadata.get('trailing_activate_price')
                         }
                         
                         # Add back to active memory
