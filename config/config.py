@@ -266,6 +266,19 @@ class Config:
         # E1: retries for the exchange trailing re-place on tier upgrade (self-heal
         # transient -2021/-2011 instead of stranding the position software-managed).
         self.TIER_REPLACE_RETRIES = int(os.getenv('TIER_REPLACE_RETRIES', '3'))
+        # Leverage-aware trailing (2026-08-29): the exchange callbackRate is a % of
+        # PRICE, so ROE give-back = callback x leverage. A flat 3% price trail gave
+        # back 21% ROE at 7x (XMR FUT-2FDE2B0F: peak +39.85% ROE, closed +18.57%).
+        # Bracket the price callback by leverage so ROE give-back stays roughly
+        # constant. Binance bounds: callbackRate 1.0-10.0%.
+        self.TRAILING_CALLBACK_LEV_HIGH = float(os.getenv('TRAILING_CALLBACK_LEV_HIGH', '1.0'))  # lev >= 5
+        self.TRAILING_CALLBACK_LEV_MID = float(os.getenv('TRAILING_CALLBACK_LEV_MID', '2.0'))    # lev 2-4
+        self.TRAILING_CALLBACK_LEV_LOW = float(os.getenv('TRAILING_CALLBACK_LEV_LOW', '3.0'))    # lev 1
+        # Activation is also price-based: 5% price = 35% ROE at 7x before trailing
+        # even starts (XMR armed 0.7% below its peak). Arm earlier on high leverage:
+        # activation = max(floor, target_roe / leverage).
+        self.TRAILING_ACTIVATION_TARGET_ROE = float(os.getenv('TRAILING_ACTIVATION_TARGET_ROE', '15.0'))
+        self.TRAILING_ACTIVATION_LEV_FLOOR = float(os.getenv('TRAILING_ACTIVATION_LEV_FLOOR', '2.0'))
         # C1: re-entry blacklist — consecutive SL losses before blocking the symbol for the session
         self.FUTURES_MAX_LOSS_STREAK = int(os.getenv('FUTURES_MAX_LOSS_STREAK', '1'))
         self.TRAILING_TP_ENABLED = self._str_to_bool('true')
@@ -559,6 +572,53 @@ class Config:
         cap = getattr(self, 'LEV_CAP_HIGH_CONF', 6) if float(confidence) >= hot_conf \
             else getattr(self, 'LEV_CAP_BASE', 5)
         return max(1, min(int(cap), int(getattr(self, 'FUTURES_MAX_LEVERAGE', 10))))
+
+    def get_trailing_callback(self, leverage) -> float:
+        """
+        Leverage-aware TRAILING_STOP_MARKET callbackRate (% of PRICE).
+
+        ROE give-back = price callback x leverage, so the callback is bracketed
+        by the position's leverage to keep give-back roughly constant:
+          lev >= 5 -> TRAILING_CALLBACK_LEV_HIGH (1%  -> 5-10% ROE)
+          lev 2-4  -> TRAILING_CALLBACK_LEV_MID  (2%  -> 4-8% ROE)
+          lev 1    -> TRAILING_CALLBACK_LEV_LOW  (3%  -> 3% ROE, legacy default)
+        Clamped to Binance bounds 1.0-10.0%.
+        """
+        try:
+            lev = int(float(leverage or 1))
+        except (TypeError, ValueError):
+            lev = 1
+        if lev >= 5:
+            cb = self.TRAILING_CALLBACK_LEV_HIGH
+        elif lev >= 2:
+            cb = self.TRAILING_CALLBACK_LEV_MID
+        else:
+            cb = self.TRAILING_CALLBACK_LEV_LOW
+        return max(1.0, min(10.0, float(cb)))
+
+    def get_tier_callback(self, leverage, tier) -> float:
+        """
+        Tier callback = leverage-aware base + tier width (1% per tier), so the
+        trail still widens as a position proves it runs, but in ROE-consistent
+        steps instead of the flat 5%/8% price callbacks (25%/40% ROE at 8x).
+        """
+        base = self.get_trailing_callback(leverage)
+        width = {1: 1.0, 2: 2.0}.get(int(tier), 0.0)
+        return max(1.0, min(10.0, base + width))
+
+    def get_trailing_activation(self, leverage) -> float:
+        """
+        Leverage-aware activation (% of PRICE) for the initial trailing order:
+        arms at ~TRAILING_ACTIVATION_TARGET_ROE % ROE, floored at
+        TRAILING_ACTIVATION_LEV_FLOOR so low leverage keeps a sane distance.
+        (7x: 15/7 = 2.14% price ~= 15% ROE instead of flat 5% = 35% ROE.)
+        """
+        try:
+            lev = max(int(float(leverage or 1)), 1)
+        except (TypeError, ValueError):
+            lev = 1
+        return max(float(self.TRAILING_ACTIVATION_LEV_FLOOR),
+                   float(self.TRAILING_ACTIVATION_TARGET_ROE) / lev)
     
     def is_live_trading(self) -> bool:
         """Check if bot is in live trading mode"""

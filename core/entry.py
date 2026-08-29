@@ -442,12 +442,25 @@ class EntryMixin:
                             
                             # 3. Native TRAILING_STOP_MARKET (only where the market supports it)
                             if supports_trailing:
+                                # Leverage-aware (2026-08-29): callbackRate is % of PRICE,
+                                # so ROE give-back = callback x leverage. Flat 5%/3% cost
+                                # XMR 21% ROE (peak 39.85 -> close 18.57 at 7x).
                                 try:
-                                    activation_price = entry_price * (1 + getattr(self.config, 'TRAILING_STOP_ACTIVATION', 5.0) / 100.0)
+                                    _act_pct = self.config.get_trailing_activation(leverage)
+                                    activation_price = entry_price * (1 + _act_pct / 100.0)
                                     activation_price = float(self.exchange.exchange.price_to_precision(symbol, activation_price))
+                                except AttributeError:
+                                    activation_price = entry_price * (1 + getattr(self.config, 'TRAILING_STOP_ACTIVATION', 5.0) / 100.0)
+                                    try:
+                                        activation_price = float(self.exchange.exchange.price_to_precision(symbol, activation_price))
+                                    except Exception:
+                                        pass
                                 except Exception:
                                     pass
-                                callback_rate = getattr(self.config, 'TRAILING_STOP_DISTANCE', 3.0)
+                                try:
+                                    callback_rate = self.config.get_trailing_callback(leverage)
+                                except AttributeError:
+                                    callback_rate = getattr(self.config, 'TRAILING_STOP_DISTANCE', 3.0)
                                 client_tr = f"apex{str(position['trade_id']).replace('-', '')[-10:]}TR"
                                 trailing_order_id = self._place_exchange_conditional(
                                     symbol, sl_side, 'TRAILING_STOP_MARKET',

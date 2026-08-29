@@ -31,9 +31,15 @@ class ExitsMixin:
 
             strategy_name = position['strategy']
 
-            # Calculate profit threshold for activation
-            activation_threshold = self.config.TRAILING_STOP_ACTIVATION / 100  # Convert to decimal
-            trailing_distance = self.config.TRAILING_STOP_DISTANCE / 100  # Convert to decimal
+            # Calculate profit threshold for activation — leverage-aware (ROE
+            # give-back = price % x leverage; see config.get_trailing_*).
+            try:
+                _lev = position.get('leverage') or 1
+                activation_threshold = self.config.get_trailing_activation(_lev) / 100
+                trailing_distance = self.config.get_trailing_callback(_lev) / 100
+            except AttributeError:
+                activation_threshold = self.config.TRAILING_STOP_ACTIVATION / 100  # Convert to decimal
+                trailing_distance = self.config.TRAILING_STOP_DISTANCE / 100  # Convert to decimal
 
             if position['side'] == 'buy':
                 # Track highest price since entry
@@ -148,7 +154,9 @@ class ExitsMixin:
         The exchange's native TRAILING_STOP_MARKET has a fixed callbackRate baked
         in at placement. As a position proves it runs, widen the callback so we
         stop cutting winners early (audit: 53% of trailing exits were premature).
-        Tier 0 (<+8%): keep entry callback. Tier 1 (+8%): 5%. Tier 2 (+20%): 8%.
+        Tier 0 (<+8%): keep entry callback. Tier 1 (+8%): base+1%. Tier 2 (+20%):
+        base+2% (base = leverage-aware callback, see config.get_tier_callback —
+        flat 5%/8% price callbacks gave back 25-40% ROE at 5-8x).
 
         KEEP-ALIVE (2026-08-29): each tier change now places the new (wider)
         trailing FIRST and keeps the previous tier's order live as a fallback
@@ -163,9 +171,7 @@ class ExitsMixin:
             return
 
         tier1_at = getattr(self.config, 'TRAILING_TIER_1_AT', 8.0) / 100.0
-        tier1_cb = getattr(self.config, 'TRAILING_TIER_1_CALLBACK', 5.0)
         tier2_at = getattr(self.config, 'TRAILING_TIER_2_AT', 20.0) / 100.0
-        tier2_cb = getattr(self.config, 'TRAILING_TIER_2_CALLBACK', 8.0)
 
         for position_key, position in list(self.positions.items()):
             if position['symbol'] != symbol:
@@ -218,6 +224,15 @@ class ExitsMixin:
                 self.logger.debug(f"[tier] {symbol} {position_key}: skip (bad entry {entry})")
                 continue
             profit_percent = (current_price - entry) / entry
+
+            # Leverage-aware tier callbacks (ROE give-back = price callback x lev)
+            _lev = float(position.get('leverage') or 1)
+            try:
+                tier1_cb = self.config.get_tier_callback(_lev, 1)
+                tier2_cb = self.config.get_tier_callback(_lev, 2)
+            except AttributeError:
+                tier1_cb = getattr(self.config, 'TRAILING_TIER_1_CALLBACK', 5.0)
+                tier2_cb = getattr(self.config, 'TRAILING_TIER_2_CALLBACK', 8.0)
 
             # Determine target tier from current profit
             if profit_percent >= tier2_at:
