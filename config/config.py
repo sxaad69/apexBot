@@ -347,7 +347,7 @@ class Config:
         # ratio >= MOMENTUM_MIN_VOL_RATIO on the next data window. Kills the
         # dead-entry bucket (24 entries / 12% win / -$8.28 this week) while
         # keeping genuine runners (fwd 8%+ = 90% win). Opt-out via .env.
-        self.MOMENTUM_GATE_ENABLED = self._str_to_bool(os.getenv('MOMENTUM_GATE_ENABLED', 'true'))
+        self.MOMENTUM_GATE_ENABLED = self._str_to_bool(os.getenv('MOMENTUM_GATE_ENABLED', 'false'))
         self.MOMENTUM_GATE_STRATEGIES = [s.strip().upper() for s in
                                          os.getenv('MOMENTUM_GATE_STRATEGIES', 'A6').split(',') if s.strip()]
         self.MOMENTUM_MIN_MOVE_PCT = float(os.getenv('MOMENTUM_MIN_MOVE_PCT', '0.5'))
