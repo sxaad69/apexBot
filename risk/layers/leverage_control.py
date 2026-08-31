@@ -43,12 +43,12 @@ class LeverageControlLayer:
         """
         Evaluate and set dynamic leverage using ATR + Confidence hybrid model.
         """
+        confidence       = trade_params.get('confidence', 0.5)
         equity_risk_pct  = getattr(self.config, 'MAX_EQUITY_RISK_PERCENT', 3.0)
         get_cap          = getattr(self.config, 'get_leverage_cap', None)
         abs_max_leverage = get_cap(confidence) if callable(get_cap) \
             else getattr(self.config, 'FUTURES_MAX_LEVERAGE', 10)
         min_atr_pct      = getattr(self.config, 'MIN_ATR_PERCENT', 0.1)
-        confidence       = trade_params.get('confidence', 0.5)
         current_drawdown = account_state.get('drawdown_percent', 0)
         symbol           = trade_params.get('symbol', 'UNKNOWN')
         strategy         = trade_params.get('strategy', 'Unknown')
