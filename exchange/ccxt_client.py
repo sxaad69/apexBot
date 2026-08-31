@@ -7,7 +7,7 @@ import ccxt
 import time
 from typing import Dict, Any, List, Optional
 from .base_client import BaseExchangeClient
-from .rate_limiter import RateLimiter
+from .rate_limiter import get_global_rate_limiter
 
 
 class CCXTExchangeClient(BaseExchangeClient):
@@ -38,16 +38,18 @@ class CCXTExchangeClient(BaseExchangeClient):
 
         # --- RATE-LIMIT FIX (Task 1.2): Global token-bucket safety net ---
         # Caps total REST weight/min regardless of code path. Binance futures
-        # limit is 2,400 weight/min; we budget 1,500 for headroom.
+        # limit is 2,400 weight/min; we budget 1,500 for headroom. All client
+        # instances share ONE bucket (get_global_rate_limiter) so combined
+        # weight on this IP is pre-throttled, not 1500-per-instance.
         max_weight = getattr(config, 'RATE_LIMIT_MAX_WEIGHT_PER_MIN', 1500)
         # Cold-start warmup: ramp from a low budget to full over a few minutes
         # so a fresh restart doesn't burst the API (all caches empty) and trip
         # the -1003 IP ban. Defaults: 3 min warmup from 30% budget.
         warmup_secs = float(getattr(config, 'RATE_LIMIT_WARMUP_SECONDS', 180.0))
         warmup_floor = float(getattr(config, 'RATE_LIMIT_WARMUP_FLOOR_RATIO', 0.30))
-        self.rate_limiter = RateLimiter(max_weight_per_min=max_weight, logger=logger,
-                                        warmup_seconds=warmup_secs,
-                                        warmup_floor_ratio=warmup_floor)
+        self.rate_limiter = get_global_rate_limiter(
+            max_weight_per_min=max_weight, logger=logger,
+            warmup_seconds=warmup_secs, warmup_floor_ratio=warmup_floor)
         
         self.logger.system(
             f"CCXT client initialized: {self.exchange_id} "

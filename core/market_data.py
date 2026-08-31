@@ -48,6 +48,13 @@ class MarketDataMixin:
         try:
             self.logger.info("Fetching top trading pairs by volume...")
 
+            # Throttle discovery through the shared token bucket — fetch_tickers
+            # is a heavy call (~80 weight) and runs once per 15-min cache expiry,
+            # often right at cold-start when the budget is lowest.
+            rl = getattr(self.exchange, 'rate_limiter', None)
+            if rl is not None:
+                rl.acquire(weight=80, timeout=30)
+
             # Fetch all tickers
             tickers = self.exchange.exchange.fetch_tickers()
             

@@ -46,6 +46,13 @@ class AlgoOrdersMixin:
         cached = self._order_status_cache.get(order_id)
         if cached and (now - cached[1]) < self._order_status_ttl:
             return cached[0]
+        # Drain the shared token bucket before the REST poll. On saturation,
+        # fall back to stale cache (same as the exception path) so exit checks
+        # never add un-throttled weight to the 5s per-order poll loop.
+        rl = getattr(self.exchange, 'rate_limiter', None)
+        if rl is not None and not rl.acquire(weight=2, timeout=3):
+            if cached:
+                return cached[0]
         try:
             status = self.exchange.exchange.fetch_order(order_id, symbol)
             self._order_status_cache[order_id] = (status, now)

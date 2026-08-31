@@ -281,10 +281,17 @@ class ExitsMixin:
             #   short (BUY  trailing): activation must be BELOW mark -> mark * (1-buf)
             rearm_buffer = getattr(self.config, 'TRAILING_REARM_BUFFER', 0.5) / 100.0
             is_long = position.get('side') == 'buy'
-            try:
-                mark = float(self.exchange.exchange.fetch_ticker(symbol)['last'])
-            except Exception:
-                mark = current_price
+            # Rate-limit the REST mark fallback through the shared bucket; if
+            # saturated, fall back to the sentinel's last-known price (already
+            # the behavior on fetch failure) rather than adding un-throttled
+            # weight on the 0.5s tick path.
+            mark = current_price
+            rl = getattr(self.exchange, 'rate_limiter', None)
+            if rl is None or rl.acquire(weight=2, timeout=5):
+                try:
+                    mark = float(self.exchange.exchange.fetch_ticker(symbol)['last'])
+                except Exception:
+                    mark = current_price
             if is_long:
                 activate = mark * (1 + rearm_buffer)
             else:

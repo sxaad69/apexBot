@@ -114,3 +114,44 @@ class RateLimiter:
                 'calls_made': self.calls_made,
                 'waits_seconds': round(self.waits_seconds, 2),
             }
+
+
+# ---------------------------------------------------------------------------
+# Global singleton: ONE shared token bucket per process/host IP.
+# Previously every CCXTExchangeClient instance built its OWN RateLimiter
+# (1500/min each), so combined REST weight across clients/threads/scripts on
+# the same IP could exceed Binance's 2,400/min cap and trip -1003.
+# All clients now drain the same budget, keeping the discovery burst
+# pre-throttled under the IP cap regardless of which code path is running.
+# ---------------------------------------------------------------------------
+_GLOBAL_LIMITER: Optional['RateLimiter'] = None
+_GLOBAL_LIMITER_LOCK = threading.Lock()
+
+
+def get_global_rate_limiter(max_weight_per_min: int = 1500, logger=None,
+                            warmup_seconds: float = 180.0,
+                            warmup_floor_ratio: float = 0.30) -> 'RateLimiter':
+    """Return the process-wide shared RateLimiter, created once on first use.
+
+    Every CCXTExchangeClient instance shares this bucket so per-minute REST
+    weight across all code paths stays under Binance's IP cap. First caller's
+    config wins (all instances load the same config values).
+    """
+    global _GLOBAL_LIMITER
+    if _GLOBAL_LIMITER is None:
+        with _GLOBAL_LIMITER_LOCK:
+            if _GLOBAL_LIMITER is None:
+                _GLOBAL_LIMITER = RateLimiter(
+                    max_weight_per_min=max_weight_per_min,
+                    logger=logger,
+                    warmup_seconds=warmup_seconds,
+                    warmup_floor_ratio=warmup_floor_ratio,
+                )
+    return _GLOBAL_LIMITER
+
+
+def reset_global_rate_limiter() -> None:
+    """Clear the shared instance (tests / tooling only)."""
+    global _GLOBAL_LIMITER
+    with _GLOBAL_LIMITER_LOCK:
+        _GLOBAL_LIMITER = None
