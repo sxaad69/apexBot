@@ -729,7 +729,7 @@ class SQLiteManager:
         except Exception:
             pass
 
-    def purge_old_activity(self, days: int = 7):
+    def purge_old_activity(self, days: int = 15):
         """Purge old logs to prevent disk bloat.
         
         market_analysis is high-volume sweep data — kept for only 1 day.

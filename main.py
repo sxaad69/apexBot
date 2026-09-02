@@ -428,6 +428,13 @@ class ApexHunterBot(SyncMixin):
         print("⚙️  Loading configuration...")
         self.config = Config()
         self.logger = MongoLogger(self.config)
+
+        # Prune old log DB entries on startup so activity_log never grows
+        # unbounded (keeps last 15 days, then VACUUMs to reclaim disk).
+        try:
+            self.logger.cleanup_old_logs(days=15)
+        except Exception as e:
+            print(f"⚠️ Log DB prune skipped: {e}")
         
         # Centralized Mode Management: Prioritize config, ignore CLI if provided
         self.mode = self.config.TRADING_MODE
