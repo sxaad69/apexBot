@@ -951,7 +951,18 @@ class ApexHunterBot(SyncMixin):
                         futures.append(future)
                         
                     # Wait for completion of this concurrent batch to prevent unbounded memory growth
-                    concurrent.futures.wait(futures)
+                    # SWEEP_TIMEOUT: if a worker thread hangs (e.g. GIL starvation,
+                    # logging deadlock, or stuck API call), cancel stragglers instead
+                    # of blocking the entire sweep indefinitely.
+                    sweep_timeout = getattr(self.config, 'SWEEP_TIMEOUT_SEC', 120)
+                    done, not_done = concurrent.futures.wait(futures, timeout=sweep_timeout)
+                    if not_done:
+                        self.logger.warning(
+                            f"⏱️ {len(not_done)}/{len(futures)} workers did not finish "
+                            f"within {sweep_timeout}s — cancelling stragglers"
+                        )
+                        for f in not_done:
+                            f.cancel()
 
                     # Aggregate results (rejections only)
                     for future in futures:

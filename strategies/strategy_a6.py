@@ -136,6 +136,10 @@ class StrategyA6(BaseStrategy):
             try:
                 book = await exchange.watch_order_book(symbol, limit=50)
                 self.latest_orderbooks[symbol] = book
+                # Yield the GIL after each decode so the event loop can process
+                # other coroutines. Without this, 150+ concurrent streams each
+                # doing heavy dict decoding starve the rest of the loop.
+                await asyncio.sleep(0.01)
             except Exception as e:
                 self.logger.debug(f"[A6 WSS] {symbol} stream error: {e}. Retrying in 5s...")
                 await asyncio.sleep(5)
@@ -166,7 +170,7 @@ class StrategyA6(BaseStrategy):
                 # At full-universe (~600 symbols), subscribing to all orderbooks
                 # would choke the WSS connection. Cap at A6_MAX_WATCH_SYMBOLS,
                 # prioritizing open positions + top-volume symbols.
-                max_watch = getattr(self.config, 'A6_MAX_WATCH_SYMBOLS', 400)
+                max_watch = getattr(self.config, 'A6_MAX_WATCH_SYMBOLS', 150)
                 if len(pairs) > max_watch:
                     # Prioritize: open positions first, then top-volume (already sorted)
                     open_symbols = set()
@@ -187,6 +191,10 @@ class StrategyA6(BaseStrategy):
                     if sym not in active_tasks or active_tasks[sym].done():
                         task = asyncio.ensure_future(self._watch_single_symbol(exchange, sym))
                         active_tasks[sym] = task
+                    # Yield periodically during task creation to prevent holding
+                    # the GIL for the entire batch (stalls the event loop).
+                    if len(active_tasks) % 20 == 0:
+                        await asyncio.sleep(0.01)
 
                 await asyncio.sleep(60)
 
