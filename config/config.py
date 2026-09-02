@@ -113,7 +113,7 @@ class Config:
         
         # ===== Full-Universe Scanning (Phase 2) =====
         self.OHLCV_BATCH_MAX = int('100')  # Max stale-candle refreshes per sweep
-        self.A6_MAX_WATCH_SYMBOLS = int('400')  # Cap A6 orderbook WSS subscriptions
+        self.A6_MAX_WATCH_SYMBOLS = int('150')  # Cap A6 orderbook WSS subscriptions (150, not 400 — 400 pegs one core / starves the GIL)
         
         # ===== Discovery / Concurrency (Rate-Limit Task 1.5) =====
         self.DISCOVERY_MAX_WORKERS = int('3')   # Smoother concurrency vs 5
