@@ -395,10 +395,10 @@ class MongoLogger(Logger):
 
     # ===== Cleanup and maintenance =====
 
-    def cleanup_old_logs(self, days: int = 15):
+    def cleanup_old_logs(self, days: int = 7):
         """Clean up expired log entries in SQLite.
 
-        Keeps the last `days` (default 15) of activity_log / strategy_signals
+        Keeps the last `days` (default 7) of activity_log / strategy_signals
         and purges everything older, then VACUUMs to reclaim disk.
         """
         if self.sqlite_enabled:

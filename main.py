@@ -430,9 +430,9 @@ class ApexHunterBot(SyncMixin):
         self.logger = MongoLogger(self.config)
 
         # Prune old log DB entries on startup so activity_log never grows
-        # unbounded (keeps last 15 days, then VACUUMs to reclaim disk).
+        # unbounded (keeps last 7 days, then VACUUMs to reclaim disk).
         try:
-            self.logger.cleanup_old_logs(days=15)
+            self.logger.cleanup_old_logs(days=7)
         except Exception as e:
             print(f"⚠️ Log DB prune skipped: {e}")
         
