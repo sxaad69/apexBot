@@ -1,193 +1,144 @@
 # Apex Hunter V14 — Session Memory
 
-> Updated from the "fix verification + paper mode" session (opencode, Aug 20 2026).
-> This file helps any future agent/engineer understand the current state, recent work,
-> key decisions, and outstanding issues WITHOUT re-reading the whole history.
+> Updated from the **Sep 4–5 2026 forensic session** ("why did P&L die after Aug 20").
+> Supersedes the Aug 20 session doc. All findings below were verified against
+> exchange data (`/fapi/v1/income`, positionRisk) and the bot's own file logs —
+> not the bot's DB alone. **No code changes have been applied yet** — the fix
+> plan is analysis-complete and awaiting approval.
 
 ---
 
-## 🧭 Current Repo State (as of session end)
+## 🧭 Current Snapshot (Sep 4 2026, 21:05 UTC)
 
-- **Branch:** `main` (local == `origin/main` == deployed on AWS mainnet)
-- **HEAD:** `6753423` — "feat: merge validated A6 fixes — regime/trend rework, tiered trailing (root cause+call path), C1 blacklist, C2 sizing, enriched rejections"
-- **Uncommitted local changes (this session):** 10 files — `config/config.py`, `core/exits.py`, `core/trade_manager.py`, `exchange/algo_orders.py`, `exchange/ccxt_client.py`, `main.py`, `sync_positions.py`, `database/sqlite_manager.py`, `core/entry.py`, `strategies/strategy_a6.py` (not yet committed or pushed)
-- **Testnet branch:** `feat/exchange-side-sl` (deployed to `~/apexBotTestnet` on AWS, has extra A7 work NOT on main)
-- **Live host (AWS):** SSH alias `final` (the ONLY working host for this project)
+- **Deployed:** local `main` == `final:~/apexBot` == `97dfcbb` (ops prune). Service `apex-bot` up since **Sep 3 06:14 UTC**, NRestarts=0.
+- **Equity:** $151.44 (6 open positions, ~$291 notional, all A6 entries, lev 1–4x)
+- **Persisted peak:** $269.91 → **drawdown −43.9%**
+- **P&L since Aug 1:** +$21.72 lifetime. **ALL profit was pre-Aug-20** (Aug 1–20: +$41.06 over 531 closes). Aug 21→Sep 4: **−$19.34** over 151 closes.
+- **Binance bans:** **ZERO** since Sep 2 (no 418, no cooldown engaged). Only 4 soft 429s — one 6-second burst on "fetch top pairs" at 00:03 UTC Sep 4. The rate-limit defenses (cold-start warmup, ban-aware load_markets, shared token bucket) are holding.
+- **Host:** AWS SSH alias `final`, 2 vCPU / 2GB RAM, load ~0.15–0.39, **disk 89% full (1.6GB free)**.
   - `~/apexBot` = mainnet (branch `main`, service `apex-bot`)
-  - `~/apexBotTestnet` = testnet (branch `feat/exchange-side-sl`, service `apex-bot-testnet`)
-  - `~/apexBot/venv/bin/python3` is the shared venv used by BOTH bots
-- **DBs:** mainnet `data/apex_hunter.db`, activity log `data/activity_log.db`
+  - `~/apexBotTestnet` = testnet (branch `feat/exchange-side-sl`, service `apex-bot-testnet`) — NOT re-verified this session
+  - `~/apexBot/venv/bin/python3` shared venv (Python 3.14, ccxt 4.5.70)
+- **DBs:** mainnet `data/apex_hunter.db` (trades/settings), `data/activity_log.db` (activity_log incl. `sweep_summary` JSONs + `paper_signals`).
 
 ---
 
 ## 🏗️ Architecture (fast orientation)
 
-- **Bot:** Binance Futures automated trading, "Verify Before Write" architecture.
-- **Strategy A6 (the ONLY live strategy on mainnet):** Orderbook imbalance (WSS, real-time) + 15m candle confirmation filters (regime/ADX/volume/EMA200).
-  - Signal = `MASSIVE BID WALL +65%` (imbalance threshold 0.65), whale check, session confidence floor.
-- **Entry:** `execute_paper_trade` → risk chain (11 layers) → exchange-side algo orders (SL/TP/trailing via Binance Algo API).
-- **Exit:** `PriorityExitSentinel` thread → `check_exits` (0.5s) — now the ONLY path where tiered trailing runs.
-- **Config gotcha:** `config/config.py` is the ACTIVE config (`import config` → `config/__init__.py`). Root `config.py` is a LEGACY duplicate — do NOT edit it.
-- **Timeframe:** `TIMEFRAME=15m` (A6). A7 (testnet only) uses 5m.
+- **Bot:** Binance USDT-M Futures, "Verify Before Write". Since 2025-12-09 ALL conditional orders go through the **Algo Order API** (`fapiPrivatePostAlgoOrder`, algoType=CONDITIONAL) — legacy `/fapi/v1/order` rejects them (-4120).
+- **Strategy A6 (only live strategy):** orderbook imbalance via WSS (wall ≥0.65) + 15m filters. Entries come from the **WSS path only** — the REST sweep scans ~500 symbols but logged **0 entries across 4,241 sweeps** (Sep 3–4); sweeps are for scanning/rejection data only.
+- **A6 WSS watch cap:** `A6_MAX_WATCH_SYMBOLS = 150` (hardcoded `config/config.py:116`, NOT env-overridable). Was 400; cut Sep 2 after the GIL hang (root cause separately fixed in `2f51930`).
+- **A9 (paper-only on mainnet):** `STRATEGY_A9_PAPER=true` in `.env` — fires ~150 signals/day, places zero orders.
+- **Exit:** `PriorityExitSentinel` thread → `check_exits` (sentinel tick ~1.5s) → exchange-side SL/TP/trailing polling + `update_trailing_tier` (tiered trailing) + software fallback.
+- **Risk chain:** 11 layers; `TIERED_RISK_ENABLED=true`, elite conf gate 0.90, tier gates at 50%/70% drawdown, drawdown-adjusted sizing (67%/33%) and leverage.
+- **Config gotcha:** edit `config/config.py` (ACTIVE), never root `config.py` (legacy duplicate).
 
 ---
 
-## 🔍 This Session's Investigation (questions asked + findings)
+## 📉 The Aug-20 P&L Cliff (forensic conclusion)
 
-### 1. Forensics / audit workflow
-- `audit/apex_forensics.py` — 3 modes: Exit Forensics, Top Gainers (`--toppers`), Missed Alpha (`--missed-alpha`).
-- `audit/parse_forensics_report.py` — renders saved JSON report.
-- **Key fix made:** Mode 2 + Mode 3 now read REAL sweep data from `activity_log.db` (sweep_summary JSONs), not just the `rejections` table (which is empty on mainnet).
-- **Key fix made:** Mode 2 shows per-symbol rejection TIMELINES from sweep events.
-- **Key fix made:** Mode 3 merges sweep rejections ALWAYS (not only when risk-layer table empty) — commit `593106d` (on main).
+| Era | Closes/day | Win rate | Net |
+|---|---|---|---|
+| Aug 1–20 | ~33 | ~48–57% | **+$41.06** (best: Aug 9 +24.7, Aug 18–20 +42.5 combined) |
+| Aug 21–27 | ~18 | 20–49% | −11.8 (repeat-loser churn: PIEVERSE 0/9, MOCA 0/8, Q 0/6) |
+| Aug 28–30 | ~0 | — | momentum-gate blackout (Aug 28 02:17→Aug 29 04:27 blocked EVERY A6 entry) + zero-position days |
+| Aug 31–Sep 2 | ~1 | — | GIL hang, bot down Sep 1 → Sep 3 06:14 UTC |
+| Sep 3–4 | ~7 | 33–50% | +0.3 |
 
-### 2. Why the bot missed moonshots (TUT +99%, AGT +168%, AVNT +141%...)
-- A6 rejects top gainers mostly via `LOW_IMBALANCE` (orderbook wall <65%) and `FILTER_VOLUME < $10k` (absolute 15m volume).
-- Moonshots (trend grinders like AGT) never had a 65% wall on real production orderbook → structurally invisible to A6.
-- **Testnet ≠ mainnet orderbook** — testnet's thin book inflates imbalance, so A6 "catches" runners on testnet that don't exist on mainnet.
-
-### 3. Backtests done this session
-- **Funding/OI squeeze hypothesis: DISPROVEN.** Moonshots had POSITIVE funding (long-crowded momentum), not negative. Only 1 signal in the whole window.
-- **5m volume+momentum acceleration: VALIDATED (backtest only).** vol x1.5 + 0.5% move → net +1536% / 869 trades / 43% win / avg +1.77%. Blue-chips produced ZERO signals. → This became Strategy A7.
-  - ⚠️ **A7 live on testnet is BLEEDING** (−$77, 22% win). Backtest edge didn't transfer — hindsight bias. NOT ready for mainnet.
-
-### 4. Loss pattern analysis (mainnet Aug 8-14)
-- Daily net: Aug8 +$4.57, Aug9 +$30.55, Aug10 +$5.13, Aug11 +$1.68, Aug12 +$12.78, Aug13 **−$8.73**, Aug14 +$14.04.
-- **Re-entry trap found:** MORPHO (0-for-3), TA (0-for-2), Q (0-for-2) — repeat losers.
-- **Leverage-aware SL is GOOD** (normalizes ~9% ROE, exchange-SL fills tight). Deep losses (US −22%, TUT −14%) were **MANUAL_ADOPT restart-reconciliation artifacts**, not SL failures.
-- **Circuit-breaker gap:** consecutive-loss CB (`ENABLE_CIRCUIT_BREAKER`) is DISABLED; portfolio CB only watches UNREALIZED pnl. Realized daily bleed falls through.
-- **⚠️ CRITICAL BUG FOUND (FIXED):** `MAX_DAILY_LOSS_PERCENT` was set to 5 at config.py:144 then **OVERWRITTEN to 15** at config.py:235 (exchange-side-SL block). Daily loss limit was $20.52 instead of $6.84. **Fixed** — overwrite removed, replaced with explanatory comment (config.py:269-272). Verified in code.
-
-### 5. Tiered trailing investigation (B1)
-- Designed: callback widens 3% → 5% at +8% → 8% at +20% (exchange algo-order replacement).
-- **Two real bugs found & fixed:**
-  1. `64f35cf` — exchange order IDs were LOST when `record_entry()` returned a fresh dict → tier + exit detection silently no-op'd (the AGT bug). Fixed by re-applying `sl_order_id`/`tp_order_id`/`trailing_order_id` onto the final position object.
-  2. `e4e81ee` — the tier hook was wired into `run_cycle`'s exit block, which is skipped by `entry_only=True`; the sentinel calls `check_exits` DIRECTLY. Tier code was DEAD. Fixed by calling `update_trailing_tier` at the top of `check_exits`.
-- **Verified working on testnet:** VELVET upgraded to tier 1 (+8.1%). SYN's replace failed but fell back safely to sentinel (Bug-3 fallback works).
-
-### 6. DB bloat cleanup (D3)
-- Removed `strategy_evaluations` + `daily_regime_summary` schema from `sqlite_manager.py` (CREATE TABLE, indexes, log methods).
-- Removed write blocks from `main.py` (REJECTED enrichment + daily_regime_summary).
-- Deleted paper server's `activity_log.db` (1.3GB + 706MB WAL). Recreated fresh on bot start.
-- VACUUMed local DB (108MB → 53MB). All 8 files compile clean.
-
-### 7. activateprice precision bug (found during local testnet)
-- Tier upgrade in `exits.py` was passing raw float as `activate_price` to Binance algo order → `-1102` error.
-- Fixed by wrapping in `float(self.exchange.exchange.price_to_precision(symbol, activate))`.
-- Verified locally: tier upgrade now places successfully (but only 2 ratchets observed, no full tier upgrade yet).
-
-### 8. Per-strategy paper mode (new feature, local only)
-- Added `STRATEGY_A6_PAPER`, `STRATEGY_A7_PAPER`, `STRATEGY_A8_PAPER` env flags to `config/config.py`.
-- Added paper gate at top of `execute_entry()` in `core/entry.py` — logs `📋 [PAPER]`, writes to DB, returns.
-- Added `paper_signals` table + `log_paper_signal()` + `resolve_paper_signals()` to `sqlite_manager.py`.
-- Added paper resolution in `main.py` sweep cycle (every 300s, compares mark prices against SL/TP).
-- All files compile clean. A8 paper mode tested locally — no signals fired yet.
+**Five stacked causes:** (1) Aug 20–22 deploy cluster (safety merge + sync fixes + `0d442cc` tier-flip signal system) broke entry selectivity → activity collapsed ~75% and win rate cratered; (2) trailing-tier upgrades broken since Aug 29 (see bug #1) → winners give back; (3) A9 shipped as paper-only → the new alpha source never trades; (4) signal pipe narrowed (WSS 400→150 + Aug 27/31 throttles); (5) account 43.9% underwater amplifies drawdown-adjusted throttles. **Note:** "every day green till Aug 20" is survivorship memory — Aug 10–17 had 6 red days (Aug 13 −$17.5).
 
 ---
 
-## ✅ What Was Merged to Mainnet This Session
+## 🐛 Bugs Found Sep 4 (NOT yet fixed)
 
-### Already on main before this session
-- Exchange-side SL (`5c770db` → merged as `4598e2e`): native STOP_MARKET + TRAILING_STOP_MARKET + TAKE_PROFIT_MARKET via Binance Algo API.
-- Hard-SL-failure safety (`cd5fbfd`): if hard STOP_MARKET fails, bot cancels exchange orders + keeps sentinel control.
-- Blue-chip exclusions (`d58c01b`): `FUTURES_EXCLUDE_SYMBOLS=BTC,ETH,BNB,SOL,XRP,DOGE,ADA,AVAX,LINK,DOT,TRX,LTC,BCH,ATOM,NEAR,APT,TON,SUI,UNI,ARB,OP`.
-- Error-spam fixes (`83fe34c`): `capital_return`/`net_pnl` KeyError on already-closed exits + wrong `create_stop_market_order` signature.
+### 1. Tier trailing clientAlgoId collision — **P0, storming live right now**
+- Entry trailing and EVERY tier upgrade share one static ID: `apex{trade_id[-10:]}TR` (`core/entry.py:464`, `core/exits.py:304`). The keep-alive design (`cd3a082`, Aug 29) keeps the old trailing OPEN when placing the new tier → Binance rejects with **-4116 ClientOrderId duplicated** every time.
+- Measured: **11,078× -4116 + 312× -2021 in ~39h** (Sep 3 06:14 → Sep 4 21:04). Exactly **1 success** (and only on the 3rd retry — Binance dup-check is racy). Symbols: 龙虾 8,641 / SKR 1,987 / BR 450. **BR was an open position storming at analysis time.**
+- Side damage: E1's retry loop (3 attempts + 2×0.5s sleeps) runs INSIDE the sentinel tick → blocks the shared sentinel thread ~1–1.5s/tick per storming symbol → delays exit detection for ALL positions; floods logs; wastes rate budget.
+- Net effect: tier upgrades are dead → winners never widen their callback → the AGT/AVNT give-back problem the tiers were built to fix is back.
 
-### Merged this session (`6753423` — 5 validated commits, in order)
-1. `e9692ad` — A6 moonshot capture + exit discipline (A1 regime rework, A2 trend-override, B1 tier base, C1 blacklist, C2 sizing)
-2. `489f74b` — add `FUTURES_MAX_LOSS_STREAK` config
-3. `64f35cf` — tiered-trailing root cause + cache invalidation + sentinel fallback + diagnostics
-4. `e4e81ee` — tiered trailing sentinel-path fix (the one that made it actually run)
-5. `1675aec` — enrich sweep rejection data (imbalance/whale/regime/adx/vol_ratio/ema200)
+### 2. D4 loss-streak seed is double-broken dead code + streak=1 death-spiral risk
+- `_seed_symbol_loss_streak` (`main.py:704`, called `main.py:837` on `ApexHunterBot`) does `getattr(self, 'db', None)` — **`self.db` exists only on `PaperTradingEngine`** (`main.py:108`), not on the bot → silently returns, never seeds, never logs.
+- Second bug: even if it ran, it writes `self.symbol_loss_streak` on the **bot** while the entry gate (`core/entry.py:109`) reads the **engine's** dict (`main.py:51`).
+- `FUTURES_MAX_LOSS_STREAK` defaults to **1** (`config/config.py:283`, not set in final's `.env`) → ONE SL exit blocks a symbol for the session (confirmed live: XAN blocked at streak=1, Sep 4 13:12).
+- Simulated against live DB: a working seed at streak=1 would blacklist **69 symbols** with NO time-decay (blocked symbol can't win → can't reset → blocked forever). Currently two bugs cancel each other; fixing the seed alone is HARMFUL. Note `'stop_loss' in 'trailing_stop'` is True → trailing exits count as SL losses in C1.
 
-**Mainnet verified after deploy:** A6-only, max positions 15, top-1000, 21 exclusions, tier config 8/5+20/8, exchange-SL on, 0 errors.
+### 3. Observability gaps
+- The `rejections` table stopped being written Aug 22 (D3 removed the writer — by design). Risk-layer rejection visibility now lives ONLY in `sweep_summary` JSONs in `activity_log.db`.
+- journald effective coverage ≈ **4 hours** — churned by a `datetime.utcnow()` DeprecationWarning firehose (Python 3.14; `database/sqlite_manager.py:800`, `bot_logging/mongo_logger.py:361`). Bot's OWN file logs (`logs/`, 7-day retention via `cleanoldlogs.sh`) are the real forensic source and are grep-able.
+- Sentinel telemetry `rate_budget=?` is broken (`main.py:698` reads `available_weight` which the limiter doesn't expose) — we're blind on remaining weight.
 
----
-
-## 🚫 NOT Merged (excluded intentionally)
-
-- `2bd6b08` — testnet: enable all strategies A1-A6 + top-100 (testnet-specific config)
-- `49c5103` — testnet: max open positions 200 (mainnet stays 15)
-- `240f61d` — Strategy A7 (bleeding on testnet, NOT ready)
-- **Daily-loss-limit fix** — FIXED locally (config.py:269-272). Needs commit + push to mainnet.
-- **Per-strategy paper mode** — local only (not committed). `STRATEGY_A6_PAPER`, `STRATEGY_A7_PAPER`, `STRATEGY_A8_PAPER` flags + `paper_signals` DB table + resolution in sweep cycle. A8 paper mode tested locally (no signals fired yet).
+### Verified NON-issues (don't re-litigate)
+- **peak_balance propagation works** (main.py:476 → risk_manager → MaximumDrawdownLayer) — layer correctly sees the $269.91 peak / 43.9% DD after restarts.
+- **Zero Binance bans** since Sep 2; 429 defenses holding; the Sep 1–2 outage was internal GIL starvation, not a ban.
+- The 429 burst at 00:03 UTC: midnight UTC is the bot's most rate-stressed minute.
 
 ---
 
-## 🔬 Testnet Extra Work (branch `feat/exchange-side-sl`, NOT on main)
+## 🔬 A9 Verdict (paper data, 953 resolved signals Aug 28–Sep 4)
 
-- **A7 Strategy (`240f61d`)**: 5m volume+momentum acceleration. Enabled on testnet (all 7 strategies, top-100, max-pos 200). **BLEEDING — 59 trades, 22% win, −$77.** Needs signal-quality work.
-- All fixes from the merge PLUS A7 + testnet config.
-
-### Local Testnet Run (Aug 20 2026)
-- **Config:** A6 live, A8 paper mode, A7 disabled. Tier thresholds lowered to 2%/4% for faster tier-upgrade testing.
-- **PID 1948** running locally. WSS connected, sentinel active, 31 positions monitored.
-- **Results:** A6 fired WOO (+87.6% wall, rejected by CorrelationRiskLayer) and ADA (+68.2%, rejected). HANA exited via exchange-side SL (-$10.02). CROSS ratcheted trailing stop twice (0.1105 → 0.1165 at +2%). No A8 paper signals fired yet.
+**No edge — keep parked.** 48.1% win rate, symmetric exits (median SL = TP = 2.55%), **−0.18%/trade expectancy BEFORE fees**. Sliced by confidence / ADX / volume-ratio / move-size: no bucket clears fees (best: conf<0.75 → +0.13%; move<1% → +0.05%; worst: conf 0.80–0.85 → −0.74%, i.e. the confidence score is anti-predictive there). Median hold ~7h. Microcap spread+slippage would make live worse. Keep `STRATEGY_A9_PAPER=true` — it's a free ongoing research dataset. Same lesson as A7.
 
 ---
 
-## 📋 Key Config Values (mainnet, current)
+## ✅ Fix Plan (analysis-complete, awaiting approval — do in this order)
 
-| Var | Value |
-|---|---|
-| `TRADING_MODE` | live |
-| `EXCHANGE_ENVIRONMENT` | production |
-| `EXCHANGE_SIDE_SL` | true |
-| `ENABLE_EXCHANGE_STOPS` | true |
-| `FUTURES_MAX_OPEN_POSITIONS` | 15 |
-| `FUTURES_MAX_LEVERAGE` | 10 |
-| `FUTURES_AUTO_TOP_N` | 1000 |
-| `FUTURES_EXCLUDE_SYMBOLS` | 21 blue-chips |
-| `TRAILING_STOP_ACTIVATION` / `DISTANCE` | 5.0 / 3.0 |
-| `TRAILING_TIER_1_AT` / `CALLBACK` | 8.0 / 5.0 |
-| `TRAILING_TIER_2_AT` / `CALLBACK` | 20.0 / 8.0 |
-| `FUTURES_MAX_LOSS_STREAK` | 2 |
-| `ENABLE_CIRCUIT_BREAKER` | **true** (consecutive-loss CB, 5 losses → 0.5h halt) |
-| `LOSS_CB_ENABLED` | true (portfolio CB, unrealized only) |
-| `MAX_DAILY_LOSS_PERCENT` | **5** (fixed — was overwritten to 15) |
-| `FUTURES_MAX_DAILY_LOSS_PERCENT` | 5 |
+| # | Item | Type | Risk | Why |
+|---|---|---|---|---|
+| 1 | **Logging:** `Environment=PYTHONWARNINGS=ignore::DeprecationWarning` in `apex-bot.service` | config | ~zero | Halves stderr/journal churn; disk is 89%; makes everything after verifiable. Do FIRST. |
+| 2 | **Tier fix:** tier-scoped client IDs (`apex{tid[-8:]}TR{tier}`, ≤15 chars) + on -4116 adopt the existing open trailing as success + per-position retry cooldown (~60s) instead of blocking per-tick retries | code (`core/exits.py`, error visibility in `exchange/algo_orders.py`) | low | Stops the live storm; restores winner protection. Fallback (old stays armed) unchanged. |
+| 3 | **Blacklist bundle:** `FUTURES_MAX_LOSS_STREAK=2` (env, final `.env`) + repair D4 seed (use `self.engine.db`, write `self.engine.symbol_loss_streak`) + 72h time window on seeded exits | env + code | low IF bundled | Stops repeat-loser churn without the 69-symbol death spiral. MUST land together. |
+| 4 | **WSS cap:** make `A6_MAX_WATCH_SYMBOLS` env-overridable, step 150→250, observe load/bans 24h | code + env | low | Restores signal surface. Expectation: won't restore Aug volume alone (scoring gates dominate; collapse began at 400 streams). |
+| — | **A9** | none | — | Parked (see verdict). |
+| — | **50% DD gate — USER DECISION** | config | — | At equity ≤ **$134.95** (=50% DD from $269.91 peak), TIERED_RISK gate blocks every signal with conf <0.90 — A6 confs run 0.81–0.87 → near-total shutdown, one bad day away ($16.5). Intended risk-off, or recalibrate? |
 
 ---
 
-## ⚠️ Outstanding / TODO (priority order)
+## 📋 Key Config Values (mainnet, verified Sep 4)
 
-1. **Commit + push all local changes to mainnet** — 10 modified files including D1 fix, paper mode, tier threshold changes, activateprice precision fix, DB cleanup methods.
-2. **A7** — either rework its filters (higher volume bar, win-rate floor) or park it. Not ready for mainnet.
-3. **Tier re-place flakiness** — the exchange algo-order replace intermittently fails (SYN case). Consider a retry wrapper. Safety fallback already works.
-4. **`_update_symbol_loss_streak` (C1)** is in-memory only — resets on restart. Seed from DB if desired.
-
----
-
-## 🔬 Fix Verification Status (as of session end)
-
-| Fix | Code Done | Compiled | Live Verified |
-|-----|-----------|----------|---------------|
-| D1 — daily loss limit overwrite | ✅ | ✅ | ❌ needs commit + mainnet deploy |
-| D2 — circuit breaker | ✅ | ✅ | ❌ needs 5 consecutive losses |
-| D3 — DB bloat | ✅ | ✅ | ✅ VACUUM'd, eval tables removed |
-| A1 — tier rearm buffer | ✅ | ✅ | ❌ needs tier upgrade in trade |
-| A1 — activateprice precision | ✅ | ✅ | ❌ needs tier upgrade in trade |
-| A2 — phantom close guard | ✅ | ✅ | ✅ HANA confirmed zero on exchange |
-| A3 — hard-stop fallback | ✅ | ✅ | ❌ needs STOP_MARKET failure |
-| B1 — cancel algos on exit | ✅ | ✅ | ❌ needs bot-placed SL exit |
-| B2 — orphan algo sweep | ✅ | ✅ | ✅ running every 300s |
-| B3 — tier dedupe | ✅ | ✅ | ✅ CROSS ratcheted without double-fire |
-| D4 — loss streak seed from DB | ✅ | ✅ | ❌ needs restart + check logs |
-| E1 — tier retry (3 attempts) | ✅ | ✅ | ❌ needs tier replace failure |
-| E2 — MFE/MAE watermarks | ✅ | ✅ | ❌ needs trade exit |
-| Paper mode (per-strategy) | ✅ | ✅ | ❌ A8 no signals fired yet |
-
-**Summary:** 5/14 verified in live conditions. Remaining 9 need specific market events (tier upgrades, exits, failures) that haven't occurred in the testnet run.
+| Var | Value | Note |
+|---|---|---|
+| `TRADING_MODE` / `EXCHANGE_ENVIRONMENT` | live / production | |
+| `EXCHANGE_SIDE_SL` / `ENABLE_EXCHANGE_STOPS` | true / true | Algo API (CONDITIONAL) |
+| `FUTURES_MAX_OPEN_POSITIONS` | 15 | |
+| `A6_MAX_WATCH_SYMBOLS` | 150 | **hardcoded** config.py:116, not env |
+| `STRATEGY_A9_ENABLED` / `STRATEGY_A9_PAPER` | true / **true** | A9 = shadow mode on mainnet |
+| `FUTURES_MAX_LOSS_STREAK` | **1 (default!)** | not in final `.env`; config.py:283. Docs said 2. Death-spiral risk w/ working seed |
+| `TIERED_RISK_ENABLED` | true (hardcoded) | |
+| `NORMAL_SIGNAL_THRESHOLD` / `ELITE_SIGNAL_THRESHOLD` | 50 / 70 (% DD) | 50% gate blocks conf<0.90 |
+| `ELITE_CONFIDENCE_LEVEL` | 0.90 | A6 confs 0.81–0.87 → would be blocked |
+| `MAX_DRAWDOWN_PERCENT` / `FUTURES_MAX_DRAWDOWN_PERCENT` | 70 | sizing 67%/33% at 23.1/46.9 DD |
+| `INITIAL_CAPITAL` | 136.78 ("Real Wallet Baseline") | layer peak starts here, ratchets to recovered peak |
+| `settings.peak_balance` (DB) | 269.91 | recovered at startup ✓ |
+| `TRAILING_TIER_1/2_AT` | 8 / 20 | upgrades broken — bug #1 |
+| `TIER_REPLACE_RETRIES` | 3 | E1 — harmful as implemented (blocks sentinel) |
 
 ---
 
 ## 📌 Gotchas / Lessons (don't repeat)
 
-- **`record_entry()` returns a fresh dict** — re-apply exchange order IDs onto the final `self.positions[...]` object or they're silently lost.
-- **Sentinel calls `check_exits` directly, not `run_cycle`** — any exit/trailing logic must live in `check_exits`, or it's dead code.
-- **Two `config.py` files** — edit `config/config.py`, never root `config.py`.
-- **Testnet orderbook is NOT representative** of mainnet — A6 signals that fire on testnet often don't exist on production.
-- **`LOG_LEVEL=INFO`** — debug-level rejection values (imbalance %) are NOT captured in logs; only via the enriched sweep data (which is now on mainnet).
-- **Two bots share one venv** — use `~/apexBot/venv/bin/python3` for both, from the correct working dir.
-- **Do not edit mainnet `.env` carelessly** — `.env` is git-ignored; the server copy is the live one. Back up before changes.
-- **`activateprice` must go through `price_to_precision`** — Binance rejects `-1102 Mandatory parameter 'activateprice' was not sent, was empty/null, or malformed` if raw float is used. Always `float(self.exchange.exchange.price_to_precision(symbol, activate))` before passing to algo order.
+**New from Sep 4 session:**
+- **Binance Algo API: `clientAlgoId` must be unique among OPEN orders.** Keep-alive (place-new-before-cancel-old) + a static per-trade ID = -4116 every time. Use tier/attempt-scoped IDs; treat -4116 as "already exists" and adopt.
+- **Never block-sleep inside the sentinel tick path.** E1's 2×0.5s sleeps per failing symbol stall exit detection for ALL positions. Use per-position cooldown/backoff state.
+- **`self.db` lives on `PaperTradingEngine`, not `ApexHunterBot`** — `getattr(self, 'db')` on the bot silently returns None. D4's dead code shipped because the silent-return has no log. Silent fallbacks need a log line.
+- **`'stop_loss' in 'trailing_stop'` is True** — C1's substring check counts trailing exits as SL losses. Intended? Document it.
+- **Host is UTC; user's local date is ahead** — "today" differs between the two; check `date -u` first.
+- **journald ≈ 4h coverage only; the bot's file logs (`logs/`, 7-day) are the forensic source.** Bot names the log file at process start (current: `apex_hunter_20260903.log` despite being Sep 4) — grep by pattern, not filename.
+- **The REST sweep never enters trades** — all entries come from the WSS signal path. Sweep-level rejection tallies (LOW_IMBALANCE etc.) are the sweep's own evaluations, not the WSS path's.
+- **log file writes stop being representative if the daily-file name misleads** — mtime, not name, tells freshness.
+
+**Carried forward (still true):**
+- `record_entry()` returns a fresh dict — re-apply exchange order IDs onto the final `self.positions[...]` object or they're lost.
+- The sentinel calls `check_exits` directly, not `run_cycle` — exit/trailing logic must live in `check_exits` or it's dead code.
+- Two `config.py` files — edit `config/config.py`, never root `config.py`.
+- Testnet orderbook is NOT representative of mainnet (thin book inflates imbalance — the A7 lesson).
+- `activateprice` must go through `price_to_precision` or Binance returns -1102.
+- `.env` is git-ignored; the server copy is the live one — back up before changes.
+- Two bots share one venv (`~/apexBot/venv/bin/python3`) — run from the correct working dir.
+- Binance deprecates v2 endpoints (`/fapi/v1/positionRisk`, `/fapi/v1/account` → 404 as of Sep 4); use v3 (`fapiPrivateV3GetPositionRisk`, `fapiPrivateV3GetAccount`).
+
+---
+
+## 🗂️ Untracked side dirs (in repo root, NOT part of the bot)
+
+- `backtest/` — A7 discriminator/SL-stress scripts. `tmp/` — signal-economics & exit-rule sims. `test agency/` — unrelated ComfyUI/YouTube project. `.freebuff/` — tool state. `graphify-out/` — codebase knowledge graph (Aug 27–29 run: 1687 nodes / 4059 edges; `GRAPH_REPORT.md` + `graph.html`).
