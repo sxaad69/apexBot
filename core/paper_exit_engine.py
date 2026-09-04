@@ -134,8 +134,13 @@ class PaperExitEngine:
             act = min(act, cap)
         return act
 
-    def resolve_incremental(self, max_symbols: int = 60) -> int:
-        """Resolve open paper signals against 1m bars. Returns resolved count."""
+    def resolve_incremental(self, max_symbols: int = 24) -> int:
+        """Resolve open paper signals against 1m bars. Returns resolved count.
+
+        max_symbols is deliberately low: each get_ohlcv costs weight 5 from the
+        SHARED token bucket the live sweep also draws from — the first pass with
+        60 symbols tripped ~340 sweep-future timeouts (23:08 burst). 24/pass
+        still covers ~90 opens in two sweeps."""
         try:
             open_signals = self.db.get_open_paper_signals()
         except Exception as e:
