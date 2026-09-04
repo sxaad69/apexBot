@@ -804,19 +804,29 @@ class ApexHunterBot(SyncMixin):
                             self.logger.info(f"🧹 [B2] Swept {len(ids)} orphan algo order(s) for {s}")
                 except Exception as e:
                     self.logger.warning(f"⚠️ [B2] periodic orphan sweep error: {e}")
-                # Paper signal resolution: resolve open paper signals against current mark prices
+                # Paper signal resolution: production-faithful exit engine first
+                # (1m bars, hard-SL/TP/tier-trailing/fees — core/paper_exit_engine.py),
+                # legacy mark-compare kept as fallback for anything the engine
+                # could not fetch bars for.
                 try:
                     has_paper = any(
                         getattr(self.config, f'STRATEGY_{s.name.split(":")[0].strip()}_PAPER', False)
                         for s in self.engine.strategies
                     )
                     if has_paper and hasattr(self.logger, 'db'):
+                        if getattr(self, '_paper_exit_engine', None) is None:
+                            from core.paper_exit_engine import PaperExitEngine
+                            self._paper_exit_engine = PaperExitEngine(
+                                self.engine.exchange, self.logger.db, self.logger, self.config)
+                        resolved = self._paper_exit_engine.resolve_incremental()
+                        if resolved:
+                            self.logger.info(f"📋 [PAPER] Engine resolved {resolved} paper signal(s)")
                         marks = {}
                         for sym, price in self.engine.current_prices.items():
                             marks[sym] = price
                         resolved = self.logger.db.resolve_paper_signals(marks)
                         if resolved:
-                            self.logger.info(f"📋 [PAPER] Resolved {resolved} paper signal(s)")
+                            self.logger.info(f"📋 [PAPER] Fallback mark-resolve: {resolved}")
                 except Exception as e:
                     self.logger.warning(f"📋 [PAPER] resolve error: {e}")
                 # S2: Periodic DB↔exchange reconciliation — detect orphan positions

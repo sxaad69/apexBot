@@ -434,6 +434,94 @@ class SQLiteManager:
             print(f"❌ SQLite resolve_paper_signals error: {e}")
             return 0
 
+    # --- Paper Exit Engine support (2026-09-05) ---
+
+    def _ensure_paper_meta_column(self, cursor):
+        """Idempotently add paper_signals.metadata (per-signal trailing state)."""
+        cursor.execute("PRAGMA table_info(paper_signals)")
+        if 'metadata' not in [c[1] for c in cursor.fetchall()]:
+            cursor.execute("ALTER TABLE paper_signals ADD COLUMN metadata TEXT")
+
+    def get_open_paper_signals(self) -> list:
+        """Open paper signals with everything the exit engine needs."""
+        try:
+            conn = self._get_connection(self.log_db)
+            try:
+                cursor = conn.cursor()
+                self._ensure_paper_meta_column(cursor)
+                cursor.execute(
+                    "SELECT id, strategy, symbol, side, entry_price, stop_loss, take_profit, "
+                    "confidence, timestamp, metadata FROM paper_signals WHERE outcome IS NULL"
+                )
+                cols = [c[0] for c in cursor.description]
+                return [dict(zip(cols, r)) for r in cursor.fetchall()]
+            finally:
+                conn.close()
+        except Exception as e:
+            print(f"❌ SQLite get_open_paper_signals error: {e}")
+            return []
+
+    def update_paper_signal_exit(self, sig_id, outcome: str, exit_price: float,
+                                 pnl_pct: float, metadata: str) -> bool:
+        try:
+            conn = self._get_connection(self.log_db)
+            try:
+                cursor = conn.cursor()
+                self._ensure_paper_meta_column(cursor)
+                cursor.execute(
+                    "UPDATE paper_signals SET outcome=?, exit_price=?, pnl_pct=?, "
+                    "resolved_at=datetime('now'), metadata=? WHERE id=?",
+                    (outcome, exit_price, pnl_pct, metadata, sig_id)
+                )
+                conn.commit()
+                return True
+            finally:
+                conn.close()
+        except Exception as e:
+            print(f"❌ SQLite update_paper_signal_exit error: {e}")
+            return False
+
+    def update_paper_signal_metadata(self, sig_id, metadata: str) -> bool:
+        try:
+            conn = self._get_connection(self.log_db)
+            try:
+                cursor = conn.cursor()
+                self._ensure_paper_meta_column(cursor)
+                cursor.execute("UPDATE paper_signals SET metadata=? WHERE id=?", (metadata, sig_id))
+                conn.commit()
+                return True
+            finally:
+                conn.close()
+        except Exception as e:
+            print(f"❌ SQLite update_paper_signal_metadata error: {e}")
+            return False
+
+    def recent_paper_winrate(self, strategy_prefix: str, n: int = 20):
+        """(wins, n) over the last n resolved signals for strategies LIKE prefix%.
+
+        Only outcomes resolved in the last 12h count: the reversal brake pauses
+        entries, and paused entries produce no new outcomes — without the
+        recency window the brake would freeze itself on permanently (deadlock).
+        """
+        try:
+            conn = self._get_connection(self.log_db)
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT SUM(CASE WHEN outcome='win' THEN 1 ELSE 0 END), COUNT(*) FROM ("
+                    "SELECT outcome FROM paper_signals WHERE strategy LIKE ? AND "
+                    "outcome IN ('win','loss') AND resolved_at >= datetime('now', '-12 hours') "
+                    "ORDER BY timestamp DESC LIMIT ?)",
+                    (strategy_prefix + '%', n)
+                )
+                w, c = cursor.fetchone()
+                return (w or 0, c or 0)
+            finally:
+                conn.close()
+        except Exception as e:
+            print(f"❌ SQLite recent_paper_winrate error: {e}")
+            return (0, 0)
+
     def get_setting(self, key: str, default: Any = None) -> Any:
         """Get a setting from the persistent settings table"""
         try:
