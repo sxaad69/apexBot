@@ -3,14 +3,15 @@
 > Updated from the **Sep 4–5 2026 forensic session** ("why did P&L die after Aug 20").
 > Supersedes the Aug 20 session doc. All findings below were verified against
 > exchange data (`/fapi/v1/income`, positionRisk) and the bot's own file logs —
-> not the bot's DB alone. **No code changes have been applied yet** — the fix
-> plan is analysis-complete and awaiting approval.
+> not the bot's DB alone. **The four approved fixes are deployed** (Sep 4
+> 21:17/21:31 UTC restarts) — see Fix Plan table for per-fix verification status;
+> two items still need a market event to fully verify.
 
 ---
 
 ## 🧭 Current Snapshot (Sep 4 2026, 21:05 UTC)
 
-- **Deployed:** local `main` == `final:~/apexBot` == `97dfcbb` (ops prune). Service `apex-bot` up since **Sep 3 06:14 UTC**, NRestarts=0.
+- **Deployed:** local `main` == `origin/main` == `final:~/apexBot` == `863aac8` (fix(tier,c1,wss) batch). Service `apex-bot` restarted **Sep 4 21:31:57 UTC** (PID 481091) with the fixes; `PYTHONWARNINGS=ignore::DeprecationWarning` active in the unit (old unit backed up at `/tmp/apex-bot.service.bak-*`).
 - **Equity:** $151.44 (6 open positions, ~$291 notional, all A6 entries, lev 1–4x)
 - **Persisted peak:** $269.91 → **drawdown −43.9%**
 - **P&L since Aug 1:** +$21.72 lifetime. **ALL profit was pre-Aug-20** (Aug 1–20: +$41.06 over 531 closes). Aug 21→Sep 4: **−$19.34** over 151 closes.
@@ -49,24 +50,22 @@
 
 ---
 
-## 🐛 Bugs Found Sep 4 (NOT yet fixed)
+## 🐛 Bugs Found Sep 4 (fixes deployed Sep 4 21:31 UTC — commit `863aac8`)
 
-### 1. Tier trailing clientAlgoId collision — **P0, storming live right now**
-- Entry trailing and EVERY tier upgrade share one static ID: `apex{trade_id[-10:]}TR` (`core/entry.py:464`, `core/exits.py:304`). The keep-alive design (`cd3a082`, Aug 29) keeps the old trailing OPEN when placing the new tier → Binance rejects with **-4116 ClientOrderId duplicated** every time.
-- Measured: **11,078× -4116 + 312× -2021 in ~39h** (Sep 3 06:14 → Sep 4 21:04). Exactly **1 success** (and only on the 3rd retry — Binance dup-check is racy). Symbols: 龙虾 8,641 / SKR 1,987 / BR 450. **BR was an open position storming at analysis time.**
-- Side damage: E1's retry loop (3 attempts + 2×0.5s sleeps) runs INSIDE the sentinel tick → blocks the shared sentinel thread ~1–1.5s/tick per storming symbol → delays exit detection for ALL positions; floods logs; wastes rate budget.
-- Net effect: tier upgrades are dead → winners never widen their callback → the AGT/AVNT give-back problem the tiers were built to fix is back.
+### 1. Tier trailing clientAlgoId collision — **FIXED, full verification pending a +8% runner**
+- **Was:** entry trailing and EVERY tier upgrade shared one static ID (`apex{trade_id}TR`, `core/entry.py:464` + `core/exits.py:304`); keep-alive (`cd3a082`) keeps the old trailing OPEN → Binance **-4116** on every attempt. Measured: **11,078× -4116 + 312× -2021 in ~39h** (龙虾 8,641 / SKR 1,987 / BR 450), exactly 1 success. E1's in-loop retry (3× + 0.5s sleeps) blocked the shared sentinel thread ~2s/tick per storming symbol.
+- **Fix:** tier-scoped IDs (`apex{tid[-10:]}TR{tier}`), adopt-before-place (`_find_open_trailing_by_client_id` in `exchange/algo_orders.py` heals lost-response placements), one attempt per tick + per-position cooldown (`TIER_RETRY_COOLDOWN=60s`, config.py).
+- **Verified:** code deployed, compiles, config loads; 0× -4116 since restart. **NOT yet verifiable:** an actual successful upgrade + fallback retirement needs a position crossing +8% (none was in band at deploy: BR +4.9% was closest). Watch: `🎯 TRAILING TIER UPGRADE` / `[tier] ... adopted` lines, and that -4116 never returns.
 
-### 2. D4 loss-streak seed is double-broken dead code + streak=1 death-spiral risk
-- `_seed_symbol_loss_streak` (`main.py:704`, called `main.py:837` on `ApexHunterBot`) does `getattr(self, 'db', None)` — **`self.db` exists only on `PaperTradingEngine`** (`main.py:108`), not on the bot → silently returns, never seeds, never logs.
-- Second bug: even if it ran, it writes `self.symbol_loss_streak` on the **bot** while the entry gate (`core/entry.py:109`) reads the **engine's** dict (`main.py:51`).
-- `FUTURES_MAX_LOSS_STREAK` defaults to **1** (`config/config.py:283`, not set in final's `.env`) → ONE SL exit blocks a symbol for the session (confirmed live: XAN blocked at streak=1, Sep 4 13:12).
-- Simulated against live DB: a working seed at streak=1 would blacklist **69 symbols** with NO time-decay (blocked symbol can't win → can't reset → blocked forever). Currently two bugs cancel each other; fixing the seed alone is HARMFUL. Note `'stop_loss' in 'trailing_stop'` is True → trailing exits count as SL losses in C1.
+### 2. D4 loss-streak seed was double-broken dead code + streak=1 death-spiral — **FIXED & VERIFIED (seed) / config verified (gate)**
+- **Was:** `_seed_symbol_loss_streak` (`main.py:704`) read `self.db` on ApexHunterBot (exists only on `PaperTradingEngine`, `main.py:108`) → silent no-op since Aug 20; also wrote the bot's dict while the entry gate reads the engine's dict (`main.py:51`). `FUTURES_MAX_LOSS_STREAK` defaulted to **1** → with a working seed, 69 symbols would be permanently blacklisted (no decay).
+- **Fix:** seed now uses `self.engine.db`, writes `engine.symbol_loss_streak`, and windows exits to `SYMBOL_BLACKLIST_WINDOW_HOURS=72` so blacklists decay; streak default 1→**2**.
+- **Verified:** restart log `[D4] Seeded symbol loss-streak blacklist: 6 blocked symbol(s) in last 72h from 13 closed trade(s): {Q, SKR, RONIN, 1000XEC, US, XAN}` — matches the pre-deploy SQL prediction exactly. Config loads as streak=2 / window=72. **NOT yet verifiable:** the C1 gate blocking at exactly 2 consecutive SL losses needs a real 2-loss symbol.
 
-### 3. Observability gaps
-- The `rejections` table stopped being written Aug 22 (D3 removed the writer — by design). Risk-layer rejection visibility now lives ONLY in `sweep_summary` JSONs in `activity_log.db`.
-- journald effective coverage ≈ **4 hours** — churned by a `datetime.utcnow()` DeprecationWarning firehose (Python 3.14; `database/sqlite_manager.py:800`, `bot_logging/mongo_logger.py:361`). Bot's OWN file logs (`logs/`, 7-day retention via `cleanoldlogs.sh`) are the real forensic source and are grep-able.
-- Sentinel telemetry `rate_budget=?` is broken (`main.py:698` reads `available_weight` which the limiter doesn't expose) — we're blind on remaining weight.
+### 3. Observability gaps — **warning firehose FIXED; two residual gaps**
+- **FIXED:** `PYTHONWARNINGS=ignore::DeprecationWarning` in `apex-bot.service` (commit `54e5af6`) — 0 DeprecationWarning lines in journald post-restart (was ~2 per log event).
+- Residual: the `rejections` table is still not written (D3 design — risk-layer rejections live only in `sweep_summary` JSONs), and sentinel telemetry `rate_budget=?` is still broken (`main.py:698` reads `available_weight`, which the limiter doesn't expose).
+- Note: every restart shows ~12–14 "Rate limiter timeout" warnings during the 3-min cold-start warmup — that's the designed 30%→100% ramp (baseline: 14 in the whole previous 39h run), not a regression.
 
 ### Verified NON-issues (don't re-litigate)
 - **peak_balance propagation works** (main.py:476 → risk_manager → MaximumDrawdownLayer) — layer correctly sees the $269.91 peak / 43.9% DD after restarts.
@@ -81,16 +80,16 @@
 
 ---
 
-## ✅ Fix Plan (analysis-complete, awaiting approval — do in this order)
+## ✅ Fix Plan — EXECUTED Sep 4 21:31 UTC (commit `863aac8`); verification status per item
 
-| # | Item | Type | Risk | Why |
+| # | Item | Deployed | Verified now | Pending (needs market event) |
 |---|---|---|---|---|
-| 1 | **Logging:** `Environment=PYTHONWARNINGS=ignore::DeprecationWarning` in `apex-bot.service` | config | ~zero | Halves stderr/journal churn; disk is 89%; makes everything after verifiable. Do FIRST. |
-| 2 | **Tier fix:** tier-scoped client IDs (`apex{tid[-8:]}TR{tier}`, ≤15 chars) + on -4116 adopt the existing open trailing as success + per-position retry cooldown (~60s) instead of blocking per-tick retries | code (`core/exits.py`, error visibility in `exchange/algo_orders.py`) | low | Stops the live storm; restores winner protection. Fallback (old stays armed) unchanged. |
-| 3 | **Blacklist bundle:** `FUTURES_MAX_LOSS_STREAK=2` (env, final `.env`) + repair D4 seed (use `self.engine.db`, write `self.engine.symbol_loss_streak`) + 72h time window on seeded exits | env + code | low IF bundled | Stops repeat-loser churn without the 69-symbol death spiral. MUST land together. |
-| 4 | **WSS cap:** make `A6_MAX_WATCH_SYMBOLS` env-overridable, step 150→250, observe load/bans 24h | code + env | low | Restores signal surface. Expectation: won't restore Aug volume alone (scoring gates dominate; collapse began at 400 streams). |
-| — | **A9** | none | — | Parked (see verdict). |
-| — | **50% DD gate — USER DECISION** | config | — | At equity ≤ **$134.95** (=50% DD from $269.91 peak), TIERED_RISK gate blocks every signal with conf <0.90 — A6 confs run 0.81–0.87 → near-total shutdown, one bad day away ($16.5). Intended risk-off, or recalibrate? |
+| 1 | **Logging:** `PYTHONWARNINGS=ignore::DeprecationWarning` in unit | ✅ `54e5af6` | ✅ 0 DeprecationWarnings in journald post-restart | — |
+| 2 | **Tier fix:** scoped IDs + adopt-on-duplicate + 60s cooldown | ✅ `863aac8` | ✅ compiles, config loads, 0× -4116 since restart | 🕐 a real `🎯 TRAILING TIER UPGRADE` + fallback retirement (needs a position ≥ +8%; none in band at deploy) |
+| 3 | **Blacklist bundle:** streak=2 + seed repair + 72h window | ✅ `863aac8` | ✅ seed log matches prediction exactly (6 symbols); config streak=2/window=72 | 🕐 C1 gate blocking a symbol at exactly 2 consecutive SL losses |
+| 4 | **WSS cap:** env-overridable, 150→250 | ✅ `863aac8` | ✅ config loads as 250; sweeps/sentinel/CPU healthy post-restart | ⚠️ live WSS stream count is not logged — verify via CPU/error-rate over 24h (was 39.9% avg before at 150) |
+| — | **A9** | parked | paper data: no edge (−0.18%/trade) | — |
+| — | **50% DD gate — USER DECISION (open)** | — | at equity ≤ $134.95 all conf<0.90 signals block | — |
 
 ---
 
@@ -101,9 +100,11 @@
 | `TRADING_MODE` / `EXCHANGE_ENVIRONMENT` | live / production | |
 | `EXCHANGE_SIDE_SL` / `ENABLE_EXCHANGE_STOPS` | true / true | Algo API (CONDITIONAL) |
 | `FUTURES_MAX_OPEN_POSITIONS` | 15 | |
-| `A6_MAX_WATCH_SYMBOLS` | 150 | **hardcoded** config.py:116, not env |
+| `A6_MAX_WATCH_SYMBOLS` | **250** (env-overridable) | was hardcoded 150; 400 pegged a core pre-2f51930 |
 | `STRATEGY_A9_ENABLED` / `STRATEGY_A9_PAPER` | true / **true** | A9 = shadow mode on mainnet |
-| `FUTURES_MAX_LOSS_STREAK` | **1 (default!)** | not in final `.env`; config.py:283. Docs said 2. Death-spiral risk w/ working seed |
+| `FUTURES_MAX_LOSS_STREAK` | **2** (default, env-overridable) | was 1; safe now that D4 seed works + window decays |
+| `SYMBOL_BLACKLIST_WINDOW_HOURS` | 72 | D4 seed window (new, Sep 5) |
+| `TIER_RETRY_COOLDOWN` | 60 | new, Sep 5 — one tier attempt per tick, then back off |
 | `TIERED_RISK_ENABLED` | true (hardcoded) | |
 | `NORMAL_SIGNAL_THRESHOLD` / `ELITE_SIGNAL_THRESHOLD` | 50 / 70 (% DD) | 50% gate blocks conf<0.90 |
 | `ELITE_CONFIDENCE_LEVEL` | 0.90 | A6 confs 0.81–0.87 → would be blocked |
