@@ -165,6 +165,44 @@ class AlgoOrdersMixin:
                 return cached[0]
             return None
 
+    def _find_open_trailing_by_client_id(self, symbol: str, client_algo_id: str):
+        """Find an OPEN TRAILING_STOP_MARKET placed with the given clientAlgoId.
+
+        Returns (algoId, activatePrice) — activatePrice may be None — or None when
+        no such order is open / the lookup failed. Used by tier upgrades to adopt
+        a placement whose HTTP response was lost: Binance keeps the clientAlgoId
+        reserved on the open order, so blind re-placing would -4116 forever.
+        Rate-limited and ban-guarded like every other Algo API poll.
+        """
+        rate_limiter = getattr(self.exchange, 'rate_limiter', None)
+        if rate_limiter is not None and not rate_limiter.acquire(weight=3, timeout=5):
+            return None
+        if getattr(self.exchange, '_is_banned', lambda: False)():
+            return None
+        try:
+            resp = self.exchange.exchange.fapiPrivateGetOpenAlgoOrders(
+                {'symbol': self._algo_symbol(symbol)})
+            orders = resp if isinstance(resp, list) else (
+                resp.get('orders', []) if isinstance(resp, dict) else [])
+            for o in orders:
+                if not isinstance(o, dict):
+                    continue
+                cid = str(o.get('clientAlgoId') or o.get('client_algo_id') or '')
+                otype = str(o.get('orderType') or o.get('type') or '').upper()
+                if cid == client_algo_id and otype == 'TRAILING_STOP_MARKET':
+                    activate = o.get('activatePrice')
+                    try:
+                        activate = float(activate) if activate is not None else None
+                    except (TypeError, ValueError):
+                        activate = None
+                    return str(o.get('algoId')), activate
+            return None
+        except Exception as e:
+            if getattr(self.exchange, '_record_ban', None):
+                self.exchange._record_ban(e)
+            self.logger.warning(f"[tier] open-algo client-id lookup failed for {symbol}: {e}")
+            return None
+
     def discover_position_algos(self, symbol):
         """T1: Discover existing open algo orders for a symbol and classify them.
 

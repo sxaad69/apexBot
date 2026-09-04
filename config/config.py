@@ -113,7 +113,7 @@ class Config:
         
         # ===== Full-Universe Scanning (Phase 2) =====
         self.OHLCV_BATCH_MAX = int('100')  # Max stale-candle refreshes per sweep
-        self.A6_MAX_WATCH_SYMBOLS = int('150')  # Cap A6 orderbook WSS subscriptions (150, not 400 — 400 pegs one core / starves the GIL)
+        self.A6_MAX_WATCH_SYMBOLS = int(os.getenv('A6_MAX_WATCH_SYMBOLS', '250'))  # Cap A6 orderbook WSS subscriptions. 400 pegged a core pre-2f51930 (GIL spin, since fixed); 150 was belt-and-braces — stepped to 250 on Sep 5 with host headroom verified (load 0.15-0.39 / 2 cores)
         
         # ===== Discovery / Concurrency (Rate-Limit Task 1.5) =====
         self.DISCOVERY_MAX_WORKERS = int('3')   # Smoother concurrency vs 5
@@ -266,6 +266,9 @@ class Config:
         # E1: retries for the exchange trailing re-place on tier upgrade (self-heal
         # transient -2021/-2011 instead of stranding the position software-managed).
         self.TIER_REPLACE_RETRIES = int(os.getenv('TIER_REPLACE_RETRIES', '3'))
+        # 2026-09-05: tier re-place no longer retries in-loop (that blocked the
+        # sentinel thread ~2s/tick); one attempt per tick with this cooldown.
+        self.TIER_RETRY_COOLDOWN = float(os.getenv('TIER_RETRY_COOLDOWN', '60'))
         # Leverage-aware trailing (2026-08-29): the exchange callbackRate is a % of
         # PRICE, so ROE give-back = callback x leverage. A flat 3% price trail gave
         # back 21% ROE at 7x (XMR FUT-2FDE2B0F: peak +39.85% ROE, closed +18.57%).
@@ -279,8 +282,13 @@ class Config:
         # activation = max(floor, target_roe / leverage).
         self.TRAILING_ACTIVATION_TARGET_ROE = float(os.getenv('TRAILING_ACTIVATION_TARGET_ROE', '15.0'))
         self.TRAILING_ACTIVATION_LEV_FLOOR = float(os.getenv('TRAILING_ACTIVATION_LEV_FLOOR', '2.0'))
-        # C1: re-entry blacklist — consecutive SL losses before blocking the symbol for the session
-        self.FUTURES_MAX_LOSS_STREAK = int(os.getenv('FUTURES_MAX_LOSS_STREAK', '1'))
+        # C1: re-entry blacklist — consecutive SL losses before blocking the symbol
+        # for the session. 2 as designed on Aug 20; 1 (set 6182127) is only safe
+        # while the D4 startup seed is broken — with a working seed it ratchets
+        # toward zero trading (a blocked symbol can never exit profitably and reset).
+        self.FUTURES_MAX_LOSS_STREAK = int(os.getenv('FUTURES_MAX_LOSS_STREAK', '2'))
+        # D4: seed only considers exits inside this window so blacklists decay
+        self.SYMBOL_BLACKLIST_WINDOW_HOURS = float(os.getenv('SYMBOL_BLACKLIST_WINDOW_HOURS', '72'))
         self.TRAILING_TP_ENABLED = self._str_to_bool('true')
 
         # Exchange-Side Execution

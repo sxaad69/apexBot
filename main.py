@@ -702,17 +702,31 @@ class ApexHunterBot(SyncMixin):
             time.sleep(tick)
 
     def _seed_symbol_loss_streak(self):
-        """D4: seed the in-memory C1 re-entry blacklist from the DB at startup so a
-        restart doesn't wipe a symbol's consecutive-SL-loss streak (MORPHO/TA/Q pattern)."""
+        """D4: seed the engine's in-memory C1 re-entry blacklist from the DB at startup so a
+        restart doesn't wipe a symbol's consecutive-SL-loss streak (MORPHO/TA/Q pattern).
+
+        2026-09-05 repair — this was dead code since it shipped: it ran on
+        ApexHunterBot, whose self.db does not exist (self.db lives on
+        PaperTradingEngine), so it silently returned every startup — and even if
+        it had run, it wrote the BOT's dict while the entry gate reads the
+        ENGINE's dict. Exits are also windowed to the last
+        SYMBOL_BLACKLIST_WINDOW_HOURS (default 72) so blacklists decay: a blocked
+        symbol can never exit profitably, so an unwindowed seed only ratchets up."""
         try:
-            db = getattr(self, 'db', None)
+            engine = getattr(self, 'engine', None)
+            db = getattr(engine, 'db', None) if engine is not None else None
             if not db:
+                self.logger.warning("[D4] seed skipped — engine DB not reachable")
                 return
+            window_h = float(getattr(self.config, 'SYMBOL_BLACKLIST_WINDOW_HOURS', 72.0))
+            cutoff = (datetime.utcnow() - timedelta(hours=window_h)).isoformat()
             conn = db._get_connection(db.main_db)
             try:
                 rows = conn.execute(
                     "SELECT symbol, reason, pnl_amount FROM trades "
-                    "WHERE status='CLOSED' ORDER BY exit_time DESC"
+                    "WHERE status='CLOSED' AND exit_time IS NOT NULL AND exit_time >= ? "
+                    "ORDER BY exit_time DESC",
+                    (cutoff,),
                 ).fetchall()
             finally:
                 conn.close()
@@ -725,10 +739,16 @@ class ApexHunterBot(SyncMixin):
                     streak[sym] = streak.get(sym, 0) + 1
                 elif row['pnl_amount'] and row['pnl_amount'] > 0:
                     streak[sym] = 0  # win resets the consecutive streak
-            self.symbol_loss_streak = streak
-            seeded = {k: v for k, v in streak.items() if v > 0}
-            if seeded:
-                self.logger.info(f"[D4] Seeded symbol loss-streak blacklist from DB: {seeded}")
+            # Seed the ENGINE's dict (the C1 entry gate reads
+            # engine.symbol_loss_streak), preserving any streaks already built
+            # in-memory this process.
+            engine.symbol_loss_streak.update(streak)
+            seeded = {k: v for k, v in engine.symbol_loss_streak.items() if v > 0}
+            self.logger.info(
+                f"[D4] Seeded symbol loss-streak blacklist: {len(seeded)} blocked symbol(s) "
+                f"in last {window_h:.0f}h from {len(rows)} closed trade(s)"
+                + (f": {seeded}" if seeded else "")
+            )
         except Exception as e:
             self.logger.warning(f"[D4] Failed to seed symbol loss-streak from DB: {e}")
 

@@ -246,6 +246,14 @@ class ExitsMixin:
             if current_tier >= target_tier:
                 continue  # already at this tier or higher (no log: normal steady-state)
 
+            # Per-position cooldown (2026-09-05): after a failed re-place, back off
+            # before the next attempt. The old per-tick E1 loop (3 attempts +
+            # 0.5s sleeps) blocked the shared sentinel thread ~2s per failing
+            # symbol per tick and hammered the Algo API (11k -4116s in 39h).
+            import time as _time
+            if _time.time() < float(position.get('_tier_retry_after') or 0):
+                continue
+
             self.logger.info(
                 f"[tier] {symbol} evaluating upgrade: profit +{profit_percent*100:.1f}% "
                 f"> tier{target_tier}@+{tier1_at*100 if target_tier==1 else tier2_at*100:.0f}% | "
@@ -301,14 +309,30 @@ class ExitsMixin:
             except Exception:
                 pass
 
-            client_tr = f"apex{str(position['trade_id']).replace('-', '')[-10:]}TR"
-            # E1: retry the re-place a few times to self-heal transient -2021/-2011
-            # placement failures instead of instantly stranding the position in
-            # software-managed mode (the ZEC disaster path).
-            import time as _time
+            # Tier-scoped client ID (2026-09-05): the entry trailing uses
+            # 'apex...TR' and tier-N re-places use 'apex...TR{N}'. Keep-alive keeps
+            # the previous tier OPEN, so the old shared static ID collided with the
+            # live fallback on every attempt (Binance -4116; 11,078 failed
+            # placements in 39h). Cross-tier collisions are now impossible.
+            client_tr = f"apex{str(position['trade_id']).replace('-', '')[-10:]}TR{target_tier}"
+
+            # Adopt-before-place: if a previous attempt for THIS tier actually
+            # landed but its response was lost, Binance still holds the
+            # clientAlgoId — re-placing would -4116 forever. Find and adopt it.
+            adopted = self._find_open_trailing_by_client_id(symbol, client_tr[:36])
             new_id = None
-            _max_retries = getattr(self.config, 'TIER_REPLACE_RETRIES', 3)
-            for _attempt in range(max(1, _max_retries)):
+            if adopted:
+                new_id, _adopted_activate = adopted
+                if _adopted_activate:
+                    try:
+                        activate = float(_adopted_activate)
+                    except (TypeError, ValueError):
+                        pass
+                self.logger.info(
+                    f"[tier] {symbol}: adopted open tier-{target_tier} trailing "
+                    f"(algoId: {new_id}) from a lost-response placement"
+                )
+            else:
                 new_id = self._place_exchange_conditional(
                     symbol, sl_side, 'TRAILING_STOP_MARKET',
                     quantity=quantity,
@@ -316,9 +340,16 @@ class ExitsMixin:
                     callback_rate=target_cb,
                     client_algo_id=client_tr[:36],
                 )
-                if new_id:
-                    break
-                _time.sleep(0.5)
+            if not new_id:
+                # Back off a full cooldown before the next attempt; the OLD
+                # trailing was never cancelled and stays armed the whole time.
+                position['_tier_retry_after'] = _time.time() + float(
+                    getattr(self.config, 'TIER_RETRY_COOLDOWN', 60.0))
+                self.logger.warning(
+                    f"⚠️ Trailing tier-{target_tier} upgrade FAILED for {symbol} — old trailing "
+                    f"(algoId: {trailing_id}) still live and armed; retrying after cooldown."
+                )
+                continue
             if new_id:
                 # Only the immediately-previous tier stays as fallback — retire a
                 # stale one from an earlier upgrade first (keeps per-symbol algo
@@ -351,17 +382,6 @@ class ExitsMixin:
                     f"(callback {target_cb}%) at +{profit_percent*100:.1f}% profit (algoId: {new_id}); "
                     f"previous tier kept LIVE as fallback (algoId: {trailing_id}) until {activate} arms"
                 )
-            else:
-                # Re-place failed, but the OLD trailing was never cancelled — it is
-                # still armed and protecting the position. Keep it as the active
-                # trailing, leave trailing_tier unchanged, and retry the upgrade on
-                # a later tick. No sentinel takeover needed (that path is kept only
-                # for the case where the old order is confirmed gone).
-                self.logger.warning(
-                    f"⚠️ Trailing tier upgrade FAILED for {symbol} — old trailing "
-                    f"(algoId: {trailing_id}) still live and armed; will retry next tick."
-                )
-                continue
     def update_trailing_take_profit(self, symbol, current_price):
         """Update trailing take profit for all positions on a symbol."""
         if not getattr(self.config, 'TRAILING_TP_ENABLED', True):
