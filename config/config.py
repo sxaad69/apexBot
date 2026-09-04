@@ -239,6 +239,12 @@ class Config:
         self.STRATEGY_A7_PAPER = self._str_to_bool(os.getenv('STRATEGY_A7_PAPER', 'false'))
         self.STRATEGY_A8_PAPER = self._str_to_bool(os.getenv('STRATEGY_A8_PAPER', 'false'))
         self.STRATEGY_A9_PAPER = self._str_to_bool(os.getenv('STRATEGY_A9_PAPER', 'false'))
+        # A9 replay-validated gates (2026-09-05, measured on 640 real-fill replays):
+        self.A9_SKIP_CONF_BAND = self._str_to_bool(os.getenv('A9_SKIP_CONF_BAND', 'true'))       # 0.80-0.85 lost -0.38%/trade
+        self.A9_MAX_EXTENSION_PCT = float(os.getenv('A9_MAX_EXTENSION_PCT', '8.0'))              # skip entries >8% off the 12h low; 0 disables
+        self.A9_BRAKE_ENABLED = self._str_to_bool(os.getenv('A9_BRAKE_ENABLED', 'true'))         # pause when recent cohort win rate collapses
+        self.A9_BRAKE_WINDOW = int(os.getenv('A9_BRAKE_WINDOW', '20'))
+        self.A9_BRAKE_MIN_WINRATE = float(os.getenv('A9_BRAKE_MIN_WINRATE', '35.0'))
         
         # Strategy-specific Risk Overrides
         self.STRATEGY_A3_SL_ROE = float('5.0')
@@ -269,6 +275,12 @@ class Config:
         # 2026-09-05: tier re-place no longer retries in-loop (that blocked the
         # sentinel thread ~2s/tick); one attempt per tick with this cooldown.
         self.TIER_RETRY_COOLDOWN = float(os.getenv('TIER_RETRY_COOLDOWN', '60'))
+        # 2026-09-05: cap trailing activation in PRICE terms. The 15%-ROE/leverage
+        # formula needs +15% price at 1x — unreachable for strategies whose winners
+        # peak at +2..8% (A6 trailing exits avg +1..4%; SKR gave back +12% to the
+        # SL because activation never armed). Cap applies to A6 live AND the paper
+        # exit engine. 0 disables (pre-Sep-5 behavior).
+        self.TRAILING_ACTIVATION_PRICE_CAP = float(os.getenv('TRAILING_ACTIVATION_PRICE_CAP', '4.0'))
         # Leverage-aware trailing (2026-08-29): the exchange callbackRate is a % of
         # PRICE, so ROE give-back = callback x leverage. A flat 3% price trail gave
         # back 21% ROE at 7x (XMR FUT-2FDE2B0F: peak +39.85% ROE, closed +18.57%).
@@ -625,8 +637,15 @@ class Config:
             lev = max(int(float(leverage or 1)), 1)
         except (TypeError, ValueError):
             lev = 1
-        return max(float(self.TRAILING_ACTIVATION_LEV_FLOOR),
-                   float(self.TRAILING_ACTIVATION_TARGET_ROE) / lev)
+        act = max(float(self.TRAILING_ACTIVATION_LEV_FLOOR),
+                  float(self.TRAILING_ACTIVATION_TARGET_ROE) / lev)
+        # 2026-09-05: price-based cap — at 1x the ROE formula demands +15% price,
+        # which the strategy's actual winner profile (+2..8%) never reaches, so
+        # the trailing never armed (SKR: +12% peak -> full give-back to SL).
+        cap = float(getattr(self, 'TRAILING_ACTIVATION_PRICE_CAP', 0) or 0)
+        if cap > 0:
+            act = min(act, cap)
+        return act
     
     def is_live_trading(self) -> bool:
         """Check if bot is in live trading mode"""

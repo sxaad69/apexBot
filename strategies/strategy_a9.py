@@ -32,6 +32,8 @@ core behavior.
 
 from typing import Dict, Optional
 
+import time
+
 import pandas as pd
 
 from .base_strategy import BaseStrategy
@@ -67,6 +69,17 @@ class StrategyA9(BaseStrategy):
         import threading
         self._indicator_cache = {}
         self._indicator_cache_lock = threading.Lock()
+
+        # --- Replay-validated gates (2026-09-05, see AGENTS.md) ---
+        # Every gate below was measured on the real-fill 1m replay of 640
+        # September paper signals before being coded.
+        self.skip_conf_band = bool(getattr(config, 'A9_SKIP_CONF_BAND', True))
+        self.max_extension_pct = float(getattr(config, 'A9_MAX_EXTENSION_PCT', 8.0))
+        self.brake_enabled = bool(getattr(config, 'A9_BRAKE_ENABLED', True))
+        self.brake_window = int(getattr(config, 'A9_BRAKE_WINDOW', 20))
+        self.brake_min_winrate = float(getattr(config, 'A9_BRAKE_MIN_WINRATE', 35.0))
+        self._brake_ts = 0.0
+        self._brake_cached = False
 
         self.logger.info(
             f"Strategy A9 initialized: Grinder (vol x{self.volume_spike_mult}, "
@@ -183,6 +196,34 @@ class StrategyA9(BaseStrategy):
         confidence += min(abs(bar_move) * 0.10, 0.15)  # momentum contribution (up to 15%)
         confidence = min(confidence, 1.0)
 
+        # 1. Toxic confidence band: 0.80-0.85 is this formula's high end (extended
+        #    moves) and lost -0.38%/trade on the real-fill replay; <0.80 and >=0.85
+        #    were both positive there.
+        if self.skip_conf_band and 0.80 <= confidence < 0.85:
+            self.log_strategy_skip(symbol, "CONF_BAND_EXCLUDED", {"confidence": round(confidence, 3)})
+            return None
+
+        # 2. Late-entry filter: buying a move already extended off its 12h low is
+        #    buying exhaustion (the CATI-loser/Q/XAN September pattern — 4 of 8
+        #    losers). 48 x 15m bars = 12h lookback.
+        if self.max_extension_pct > 0:
+            try:
+                recent_low = float(df['low'].iloc[-48:].min())
+                extension = (price_now - recent_low) / max(recent_low, 1e-12) * 100
+                if extension > self.max_extension_pct:
+                    self.log_strategy_skip(symbol, "EXTENSION_HIGH",
+                                           {"extension_pct": round(extension, 2), "max": self.max_extension_pct})
+                    return None
+            except Exception:
+                pass
+
+        # 3. Cohort reversal brake: pause new entries when this strategy's own
+        #    recent outcomes collapse (Sep 4: 33% win day, -135 paper points).
+        if self.brake_enabled and self._cohort_brake():
+            self.log_strategy_skip(symbol, "REVERSAL_BRAKE",
+                                   {"window": self.brake_window, "min_winrate": self.brake_min_winrate})
+            return None
+
         self.logger.info(
             f"[{self.name}] {symbol} GRINDER: vol x{vol_ratio:.1f} | "
             f"move {bar_move:+.2f}% | ADX {adx_val:.0f} | Conf {confidence:.2f}"
@@ -206,3 +247,31 @@ class StrategyA9(BaseStrategy):
                 'ema200_distance': round((price_now - ema200_now) / ema200_now, 4),
             }
         }
+
+    def _cohort_brake(self) -> bool:
+        """True when the strategy's own last N resolved paper outcomes collapsed.
+
+        While A9 is paper-only this reads paper_signals; the query is memoized
+        for 5 minutes (fires ~150x/day, one indexed query per window). When A9
+        eventually goes live this must switch to realized trade outcomes —
+        flagged in AGENTS.md so the switch isn't forgotten.
+        """
+        now = time.time()
+        if now - self._brake_ts < 300:
+            return self._brake_cached
+        val = False
+        try:
+            db = getattr(self.logger, 'db', None)
+            if db is not None and hasattr(db, 'recent_paper_winrate'):
+                wins, n = db.recent_paper_winrate('A9', self.brake_window)
+                if n >= self.brake_window and (100.0 * wins / n) < self.brake_min_winrate:
+                    val = True
+                    self.logger.warning(
+                        f"[{self.name}] REVERSAL BRAKE ACTIVE: last {n} outcomes "
+                        f"{wins}/{n} wins ({100.0*wins/n:.0f}% < {self.brake_min_winrate:.0f}%) "
+                        f"— new entries paused")
+        except Exception as e:
+            self.logger.debug(f"[{self.name}] brake check failed: {e}")
+        self._brake_cached = val
+        self._brake_ts = now
+        return val
