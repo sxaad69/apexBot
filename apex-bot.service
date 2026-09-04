@@ -11,6 +11,9 @@ EnvironmentFile=/home/ubuntu/apexBot/.env
 # Pass --mode live to enable live trading. Change to 'paper' for simulation.
 # APEX_CONFIRM_LIVE=YES bypasses the interactive confirmation prompt for AWS headless mode.
 Environment=APEX_CONFIRM_LIVE=YES
+# Python 3.14 datetime.utcnow() DeprecationWarnings firehose stderr on every DB write
+# (~2 journal lines per log event) — churns the 4h journald ring and wastes disk (89% full).
+Environment=PYTHONWARNINGS=ignore::DeprecationWarning
 ExecStart=/home/ubuntu/apexBot/venv/bin/python3 main.py --interval 30
 Restart=always
 RestartSec=10
