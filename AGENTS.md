@@ -80,16 +80,19 @@
 
 ---
 
-## ✅ Fix Plan — EXECUTED Sep 4 21:31 UTC (commit `863aac8`); verification status per item
+## ✅ Fix Plan — EXECUTED Sep 4 (commits `54e5af6`, `863aac8`, `79c57a6`, `9c7dfe5`); per-item verification
 
-| # | Item | Deployed | Verified now | Pending (needs market event) |
+| # | Item | Commit | Verified | Pending |
 |---|---|---|---|---|
-| 1 | **Logging:** `PYTHONWARNINGS=ignore::DeprecationWarning` in unit | ✅ `54e5af6` | ✅ 0 DeprecationWarnings in journald post-restart | — |
-| 2 | **Tier fix:** scoped IDs + adopt-on-duplicate + 60s cooldown | ✅ `863aac8` | ✅ compiles, config loads, 0× -4116 since restart | 🕐 a real `🎯 TRAILING TIER UPGRADE` + fallback retirement (needs a position ≥ +8%; none in band at deploy) |
-| 3 | **Blacklist bundle:** streak=2 + seed repair + 72h window | ✅ `863aac8` | ✅ seed log matches prediction exactly (6 symbols); config streak=2/window=72 | 🕐 C1 gate blocking a symbol at exactly 2 consecutive SL losses |
-| 4 | **WSS cap:** env-overridable, 150→250 | ✅ `863aac8` | ✅ config loads as 250; sweeps/sentinel/CPU healthy post-restart | ⚠️ live WSS stream count is not logged — verify via CPU/error-rate over 24h (was 39.9% avg before at 150) |
-| — | **A9** | parked | paper data: no edge (−0.18%/trade) | — |
-| — | **50% DD gate — USER DECISION (open)** | — | at equity ≤ $134.95 all conf<0.90 signals block | — |
+| 1 | Logging: PYTHONWARNINGS in unit | `54e5af6` | ✅ 0 DeprecationWarnings | — |
+| 2 | Tier client-ID fix + adopt-on-duplicate + 60s cooldown | `863aac8` | ✅ 0× -4116 since | 🕐 real tier upgrade event |
+| 3 | C1 bundle: streak=2 + D4 seed repair + 72h window | `863aac8` | ✅ seed matches prediction | 🕐 block at exactly 2 losses |
+| 4 | WSS cap env-overridable → 250 | `863aac8` | ✅ config=250 | ⚠️ stream count not logged |
+| 5 | **Paper exit engine** (production exits on 1m bars) | `79c57a6` | ✅ metadata migrated, 59/90 signals state-tracked on first pass | 🕐 resolutions accumulating |
+| 6 | **A9 gates**: skip 0.80–0.85 band, >8% extension filter, reversal brake (last-20/12h/35%) | `9c7dfe5` | ✅ config loads; gates live | 🕐 skip lines in journal |
+| 7 | **Activation cap** 4% price (`TRAILING_ACTIVATION_PRICE_CAP`) | `9c7dfe5` | ✅ act@1x 4.0% (was 15%), act@2x 4.0%, act@4x 3.75% | 🕐 next A6 entry's journal line |
+| — | A9 | paper | replay-validated: paper edge 3x overstated; live tier = no-op without cap; 0.80–0.85 band toxic | — |
+| — | 50% DD gate — USER DECISION (open) | — | at equity ≤$134.95 conf<0.90 blocked | — |
 
 ---
 
@@ -118,7 +121,12 @@
 
 ## 📌 Gotchas / Lessons (don't repeat)
 
-**New from Sep 4 session:**
+**New from Sep 4–5 sessions:**
+- **Paper mode now mimics production exits** — `core/paper_exit_engine.py` resolves paper signals on 1m bars with the live state machine (hard SL first, TP, tier trailing with production formulas, fees+slippage). Legacy mark-compare is only a fallback. Paper rows carry `metadata` (ALTER'd column) with armed/peak/tier/exit_reason — compare paper and live with the same queries.
+- **A9's confidence caps at exactly 0.85** (0.50 + 0.20 vol + 0.15 momentum) — it can never reach the 0.90 HOT tier, and its "0.85+" bucket = maxed-formula signals. The 0.80–0.85 band is its formula's high end and was toxic on real-fill replay (−0.38%/trade) → now skipped (A9_SKIP_CONF_BAND).
+- **A9 has NO whale factor** (that's A6). A6's whale layer is provably dead on mainnet: $150k single prints in a 100-trade/5-min window essentially don't exist (99.95% zeros across 518k evaluations; manual scans: top prints $242–$40k). Whale is a confidence BONUS and a count≥2 conflict guard — never a gate — so zero-whale entries are by design.
+- **The brake window must age out by time**: paused entries produce no outcomes, so a pure last-N window would freeze the brake on forever. `recent_paper_winrate` only counts outcomes resolved in the last 12h. When A9 goes live, the brake must switch from paper_signals to realized trades.
+- **Replay-before-deploy**: `tmp/a9_tier_validation.py` + `tmp/a9_validation_results.json` + cached klines replay any exit/entry change on 640 real signals in minutes. Extension data: `tmp/a9_extension_data.json`. The ≥12% extension bucket is positive (real grinders) — don't "fix" the >8% gate into a band gate on one month of data.
 - **Binance Algo API: `clientAlgoId` must be unique among OPEN orders.** Keep-alive (place-new-before-cancel-old) + a static per-trade ID = -4116 every time. Use tier/attempt-scoped IDs; treat -4116 as "already exists" and adopt.
 - **Never block-sleep inside the sentinel tick path.** E1's 2×0.5s sleeps per failing symbol stall exit detection for ALL positions. Use per-position cooldown/backoff state.
 - **`self.db` lives on `PaperTradingEngine`, not `ApexHunterBot`** — `getattr(self, 'db')` on the bot silently returns None. D4's dead code shipped because the silent-return has no log. Silent fallbacks need a log line.
