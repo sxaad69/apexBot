@@ -91,6 +91,8 @@
 | 5 | **Paper exit engine** (production exits on 1m bars) | `79c57a6` | ✅ metadata migrated, 59/90 signals state-tracked on first pass | 🕐 resolutions accumulating |
 | 6 | **A9 gates**: skip 0.80–0.85 band, >8% extension filter, reversal brake (last-20/12h/35%) | `9c7dfe5` | ✅ config loads; gates live | 🕐 skip lines in journal |
 | 7 | **Activation cap** 4% price (`TRAILING_ACTIVATION_PRICE_CAP`) | `9c7dfe5` | ✅ act@1x 4.0% (was 15%), act@2x 4.0%, act@4x 3.75% | 🕐 next A6 entry's journal line |
+| 8 | **Conf-gated risk program** (bbe7506): `A6_SKIP_MID_BAND` (skip 0.85–0.90), `ELITE_STOP_LOSS_ROE=15` (conf≥0.90 → 6x at the 2.5% floor, ATR-normalized below), `A6_PROBE_SIZE_MULTIPLIER=0.5` (<0.85), `A6_MAX_WATCH_SYMBOLS=400` (.env) | `bbe7506` | ✅ compile + layer unit tests pass on final venv; .env staged; **deployed to disk — ACTIVATION PENDING RESTART (user-held)** | 🕐 journal `MID_BAND_EXCLUDED` lines, elite "Volatility Sync … 6x … 15% ROE" line, KPI window starts at restart |
+| — | **A6 conf-band evidence** (all-time DB): ≥0.90 = +$57.70/94 trades; 0.85–0.90 = −$25.56/163; golden-era ≥6x = 16% win (no floor era) | — | drives the program | — |
 | — | A9 | paper | replay-validated: paper edge 3x overstated; live tier = no-op without cap; 0.80–0.85 band toxic | — |
 | — | 50% DD gate — USER DECISION (open) | — | at equity ≤$134.95 conf<0.90 blocked | — |
 
