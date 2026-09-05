@@ -611,7 +611,15 @@ class StrategyA6(BaseStrategy):
         current_price = df['close'].iloc[-1]
         atr = df['atr'].iloc[-1] if 'atr' in df.columns else current_price * 0.01
 
-        return {
+        # 14. Confidence-gated risk program (2026-09-05, evidence in AGENTS.md):
+        # the 0.85-0.90 band lost money at EVERY leverage in EVERY era (-$17.83
+        # golden, -$25.56 all-time) while >=0.90 printed +$57.70 — skip the mid
+        # band; probe-size the sub-0.85 band (breakeven +$3.69 golden era).
+        if getattr(self.config, 'A6_SKIP_MID_BAND', True) and 0.85 <= confidence < 0.90:
+            self.log_strategy_skip(symbol, "MID_BAND_EXCLUDED", {"confidence": round(confidence, 3)})
+            return None
+
+        signal = {
             'symbol': symbol,
             'side': side,
             'entry_price': current_price,
@@ -629,3 +637,7 @@ class StrategyA6(BaseStrategy):
                 'whale_net_pressure': whale_data['net_pressure'],
             }
         }
+        if confidence < 0.85:
+            # Probe size: entry.py applies signal-level multipliers generically.
+            signal['size_multiplier'] = float(getattr(self.config, 'A6_PROBE_SIZE_MULTIPLIER', 0.5))
+        return signal

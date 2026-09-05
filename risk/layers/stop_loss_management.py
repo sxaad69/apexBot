@@ -18,11 +18,21 @@ class StopLossManagementLayer:
         if "A5" in strategy_tag or "A6" in strategy_tag:
             override_key = f"{strategy_tag.split(':')[0]}_STOP_LOSS_ROE"
             global_target_roe = getattr(self.config, override_key, 10.0)
-        
+
+        # 2026-09-05 elite risk uplift: conf >= ELITE_CONFIDENCE_LEVEL trades get a
+        # bigger ROE budget (ELITE_STOP_LOSS_ROE, default 15) -> 6x at the 2.5%
+        # raw-stop floor instead of 4x. Applies ONLY to the band that historically
+        # printed (+$57.70 all-time vs -25.56 for 0.85-0.90); every other band keeps
+        # the strategy's 10% budget. The MAX_ROE_DRAWDOWN guard below still bounds
+        # the final stop — see the max() there.
+        confidence = trade_params.get('confidence', 0.5)
+        elite_roe = float(getattr(self.config, 'ELITE_STOP_LOSS_ROE', 0) or 0)
+        if elite_roe > 0 and confidence >= float(getattr(self.config, 'ELITE_CONFIDENCE_LEVEL', 0.90)):
+            global_target_roe = elite_roe
+
         # Max leverage boundaries (Phase-1 core fix: working cap is now
         # confidence-aware via config.get_leverage_cap — 5x base, 6x conf>=0.90 —
         # NOT the absolute FUTURES_MAX_LEVERAGE which is only the emergency ceiling).
-        confidence = trade_params.get('confidence', 0.5)
         max_leverage = getattr(self.config, 'get_leverage_cap', None)
         if callable(max_leverage):
             max_leverage = max_leverage(confidence)
@@ -59,7 +69,14 @@ class StopLossManagementLayer:
                 final_leverage = max(1, min(int(calculated_leverage), max_leverage))
                 
                 # Verify the final ROE loss to ensure it doesn't violate MAX_ROE_DRAWDOWN
-                max_roe_drawdown = getattr(self.config, 'MAX_ROE_DRAWDOWN', 20.0)
+                # 2026-09-05: the effective ceiling is max(drawdown_cap, target_roe) so
+                # the elite 15% budget isn't silently tightened back to a 1.67% wick
+                # stop (the Aug-13 failure mode). Non-elite paths: max(10, 10) = 10 —
+                # behavior unchanged.
+                max_roe_drawdown = max(
+                    getattr(self.config, 'MAX_ROE_DRAWDOWN', 20.0),
+                    global_target_roe,
+                )
                 actual_roe_loss = distance_percent * final_leverage
                 
                 # If even at 1x leverage the ATR stop loses too much, tighten the stop loss
