@@ -1091,6 +1091,21 @@ class ApexHunterBot(SyncMixin):
                     self.logger.error(f"🚨 CRITICAL: Portfolio Circuit Breaker Failed", exc_info=True)
 
                 # Wait before next cycle
+                # Paper exit engine fast pass (2026-09-06): the production-faithful
+                # resolver must out-race the legacy mark-compare — otherwise 85% of
+                # paper resolutions land on the idealized path (exact fills, no
+                # fees/trailing) and the A9 KPI becomes unmeasurable. Tiny budget:
+                # 6 symbols × weight 5 = 30 weight per 30s cycle, no sweep contention.
+                try:
+                    if getattr(self, '_paper_exit_engine', None) is None and hasattr(self.logger, 'db'):
+                        from core.paper_exit_engine import PaperExitEngine
+                        self._paper_exit_engine = PaperExitEngine(
+                            self.engine.exchange, self.logger.db, self.logger, self.config)
+                    if getattr(self, '_paper_exit_engine', None) is not None:
+                        self._paper_exit_engine.resolve_incremental(max_symbols=6)
+                except Exception as e:
+                    self.logger.debug(f"[PAPER-ENGINE] fast pass error: {e}")
+
                 if self.running:
                     time.sleep(interval)
 
