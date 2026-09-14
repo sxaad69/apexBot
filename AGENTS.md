@@ -55,7 +55,7 @@
 ### 1. Tier trailing clientAlgoId collision — **FIXED, full verification pending a +8% runner**
 - **Was:** entry trailing and EVERY tier upgrade shared one static ID (`apex{trade_id}TR`, `core/entry.py:464` + `core/exits.py:304`); keep-alive (`cd3a082`) keeps the old trailing OPEN → Binance **-4116** on every attempt. Measured: **11,078× -4116 + 312× -2021 in ~39h** (龙虾 8,641 / SKR 1,987 / BR 450), exactly 1 success. E1's in-loop retry (3× + 0.5s sleeps) blocked the shared sentinel thread ~2s/tick per storming symbol.
 - **Fix:** tier-scoped IDs (`apex{tid[-10:]}TR{tier}`), adopt-before-place (`_find_open_trailing_by_client_id` in `exchange/algo_orders.py` heals lost-response placements), one attempt per tick + per-position cooldown (`TIER_RETRY_COOLDOWN=60s`, config.py).
-- **Verified:** code deployed, compiles, config loads; 0× -4116 since restart. **NOT yet verifiable:** an actual successful upgrade + fallback retirement needs a position crossing +8% (none was in band at deploy: BR +4.9% was closest). Watch: `🎯 TRAILING TIER UPGRADE` / `[tier] ... adopted` lines, and that -4116 never returns.
+- **Verified:** code deployed, compiles, config loads; 0× -4116 since restart. **FULLY VERIFIED 2026-09-14 (Linode):** 龙虾/USDT:USDT crossed +8.1% → `🎯 TRAILING TIER UPGRADE ... → tier 1 (callback 4.0%)` placed with new algoId + previous tier kept live as fallback; exited +7.45% via exchange-side trailing_stop (fallback fired — safety net worked). Tier-2 (+20%) still unverified (no position reached +20%). Watch: `🎯 TRAILING TIER UPGRADE` / `[tier] ... adopted` lines, and that -4116 never returns.
 
 ### 2. D4 loss-streak seed was double-broken dead code + streak=1 death-spiral — **FIXED & VERIFIED (seed) / config verified (gate)**
 - **Was:** `_seed_symbol_loss_streak` (`main.py:704`) read `self.db` on ApexHunterBot (exists only on `PaperTradingEngine`, `main.py:108`) → silent no-op since Aug 20; also wrote the bot's dict while the entry gate reads the engine's dict (`main.py:51`). `FUTURES_MAX_LOSS_STREAK` defaulted to **1** → with a working seed, 69 symbols would be permanently blacklisted (no decay).
@@ -85,7 +85,7 @@
 | # | Item | Commit | Verified | Pending |
 |---|---|---|---|---|
 | 1 | Logging: PYTHONWARNINGS in unit | `54e5af6` | ✅ 0 DeprecationWarnings | — |
-| 2 | Tier client-ID fix + adopt-on-duplicate + 60s cooldown | `863aac8` | ✅ 0× -4116 since | 🕐 real tier upgrade event |
+| 2 | Tier client-ID fix + adopt-on-duplicate + 60s cooldown | `863aac8` | ✅ 0× -4116 since | ✅ **VERIFIED 2026-09-14** (龙虾 → tier 1, exited +7.45%) |
 | 3 | C1 bundle: streak=2 + D4 seed repair + 72h window | `863aac8` | ✅ seed matches prediction | 🕐 block at exactly 2 losses |
 | 4 | WSS cap env-overridable → 250 | `863aac8` | ✅ config=250 | ⚠️ stream count not logged |
 | 5 | **Paper exit engine** (production exits on 1m bars) | `79c57a6` | ✅ metadata migrated, 59/90 signals state-tracked on first pass | 🕐 resolutions accumulating |
@@ -116,7 +116,7 @@
 | `MAX_DRAWDOWN_PERCENT` / `FUTURES_MAX_DRAWDOWN_PERCENT` | 70 | sizing 67%/33% at 23.1/46.9 DD |
 | `INITIAL_CAPITAL` | 136.78 ("Real Wallet Baseline") | layer peak starts here, ratchets to recovered peak |
 | `settings.peak_balance` (DB) | 269.91 | recovered at startup ✓ |
-| `TRAILING_TIER_1/2_AT` | 8 / 20 | upgrades broken — bug #1 |
+| `TRAILING_TIER_1/2_AT` | 8 / 20 | tier upgrade VERIFIED 2026-09-14 (龙虾 → tier 1) |
 | `TIER_REPLACE_RETRIES` | 3 | E1 — harmful as implemented (blocks sentinel) |
 
 ---
@@ -126,7 +126,8 @@
 **New from Sep 4–5 sessions:**
 - **Paper mode now mimics production exits** — `core/paper_exit_engine.py` resolves paper signals on 1m bars with the live state machine (hard SL first, TP, tier trailing with production formulas, fees+slippage). Legacy mark-compare is only a fallback. Paper rows carry `metadata` (ALTER'd column) with armed/peak/tier/exit_reason — compare paper and live with the same queries.
 - **A9's confidence caps at exactly 0.85** (0.50 + 0.20 vol + 0.15 momentum) — it can never reach the 0.90 HOT tier, and its "0.85+" bucket = maxed-formula signals. The 0.80–0.85 band is its formula's high end and was toxic on real-fill replay (−0.38%/trade) → now skipped (A9_SKIP_CONF_BAND).
-- **A9 has NO whale factor** (that's A6). A6's whale layer is provably dead on mainnet: $150k single prints in a 100-trade/5-min window essentially don't exist (99.95% zeros across 518k evaluations; manual scans: top prints $242–$40k). Whale is a confidence BONUS and a count≥2 conflict guard — never a gate — so zero-whale entries are by design.
+- **A9 has NO whale factor** (that's A6). **A6's whale layer is DISABLED (2026-09-14)** — prior forensic verdict "provably dead on mainnet" confirmed against the enriched sweep DB: $150k single prints in a 100-trade/5-min window essentially don't exist (99.73% zeros across 397,717 sweep evaluations; manual scans: top prints $242–$40k); **15/15 live trades (Sep 14 Linode) entered with whale_count=0**. Whale was the #1 REST consumer (fetch_trades, weight 8/symbol/sweep) → the Binance -1003/429 ban driver on cold start. `detect_whales()` in `strategy_a6.py` is now a zero-return stub; the confidence +15% bonus and count≥2 conflict guard are commented out. It was a confidence BONUS and a count≥2 conflict guard — never a gate — so zero-whale entries are by design. Re-enable only if market microstructure changes (git history has the original body).
+- **`TRAILING_TIER_1_CALLBACK` / `TRAILING_TIER_2_CALLBACK` in `.env` are DEAD CONFIG — removed 2026-09-14.** `update_trailing_tier` computes callbacks via `config.get_tier_callback(lev, tier)` (leverage-aware base + 1%/2% width); the `.env` vars are only the never-reached `AttributeError` fallback (exits.py:228-235). Tiered trailing stays intact without them: thresholds (`TRAILING_TIER_1/2_AT`), `TIER_RETRY_COOLDOWN`, `EXCHANGE_SIDE_SL` are what matter. 龙虾's real upgrade used get_tier_callback(1x, 1) = 3.0 + 1.0 = **4.0%**, not the dead .env value.
 - **The brake window must age out by time**: paused entries produce no outcomes, so a pure last-N window would freeze the brake on forever. `recent_paper_winrate` only counts outcomes resolved in the last 12h. When A9 goes live, the brake must switch from paper_signals to realized trades.
 - **Replay-before-deploy**: `tmp/a9_tier_validation.py` + `tmp/a9_validation_results.json` + cached klines replay any exit/entry change on 640 real signals in minutes. Extension data: `tmp/a9_extension_data.json`. The ≥12% extension bucket is positive (real grinders) — don't "fix" the >8% gate into a band gate on one month of data.
 - **Binance Algo API: `clientAlgoId` must be unique among OPEN orders.** Keep-alive (place-new-before-cancel-old) + a static per-trade ID = -4116 every time. Use tier/attempt-scoped IDs; treat -4116 as "already exists" and adopt.

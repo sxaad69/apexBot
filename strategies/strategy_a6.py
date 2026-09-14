@@ -246,82 +246,89 @@ class StrategyA6(BaseStrategy):
             return {'imbalance': 0.0, 'bid_depth': 0.0, 'ask_depth': 0.0}
 
     def detect_whales(self, symbol: str) -> Dict:
-        """Detect large institutional trades in the last 5 minutes (REST fallback).
+        """Detect large institutional trades in the last 5 minutes.
 
-        RATE-LIMIT FIX (Task 1.3): TTL-cached for 60s per symbol. Whale trades
-        in the last 5 min don't change every second, so re-fetching every
-        imbalance check would hammer REST.
+        DISABLED 2026-09-14: whale detection was the #1 REST consumer (a
+        fetch_trades per symbol per sweep, weight 8 each) and drove the Binance
+        IP-ban / -1003 storm. Forensic data showed no edge: 15/15 live trades
+        entered with whale_count=0, and 99.7% of enrichment evaluations were
+        zero. The method is kept as a no-op stub returning all-zero pressure so
+        downstream confidence/conflict logic degrades gracefully. To re-enable,
+        restore the body (git history commit before this one).
         """
-        try:
-            # --- CACHE HIT: return cached whale data if within TTL ---
-            now = time_module.time()
-            # Deterministic per-symbol jitter (0-20% of TTL) staggers expiry
-            # across the universe so sweeps don't all refetch whales at once.
-            if symbol not in self._whale_cache_stagger:
-                self._whale_cache_stagger[symbol] = (hash(symbol) % 20) / 100.0 * self._whale_cache_ttl
-            eff_ttl = self._whale_cache_ttl + self._whale_cache_stagger[symbol]
-            if (now - self._whale_cache_ts.get(symbol, 0)) < eff_ttl and symbol in self._whale_cache:
-                return self._whale_cache[symbol]
+        return {'count': 0, 'buy_pressure': 0, 'sell_pressure': 0, 'net_pressure': 0, 'total_value': 0}
 
-            # Use shared exchange client instead of creating new instances
-            if hasattr(self, 'exchange_client') and self.exchange_client:
-                # Route through the client so whale fetches respect the rate
-                # limiter + IP-ban cooldown (previously raw ccxt bypassed both,
-                # causing ~300+ unthrottled fetch_trades calls per sweep).
-                if hasattr(self.exchange_client, 'get_recent_trades'):
-                    recent_trades = self.exchange_client.get_recent_trades(symbol, limit=100)
-                else:
-                    recent_trades = self.exchange_client.exchange.fetch_trades(symbol, limit=100)
-            else:
-                # Absolute fallback only if injection failed
-                exchange_class = getattr(ccxt, getattr(self.config, 'FUTURES_EXCHANGE', 'binance').lower())
-                exchange = exchange_class({'options': {'defaultType': 'future'}})
-                if getattr(self.config, 'EXCHANGE_ENVIRONMENT', 'production').lower() == 'testnet':
-                    if getattr(self.config, 'FUTURES_EXCHANGE', 'binance').lower() == 'binance':
-                        try:
-                            exchange.enable_demo_trading(True)
-                        except AttributeError:
-                            self.logger.warning(
-                                'ccxt Binance demo trading helper is unavailable; '
-                                'continuing without sandbox mode.'
-                            )
-                    else:
-                        exchange.set_sandbox_mode(True)
-
-                recent_trades = exchange.fetch_trades(symbol, limit=100)
-
-            if not recent_trades:
-                return {'count': 0, 'buy_pressure': 0, 'sell_pressure': 0, 'net_pressure': 0, 'total_value': 0}
-
-            current_time = time_module.time() * 1000
-            five_min_ago = current_time - (5 * 60 * 1000)
-
-            whale_trades = []
-            for trade in recent_trades:
-                if trade['timestamp'] > five_min_ago:
-                    value = trade['price'] * trade['amount']
-                    if value >= self.min_whale_value:
-                        whale_trades.append({'side': trade['side'], 'value': value})
-
-            buy_whales = [w for w in whale_trades if w['side'] == 'buy']
-            sell_whales = [w for w in whale_trades if w['side'] == 'sell']
-
-            result = {
-                'count': len(whale_trades),
-                'buy_pressure': len(buy_whales),
-                'sell_pressure': len(sell_whales),
-                'net_pressure': len(buy_whales) - len(sell_whales),
-                'total_value': sum(w['value'] for w in whale_trades)
-            }
-
-            # --- CACHE MISS: store result for the TTL window ---
-            self._whale_cache[symbol] = result
-            self._whale_cache_ts[symbol] = now
-            return result
-
-        except Exception as e:
-            self.logger.debug(f"[A6] Whale detection failed for {symbol}: {e}")
-            return {'count': 0, 'buy_pressure': 0, 'sell_pressure': 0, 'net_pressure': 0, 'total_value': 0}
+        # --- ORIGINAL IMPLEMENTATION (disabled) ---
+        # try:
+        #     # --- CACHE HIT: return cached whale data if within TTL ---
+        #     now = time_module.time()
+        #     # Deterministic per-symbol jitter (0-20% of TTL) staggers expiry
+        #     # across the universe so sweeps don't all refetch whales at once.
+        #     if symbol not in self._whale_cache_stagger:
+        #         self._whale_cache_stagger[symbol] = (hash(symbol) % 20) / 100.0 * self._whale_cache_ttl
+        #     eff_ttl = self._whale_cache_ttl + self._whale_cache_stagger[symbol]
+        #     if (now - self._whale_cache_ts.get(symbol, 0)) < eff_ttl and symbol in self._whale_cache:
+        #         return self._whale_cache[symbol]
+        #
+        #     # Use shared exchange client instead of creating new instances
+        #     if hasattr(self, 'exchange_client') and self.exchange_client:
+        #         # Route through the client so whale fetches respect the rate
+        #         # limiter + IP-ban cooldown (previously raw ccxt bypassed both,
+        #         # causing ~300+ unthrottled fetch_trades calls per sweep).
+        #         if hasattr(self.exchange_client, 'get_recent_trades'):
+        #             recent_trades = self.exchange_client.get_recent_trades(symbol, limit=100)
+        #         else:
+        #             recent_trades = self.exchange_client.exchange.fetch_trades(symbol, limit=100)
+        #     else:
+        #         # Absolute fallback only if injection failed
+        #         exchange_class = getattr(ccxt, getattr(self.config, 'FUTURES_EXCHANGE', 'binance').lower())
+        #         exchange = exchange_class({'options': {'defaultType': 'future'}})
+        #         if getattr(self.config, 'EXCHANGE_ENVIRONMENT', 'production').lower() == 'testnet':
+        #             if getattr(self.config, 'FUTURES_EXCHANGE', 'binance').lower() == 'binance':
+        #                 try:
+        #                     exchange.enable_demo_trading(True)
+        #                 except AttributeError:
+        #                     self.logger.warning(
+        #                         'ccxt Binance demo trading helper is unavailable; '
+        #                         'continuing without sandbox mode.'
+        #                     )
+        #             else:
+        #                 exchange.set_sandbox_mode(True)
+        #
+        #         recent_trades = exchange.fetch_trades(symbol, limit=100)
+        #
+        #     if not recent_trades:
+        #         return {'count': 0, 'buy_pressure': 0, 'sell_pressure': 0, 'net_pressure': 0, 'total_value': 0}
+        #
+        #     current_time = time_module.time() * 1000
+        #     five_min_ago = current_time - (5 * 60 * 1000)
+        #
+        #     whale_trades = []
+        #     for trade in recent_trades:
+        #         if trade['timestamp'] > five_min_ago:
+        #             value = trade['price'] * trade['amount']
+        #             if value >= self.min_whale_value:
+        #                 whale_trades.append({'side': trade['side'], 'value': value})
+        #
+        #     buy_whales = [w for w in whale_trades if w['side'] == 'buy']
+        #     sell_whales = [w for w in whale_trades if w['side'] == 'sell']
+        #
+        #     result = {
+        #         'count': len(whale_trades),
+        #         'buy_pressure': len(buy_whales),
+        #         'sell_pressure': len(sell_whales),
+        #         'net_pressure': len(buy_whales) - len(sell_whales),
+        #         'total_value': sum(w['value'] for w in whale_trades)
+        #     }
+        #
+        #     # --- CACHE MISS: store result for the TTL window ---
+        #     self._whale_cache[symbol] = result
+        #     self._whale_cache_ts[symbol] = now
+        #     return result
+        #
+        # except Exception as e:
+        #     self.logger.debug(f"[A6] Whale detection failed for {symbol}: {e}")
+        #     return {'count': 0, 'buy_pressure': 0, 'sell_pressure': 0, 'net_pressure': 0, 'total_value': 0}
 
     def get_market_regime(self, df: pd.DataFrame) -> str:
         """Determine market regime: trending, ranging, volatile, or unknown."""
@@ -477,10 +484,11 @@ class StrategyA6(BaseStrategy):
                 f"[{self.name}] {symbol} scanning... Imbalance: {imbalance*100:.1f}% "
                 f"(Threshold: {self.imbalance_threshold*100:.1f}%)"
             )
-            # Enrichment: signed imbalance + orderbook depth + whale + session
+            # Enrichment: signed imbalance + orderbook depth + session
+            # (whale enrichment disabled 2026-09-14 — no edge, REST ban driver)
             try:
                 snap = self.fetch_orderbook_snapshot(symbol)
-                whale = self.detect_whales(symbol)
+                whale = {'count': 0, 'net_pressure': 0, 'total_value': 0}
                 sess_name, _, _ = self.get_current_session()
             except Exception:
                 snap = {'imbalance': imbalance, 'bid_depth': 0.0, 'ask_depth': 0.0}
@@ -506,8 +514,8 @@ class StrategyA6(BaseStrategy):
                 "session": sess_name,
             })
 
-        # 7. Whale Confirmation
-        whale_data = self.detect_whales(symbol)
+        # 7. Whale Confirmation (disabled 2026-09-14 — no edge, REST ban driver)
+        whale_data = {'count': 0, 'net_pressure': 0, 'total_value': 0}
 
         # 8. Session Awareness
         session_name, confidence_boost, confidence_floor = self.get_current_session()
@@ -523,10 +531,10 @@ class StrategyA6(BaseStrategy):
         if volume_ratio > 1.2:
             confidence += 0.10
 
-        # Whale confirmation (up to 15%)
-        if whale_data['count'] > 0:
-            whale_score = min(whale_data['count'] * 0.05, 0.15)
-            confidence += whale_score
+        # Whale confirmation (up to 15%) — DISABLED 2026-09-14 (no edge)
+        # if whale_data['count'] > 0:
+        #     whale_score = min(whale_data['count'] * 0.05, 0.15)
+        #     confidence += whale_score
 
         # Market regime bonus (up to 10%)
         if regime in ['strong_trend', 'moderate_trend']:
@@ -596,15 +604,15 @@ class StrategyA6(BaseStrategy):
             self.log_strategy_skip(symbol, "ADX_LOW_SHORT", {"adx": round(adx_val, 2), "min": 30})
             return None
 
-        # 12. Whale vs. Imbalance Conflict Check
-        if whale_data['count'] >= 2:
-            whale_bias = 'buy' if whale_data['net_pressure'] > 0 else 'sell'
-            if side != whale_bias:
-                self.log_strategy_skip(symbol, "WHALE_CONFLICT", {
-                    "ob_side": side, "whale_bias": whale_bias,
-                    "net_pressure": whale_data['net_pressure']
-                })
-                return None
+        # 12. Whale vs. Imbalance Conflict Check — DISABLED 2026-09-14 (no edge)
+        # if whale_data['count'] >= 2:
+        #     whale_bias = 'buy' if whale_data['net_pressure'] > 0 else 'sell'
+        #     if side != whale_bias:
+        #         self.log_strategy_skip(symbol, "WHALE_CONFLICT", {
+        #             "ob_side": side, "whale_bias": whale_bias,
+        #             "net_pressure": whale_data['net_pressure']
+        #         })
+        #         return None
 
         # 13. ATR-Based Dynamic Stops (2.0x for breathing room)
         stop_loss, take_profit = self.get_dynamic_stops(df, side, self.atr_sl_mult, self.atr_tp_mult)

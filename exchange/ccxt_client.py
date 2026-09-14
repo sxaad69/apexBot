@@ -217,10 +217,12 @@ class CCXTExchangeClient(BaseExchangeClient):
     def get_recent_trades(self, symbol: str, limit: int = 100) -> List:
         """Fetch recent trades (rate-limited + ban-gated).
 
-        The A6 whale detector called raw ccxt ``exchange.fetch_trades`` per
-        symbol on every rejected-signal sweep, bypassing the rate limiter and
-        ban gate entirely — hundreds of unthrottled REST calls per sweep that
-        pushed the IP over Binance's request limit. Route through here.
+        NOTE (2026-09-14): the only production caller was the A6 whale
+        detector, which is now DISABLED (no edge; was the #1 REST consumer and
+        drove Binance IP-bans). This method is retained for diagnostics / any
+        future re-enable. It still respects the rate limiter + ban gate —
+        the old A6 whale path bypassed both, pushing the IP over Binance's
+        request limit with hundreds of unthrottled fetch_trades calls per sweep.
         """
         if self._is_banned():
             self.logger.debug(f"[trades] {symbol} skipped — IP banned until {self._ban_until:.0f}")
