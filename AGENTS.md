@@ -1,26 +1,25 @@
 # Apex Hunter V14 — Session Memory
 
-> Updated from the **Sep 4–5 2026 forensic session** ("why did P&L die after Aug 20").
-> Supersedes the Aug 20 session doc. All findings below were verified against
-> exchange data (`/fapi/v1/income`, positionRisk) and the bot's own file logs —
-> not the bot's DB alone. **The four approved fixes are deployed** (Sep 4
-> 21:17/21:31 UTC restarts) — see Fix Plan table for per-fix verification status;
-> two items still need a market event to fully verify.
+> Updated from the **Sep 15 2026 session**. Supersedes the Sep 4–5 doc (its
+> forensic "why did P&L die after Aug 20" findings and Fix Plan remain valid —
+> see below). This session: **root-caused the zero-entries SeP 14–15 outage to
+> the ASIA-hours gate**, enabled Asia trading + DEBUG logging (config.py
+> defaults, commit `a594745`), and re-verified the bot on Linode.
 
 ---
 
-## 🧭 Current Snapshot (Sep 4 2026, 21:05 UTC)
+## 🧭 Current Snapshot (Sep 15 2026)
 
-- **Deployed:** local `main` == `origin/main` == `final:~/apexBot` == `863aac8` (fix(tier,c1,wss) batch). Service `apex-bot` restarted **Sep 4 21:31:57 UTC** (PID 481091) with the fixes; `PYTHONWARNINGS=ignore::DeprecationWarning` active in the unit (old unit backed up at `/tmp/apex-bot.service.bak-*`).
-- **Equity:** $151.44 (6 open positions, ~$291 notional, all A6 entries, lev 1–4x)
-- **Persisted peak:** $269.91 → **drawdown −43.9%**
-- **P&L since Aug 1:** +$21.72 lifetime. **ALL profit was pre-Aug-20** (Aug 1–20: +$41.06 over 531 closes). Aug 21→Sep 4: **−$19.34** over 151 closes.
-- **Binance bans:** **ZERO** since Sep 2 (no 418, no cooldown engaged). Only 4 soft 429s — one 6-second burst on "fetch top pairs" at 00:03 UTC Sep 4. The rate-limit defenses (cold-start warmup, ban-aware load_markets, shared token bucket) are holding.
-- **Host:** AWS SSH alias `final`, 2 vCPU / 2GB RAM, load ~0.15–0.39, **disk 89% full (1.6GB free)**.
+- **Deployed:** local `main` == `origin/main` == `hunt:~/apexBot` == `a594745` (ASIA trading + DEBUG logging). Service `apex-bot` restarted **Sep 15 03:59:23 UTC** (PID 48072) with the fixes.
+- **Equity:** $137.01 USDT live balance (0 open positions). **Moved hosts Sep 14:** local machine → **Linode `hunt`** (172.105.93.126, 2 vCPU / 2GB, SSH alias `hunt`).
+- **Persisted peak:** DB `peak_balance` = 140.61 (server-native DBs — NO local→Linode DB push was ever made).
+- **Binance bans:** ZERO since the whale-detection removal deploy (commit `574a4d8`); rate-limit defenses holding.
+- **Root cause found (Sep 15):** the "0 live entries for 8h" was the **ASIA-hours gate** — with `ASIA_TRADING_ENABLED=false` (default until `a594745`), EVERY A6 signal during 00:00–08:00 UTC was silently skipped at DEBUG level (`entry.py:99-103`). All the strong overnight signals (ZEC 0.82, 龙虾 0.91, etc.) fell in that window, so the bot looked broken but wasn't. **Now enabled via config default.**
+- **Host:** Linode, disk healthy after log cleanup.
   - `~/apexBot` = mainnet (branch `main`, service `apex-bot`)
   - `~/apexBotTestnet` = testnet (branch `feat/exchange-side-sl`, service `apex-bot-testnet`) — NOT re-verified this session
   - `~/apexBot/venv/bin/python3` shared venv (Python 3.14, ccxt 4.5.70)
-- **DBs:** mainnet `data/apex_hunter.db` (trades/settings), `data/activity_log.db` (activity_log incl. `sweep_summary` JSONs + `paper_signals`).
+- **DBs:** mainnet `data/apex_hunter.db` (trades/settings, incl `settings.peak_balance`), `data/activity_log.db` (activity_log incl. `sweep_summary` JSONs + `paper_signals`).
 
 ---
 
@@ -124,6 +123,9 @@
 ## 📌 Gotchas / Lessons (don't repeat)
 
 **New from Sep 4–5 sessions:**
+- **The ASIA-hours gate is the #1 "bot looks broken" trap (2026-09-15).** `ASIA_TRADING_ENABLED` defaults to **false**, and with it off `entry.py:99-103` silently at DEBUG drops EVERY signal in the 00:00–08:00 UTC window — weak AND strong (龙虾 0.91, ZEC 0.82). It was still the Sep 14–15 default, so 8h of overnight A6 signals looked like "bot not trading" when it was the gate all along. **Now enabled (default true, commit `a594745`).** When an entry is skipped for hours with zero rejection tallies, check Asia hours + DEBUG-level skips before assuming a bug.
+- **DEBUG logging is now the operating default** (config.py `LOG_LEVEL`, commit `a594745`). `log_strategy_skip` reasons (ADX_LOW_LONG, NEGATIVE_MOMENTUM, MID_BAND_EXCLUDED, FILTER_*) are DEBUG-only — invisible at INFO. Run a day or two of DEBUG (esp. overnight Asia hours) to see every A6 rejection reason per sweep before dropping back to INFO.
+- **The MID_BAND_EXCLUDED gate and the log line can disagree:** the sweep summary records the RAW confidence (e.g. 0.899 → `MID_BAND_EXCLUDED`) while the WSS log prints `Conf: {confidence:.2f}` (0.90). A "0.90" signal in the log can be <0.90 in truth and correctly mid-band-skipped. Query `activity_log` sweep_summary JSON for the authoritative confidence.
 - **Paper mode now mimics production exits** — `core/paper_exit_engine.py` resolves paper signals on 1m bars with the live state machine (hard SL first, TP, tier trailing with production formulas, fees+slippage). Legacy mark-compare is only a fallback. Paper rows carry `metadata` (ALTER'd column) with armed/peak/tier/exit_reason — compare paper and live with the same queries.
 - **A9's confidence caps at exactly 0.85** (0.50 + 0.20 vol + 0.15 momentum) — it can never reach the 0.90 HOT tier, and its "0.85+" bucket = maxed-formula signals. The 0.80–0.85 band is its formula's high end and was toxic on real-fill replay (−0.38%/trade) → now skipped (A9_SKIP_CONF_BAND).
 - **A9 has NO whale factor** (that's A6). **A6's whale layer is DISABLED (2026-09-14)** — prior forensic verdict "provably dead on mainnet" confirmed against the enriched sweep DB: $150k single prints in a 100-trade/5-min window essentially don't exist (99.73% zeros across 397,717 sweep evaluations; manual scans: top prints $242–$40k); **15/15 live trades (Sep 14 Linode) entered with whale_count=0**. Whale was the #1 REST consumer (fetch_trades, weight 8/symbol/sweep) → the Binance -1003/429 ban driver on cold start. `detect_whales()` in `strategy_a6.py` is now a zero-return stub; the confidence +15% bonus and count≥2 conflict guard are commented out. It was a confidence BONUS and a count≥2 conflict guard — never a gate — so zero-whale entries are by design. Re-enable only if market microstructure changes (git history has the original body).
