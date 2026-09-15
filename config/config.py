@@ -362,7 +362,7 @@ class Config:
         self.TIER_BASE_SIZE = float(os.getenv('TIER_BASE_SIZE', '0.10'))
         self.TIER_BASE_LEV = int(os.getenv('TIER_BASE_LEV', '2'))
         self.LEV_CAP = int(os.getenv('LEV_CAP', '5'))
-        self.ASIA_TRADING_ENABLED = self._str_to_bool(os.getenv('ASIA_TRADING_ENABLED', 'false'))
+        self.ASIA_TRADING_ENABLED = self._str_to_bool(os.getenv('ASIA_TRADING_ENABLED', 'true'))
         self.ASIA_END_HOUR_UTC = int(os.getenv('ASIA_END_HOUR_UTC', '8'))
 
         # ===== Momentum Confirmation Gate (Phase 1 core fix) =====
@@ -412,7 +412,7 @@ class Config:
         self.LOG_PERFORMANCE = self._str_to_bool('true')
         self.LOG_SYSTEM_EVENTS = self._str_to_bool('true')
         self.LOG_ERROR_TRACES = self._str_to_bool('true')
-        self.LOG_LEVEL = 'INFO'.upper()
+        self.LOG_LEVEL = 'DEBUG'.upper()
         self.LOG_OUTPUT = 'both'
         self.LOG_FILE_PATH = './logs'
         self.LOG_FILE_MAX_SIZE = int('10')
