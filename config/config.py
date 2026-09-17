@@ -362,6 +362,10 @@ class Config:
         self.TIER_BASE_SIZE = float(os.getenv('TIER_BASE_SIZE', '0.10'))
         self.TIER_BASE_LEV = int(os.getenv('TIER_BASE_LEV', '2'))
         self.LEV_CAP = int(os.getenv('LEV_CAP', '5'))
+        # --- Momentum-Gated Entry Sizing (2026-09-17) ---
+        # Multiplies position size for entries that passed via bar-move momentum
+        # instead of orderbook imbalance wall. Reduces tail risk for thin-wall breakouts.
+        self.A6_MOMENTUM_GATED_SIZE_MULT = float(os.getenv('A6_MOMENTUM_GATED_SIZE_MULT', '0.4'))
         self.ASIA_TRADING_ENABLED = self._str_to_bool(os.getenv('ASIA_TRADING_ENABLED', 'true'))
         self.ASIA_END_HOUR_UTC = int(os.getenv('ASIA_END_HOUR_UTC', '8'))
 

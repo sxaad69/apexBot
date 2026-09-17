@@ -41,6 +41,22 @@ class StrategyA6(BaseStrategy):
         # Imbalance threshold: 65% is a high-conviction institutional wall.
         self.imbalance_threshold = 0.40 if self.testing_mode else 0.65
 
+        # Price-momentum override: a 2%+ intrabar surge with volume can indicate a thin-lift early move
+        # that may not yet show orderbook depth. Allows entry even if imbalance < threshold.
+        self.delta_price_momentum_gate = 0.02  # 2% intrabar surge triggers entry regardless of imbalance
+
+        # --- MOMENTUM-GATED STOP LOSS TIGHTENING (2026-09-17) ---
+        # For momentum-gated entries, use tighter stop (0.5% instead of volatility-adjusted)
+        # to limit ROE exposure, since momentum entries lack wall validation.
+        self.momentum_sl_percent = 0.5
+        self.momentum_max_roe = 1.0  # Max 1% ROE loss for momentum-gated entries
+        self.momentum_atr_multiplier = 0.5  # ATR/2 buffer for noise tolerance
+
+        # --- MOMENTUM ENTRY VALIDATION FILTERS ---
+        # Require confirmation that this is a real squeeze, not noise.
+        self.momentum_min_rsi = 70.0
+        self.momentum_min_adx = 25.0
+
         # Whale confirmation: require larger institutional confirmation
         self.min_whale_value = 10000 if self.testing_mode else 150000
 
@@ -433,7 +449,16 @@ class StrategyA6(BaseStrategy):
             df['volume_ratio'] = df['volume'] / df['volume_avg_20']
         df['returns'] = df['close'].pct_change()
         df['volatility'] = df['returns'].rolling(20).std() * 100
+        df['rsi_14'] = self._calculate_rsi(df['close'], period=14)
         return df
+
+    def _calculate_rsi(self, series, period=14):
+        """Simple RSI calculation."""
+        delta = series.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss.replace(0, 1)  # Avoid division by zero
+        return 100 - (100 / (1 + rs))
 
     # =========================================================================
     # Signal Generation
@@ -479,40 +504,55 @@ class StrategyA6(BaseStrategy):
             self.logger.debug(f"[{self.name}] {symbol}: Waiting for WebSocket data...")
             return self.set_rejection("WAITING_FOR_WSS_DATA")
 
+        # --- MOMENTUM OVERRIDE (2026-09-17) ---
+        # A 2%+ intrabar surge with volume can indicate a thin-wall breakout
+        # that hasn't yet built measurable orderbook depth. Allow entry via
+        # price momentum without requiring full 0.50 imbalance.
+        bar_move_pct = abs(df['close'].iloc[-1] - df['open'].iloc[0]) / df['open'].iloc[0] if len(df) > 1 else 0
+        momentum_gated = False
+        if abs(imbalance) < self.imbalance_threshold and bar_move_pct >= self.delta_price_momentum_gate:
+            momentum_gated = True
+            self.logger.info(f"[{self.name}] {symbol} MOMENTUM GATED ENTRY: "
+                             f"bar_move={bar_move_pct*100:.2f}% >= {self.delta_price_momentum_gate*100:.0f}% "
+                             f"(imbalance {imbalance*100:.1f}% < threshold {self.imbalance_threshold*100:.1f}%)")
+
         if abs(imbalance) < self.imbalance_threshold:
-            self.logger.debug(
-                f"[{self.name}] {symbol} scanning... Imbalance: {imbalance*100:.1f}% "
-                f"(Threshold: {self.imbalance_threshold*100:.1f}%)"
-            )
-            # Enrichment: signed imbalance + orderbook depth + session
-            # (whale enrichment disabled 2026-09-14 — no edge, REST ban driver)
-            try:
-                snap = self.fetch_orderbook_snapshot(symbol)
-                whale = {'count': 0, 'net_pressure': 0, 'total_value': 0}
-                sess_name, _, _ = self.get_current_session()
-            except Exception:
-                snap = {'imbalance': imbalance, 'bid_depth': 0.0, 'ask_depth': 0.0}
-                whale = {'count': 0, 'net_pressure': 0, 'total_value': 0}
-                sess_name = None
-            return self.set_rejection({
-                "reason": "LOW_IMBALANCE",
-                "imbalance": round(snap['imbalance'], 4),
-                "threshold": round(self.imbalance_threshold, 4),
-                "orderbook_depth": round(snap['bid_depth'], 2),
-                "orderbook_ask_depth": round(snap['ask_depth'], 2),
-                "whale_count": whale.get('count', 0),
-                "whale_net_pressure": whale.get('net_pressure', 0),
-                "whale_total_value": round(whale.get('total_value', 0), 2),
-                "regime": regime,
-                "adx": round(float(df['adx'].iloc[-1]) if 'adx' in df.columns else 0, 2),
-                "volatility": round(float(df['volatility'].iloc[-1]) if 'volatility' in df.columns else 0, 3),
-                "volume_ratio": round(float(df['volume_ratio'].iloc[-1]) if 'volume_ratio' in df.columns else 0, 2),
-                "ema200_distance": round((current_price - ema_200) / ema_200, 4),
-                "price": round(current_price, 8),
-                "atr": round(float(df['atr'].iloc[-1]) if 'atr' in df.columns else 0, 8),
-                "trend_bias": trend_bias,
-                "session": sess_name,
-            })
+            if not momentum_gated:
+                # No wall, no momentum surge → reject
+                self.logger.debug(
+                    f"[{self.name}] {symbol} scanning... Imbalance: {imbalance*100:.1f}% "
+                    f"(Threshold: {self.imbalance_threshold*100:.1f}%)"
+                )
+                # Enrichment: signed imbalance + orderbook depth + session
+                # (whale enrichment disabled 2026-09-14 — no edge, REST ban driver)
+                try:
+                    snap = self.fetch_orderbook_snapshot(symbol)
+                    whale = {'count': 0, 'net_pressure': 0, 'total_value': 0}
+                    sess_name, _, _ = self.get_current_session()
+                except Exception:
+                    snap = {'imbalance': imbalance, 'bid_depth': 0.0, 'ask_depth': 0.0}
+                    whale = {'count': 0, 'net_pressure': 0, 'total_value': 0}
+                    sess_name = None
+                return self.set_rejection({
+                    "reason": "LOW_IMBALANCE",
+                    "imbalance": round(snap['imbalance'], 4),
+                    "threshold": round(self.imbalance_threshold, 4),
+                    "orderbook_depth": round(snap['bid_depth'], 2),
+                    "orderbook_ask_depth": round(snap['ask_depth'], 2),
+                    "whale_count": whale.get('count', 0),
+                    "whale_net_pressure": whale.get('net_pressure', 0),
+                    "whale_total_value": round(whale.get('total_value', 0), 2),
+                    "regime": regime,
+                    "adx": round(float(df['adx'].iloc[-1]) if 'adx' in df.columns else 0, 2),
+                    "volatility": round(float(df['volatility'].iloc[-1]) if 'volatility' in df.columns else 0, 3),
+                    "volume_ratio": round(float(df['volume_ratio'].iloc[-1]) if 'volume_ratio' in df.columns else 0, 2),
+                    "ema200_distance": round((current_price - ema_200) / ema_200, 4),
+                    "price": round(current_price, 8),
+                    "atr": round(float(df['atr'].iloc[-1]) if 'atr' in df.columns else 0, 8),
+                    "trend_bias": trend_bias,
+                    "session": sess_name,
+                    "bar_move_pct": round(bar_move_pct, 4),
+                })
 
         # 7. Whale Confirmation (disabled 2026-09-14 — no edge, REST ban driver)
         whale_data = {'count': 0, 'net_pressure': 0, 'total_value': 0}
@@ -525,6 +565,10 @@ class StrategyA6(BaseStrategy):
 
         # Orderbook imbalance contribution (up to 25%)
         confidence += abs(imbalance) * 0.25
+
+        # Momentum override bonus (2026-09-17): thin-wall surge without depth wins less trust
+        if momentum_gated:
+            confidence += 0.10  # smaller boost — momentum alone is less certain than a real wall
 
         # Volume contribution (up to 10%)
         volume_ratio = df.get('volume_ratio', pd.Series([1])).iloc[-1]
@@ -587,6 +631,49 @@ class StrategyA6(BaseStrategy):
                 return None
             side = 'sell'
             self.logger.info(f"[{self.name}] {symbol} MASSIVE ASK WALL: {imbalance*100:.1f}% | Conf: {confidence:.2f} | Regime: {regime}")
+        elif momentum_gated:
+            # Momentum override: use bar direction + trend_bias for side determination
+            # --- MOMENTUM VALIDATION (2026-09-17) ---
+            # Require RSI(14) >= momentum_min_rsi to confirm strength, ADX >= momentum_min_adx
+            # to confirm trend persistence, and bar_move >= momentum_bar_move_gate.
+            rsi_val = float(df['rsi_14'].iloc[-1]) if 'rsi_14' in df.columns else 0
+            if rsi_val < self.momentum_min_rsi:
+                return self.set_rejection({
+                    "reason": "MOMENTUM_RSI_LOW",
+                    "rsi": round(rsi_val, 2),
+                    "min_rsi": self.momentum_min_rsi,
+                    "imbalance": round(imbalance, 4),
+                })
+            
+            if bar_move_pct > 0 and df['close'].iloc[-1] > df['open'].iloc[0]:
+                if trend_bias == 'bullish':
+                    side = 'buy'
+                    self.logger.info(f"[{self.name}] {symbol} MOMENTUM-GATED LONG: bar_move={bar_move_pct*100:.2f}% | RSI={rsi_val:.1f} | Conf: {confidence:.2f} | Regime: {regime}")
+                else:
+                    return self.set_rejection({
+                        "reason": "MOMENTUM_TREND_MISMATCH",
+                        "bar_move_pct": round(bar_move_pct, 4),
+                        "trend_bias": trend_bias,
+                    })
+            elif df['close'].iloc[-1] < df['open'].iloc[0]:
+                if trend_bias == 'bearish':
+                    side = 'sell'
+                    self.logger.info(f"[{self.name}] {symbol} MOMENTUM-GATED SHORT: bar_move={bar_move_pct*100:.2f}% | RSI={rsi_val:.1f} | Conf: {confidence:.2f} | Regime: {regime}")
+                else:
+                    return self.set_rejection({
+                        "reason": "MOMENTUM_TREND_MISMATCH",
+                        "bar_move_pct": round(bar_move_pct, 4),
+                        "trend_bias": trend_bias,
+                    })
+            else:
+                return self.set_rejection({
+                    "reason": "MOMENTUM_NO_CLEAR_DIRECTION",
+                    "bar_move_pct": round(bar_move_pct, 4),
+                })
+            # Momentum-gated shorts still require stricter imbalance threshold check
+            if side == 'sell' and abs(imbalance) < self.short_imbalance_threshold and not momentum_gated:
+                self.log_strategy_skip(symbol, "SHORT_IMBALANCE_INSUFFICIENT", {"imbalance": round(imbalance*100, 1), "required": self.short_imbalance_threshold*100})
+                return None
 
         if not side:
             return self.set_rejection({
@@ -634,6 +721,10 @@ class StrategyA6(BaseStrategy):
             'stop_loss': stop_loss,
             'take_profit': take_profit,
             'confidence': min(confidence, 1.0),
+            'momentum_gated': momentum_gated,
+            'bar_move_pct': round(bar_move_pct, 4),
+            'momentum_sl_percent': round(self.momentum_sl_percent, 4),
+            'momentum_max_roe': round(self.momentum_max_roe, 4),
             'strategy': self.name,
             'session': session_name,
             'regime': regime,

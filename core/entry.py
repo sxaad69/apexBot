@@ -165,12 +165,24 @@ class EntryMixin:
             #   everything else       -> BASE (10% / 2x)
             confidence = signal.get('confidence', 0.5)
             hot_conf = float(getattr(self.config, 'TIER_HOT_CONF', 0.90))
+            
+            # --- MOMENTUM-GATED STOP LOSS TIGHTENING (2026-09-17) ---
+            # For momentum-gated entries (no wall validation), use tighter SL and cap ROE.
+            # Position size is NOT reduced — stop loss precision is the risk control.
+            momentum_gated = signal.get('momentum_gated', False)
+            momentum_sl_pct = signal.get('momentum_sl_percent', 0.0)
+            momentum_max_roe = signal.get('momentum_max_roe', 10.0)
+            
             if confidence >= hot_conf:
                 base_size_pct = float(getattr(self.config, 'TIER_HOT_SIZE', 0.25))
                 tier_tag = "HOT"
+                if momentum_gated:
+                    tier_tag = "HOT_MOMENTUM"
             else:
                 base_size_pct = float(getattr(self.config, 'TIER_BASE_SIZE', 0.10))
                 tier_tag = "BASE"
+                if momentum_gated:
+                    tier_tag = "BASE_MOMENTUM"
 
             total_capital = self.total_capital
 
@@ -233,7 +245,38 @@ class EntryMixin:
                 'strategy': strategy_name,
                 'confidence': signal.get('confidence', 0.5),
                 'atr': indicators.get('atr', None),  # Pass ATR for dynamic leverage
+                'momentum_gated': momentum_gated,
+                'momentum_sl_percent': signal.get('momentum_sl_percent', 0.0),
+                'momentum_max_roe': signal.get('momentum_max_roe', 10.0),
             }
+
+            # --- MOMENTUM-GATED STOP LOSS OVERRIDE (2026-09-17) ---
+            # For entries without wall validation (momentum surge only), tighten SL
+            # to contain ROE exposure. Use hybrid model: max(momentum gate, ATR/2)
+            # to avoid being shaken out by normal micro-cap volatility.
+            if momentum_gated and momentum_sl_pct > 0:
+                entry_price = signal['entry_price']
+                atr = indicators.get('atr', 0)
+                momentum_atr_mult = float(getattr(self.config, 'MOMENTUM_ATR_MULTIPLIER', 0.5))
+                # Compute hybrid stop: max(momentum gate, ATR/2)
+                atr_buffer_pct = (atr * momentum_atr_mult) / entry_price * 100 if atr and entry_price > 0 else 0
+                effective_sl_pct = max(momentum_sl_pct, atr_buffer_pct)
+                
+                if signal['side'].lower() == 'buy':
+                    trade_params['stop_loss'] = entry_price * (1 - effective_sl_pct / 100)
+                else:
+                    trade_params['stop_loss'] = entry_price * (1 + effective_sl_pct / 100)
+                
+                trade_params['momentum_effective_sl_pct'] = round(effective_sl_pct, 4)
+                self.logger.info(
+                    "[{}] {} MOMENTUM-GATED SL: {:.8f} "
+                    "(effective {:.2f}% via max({:.1f}%, {:.2f}% ATR)) "
+                    "-> ROE cap {}x = {:.1f}%".format(
+                        strategy_name, symbol, trade_params["stop_loss"],
+                        effective_sl_pct, momentum_sl_pct, atr_buffer_pct,
+                        leverage, effective_sl_pct * leverage
+                    )
+                )
 
             # Unified drawdown tracking for the shared pool (Equity-Based)
             # We use Equity (Available Balance + Open Margin + Unrealized P&L) 
@@ -291,6 +334,18 @@ class EntryMixin:
 
             # Approved trade - execute
             try:
+                # --- [PHASE 15.1: ENTRY GROUNDING pre-definition] ---
+                # Build the signal DNA metadata BEFORE the live/paper split, so both
+                # branches persist the same build-up context to DB.
+                momentum_gated_flag = signal.get('momentum_gated', False)
+                signal_extra = {
+                    'indicators': signal.get('indicators') or {},
+                    'regime': signal.get('regime'),
+                    'session': signal.get('session'),
+                    'tier': tier_tag,
+                    'momentum_gated': momentum_gated_flag,
+                    'bar_move_pct': signal.get('bar_move_pct', 0),
+                }
                 # Initialize safety variables to prevent UnboundLocalError
                 position = None
                 entry_fee = 0.0
@@ -358,14 +413,7 @@ class EntryMixin:
                         )
 
                         # --- [PHASE 15.1: ENTRY GROUNDING via TradeManager] ---
-                        # Persist the signal's build-up DNA with the fill
-                        # (forensics + compositional gates later).
-                        signal_extra = {
-                            'indicators': signal.get('indicators') or {},
-                            'regime': signal.get('regime'),
-                            'session': signal.get('session'),
-                            'tier': 'HOT' if confidence >= float(getattr(self.config, 'TIER_HOT_CONF', 0.90)) else 'BASE',
-                        }
+                        # signal_extra is built above, shared between live and paper paths
                         position = self.trade_manager.record_entry(
                             symbol=symbol,
                             strategy_name=strategy_name,
@@ -572,7 +620,8 @@ class EntryMixin:
                             take_profit=approved_params['take_profit'],
                             planned_price=entry_price,
                             confidence=approved_params.get('confidence', 0.0),
-                            stop_loss_roe=approved_params.get('stop_loss_roe', 5.0)
+                            stop_loss_roe=approved_params.get('stop_loss_roe', 5.0),
+                            signal_meta=signal_extra
                         )
                     
                     # Update Capital accounting ONLY if it's a valid position

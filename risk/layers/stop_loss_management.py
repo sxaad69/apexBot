@@ -42,6 +42,36 @@ class StopLossManagementLayer:
         # 2. Check if strategy provided a technical Stop Loss (ATR)
         strategy_sl = trade_params.get('stop_loss')
         
+        # --- MOMENTUM-GATED STOP LOSS OVERRIDE (2026-09-17) ---
+        # For momentum-gated entries, the SL was already tightened in entry.py.
+        # Skip volatility-adjustment entirely and enforce the momentum max ROE cap.
+        momentum_gated = trade_params.get('momentum_gated', False)
+        momentum_sl_pct = trade_params.get('momentum_sl_percent', 0)
+        momentum_max_roe = trade_params.get('momentum_max_roe', 10.0)
+        
+        if momentum_gated and strategy_sl and entry_price > 0:
+            # Enforce momentum SL cap
+            if entry_price > 0 and momentum_sl_pct > 0:
+                distance_percent = momentum_sl_pct
+                actual_roe_loss = distance_percent * trade_params.get('leverage', 1)
+                
+                # Hard cap at momentum_max_roe
+                if actual_roe_loss > momentum_max_roe:
+                    distance_percent = momentum_max_roe / trade_params.get('leverage', 1)
+                    if side == 'buy':
+                        strategy_sl = entry_price * (1 - distance_percent / 100)
+                    else:
+                        strategy_sl = entry_price * (1 + distance_percent / 100)
+                
+                trade_params['stop_loss'] = strategy_sl
+                trade_params['stop_loss_percent'] = distance_percent
+                trade_params['stop_loss_roe'] = actual_roe_loss
+                trade_params['stop_loss_roe_capped'] = momentum_max_roe
+                
+                self.logger.info(f"[{strategy_tag}] MOMENTUM-GATED SL: {distance_percent:.2f}% | "
+                                 f"Leverage: {trade_params.get('leverage', 1)}x | "
+                                 f"Risk: {actual_roe_loss:.1f}% ROE (cap: {momentum_max_roe}%)")
+                return trade_params
         if strategy_sl and entry_price > 0:
             # Calculate the percentage distance of the ATR stop loss
             distance_percent = abs(entry_price - strategy_sl) / entry_price * 100
