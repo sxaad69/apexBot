@@ -485,6 +485,10 @@ class StrategyA6(BaseStrategy):
             self.log_strategy_skip(symbol, f"FILTER_{filter_reason.upper()}", {})
             return None
 
+        # RSI(14) — needed for the momentum confirmation gate and persisted to
+        # the signal DNA so audits can slice momentum entries by RSI later.
+        rsi_val = float(df['rsi_14'].iloc[-1]) if 'rsi_14' in df.columns else 0
+
         # 5. Market Regime Filter (skip volatile/unknown)
         regime = self.get_market_regime(df)
         if regime in ['volatile', 'unknown']:
@@ -636,7 +640,6 @@ class StrategyA6(BaseStrategy):
             # --- MOMENTUM VALIDATION (2026-09-17) ---
             # Require RSI(14) >= momentum_min_rsi to confirm strength, ADX >= momentum_min_adx
             # to confirm trend persistence, and bar_move >= momentum_bar_move_gate.
-            rsi_val = float(df['rsi_14'].iloc[-1]) if 'rsi_14' in df.columns else 0
             if rsi_val < self.momentum_min_rsi:
                 return self.set_rejection({
                     "reason": "MOMENTUM_RSI_LOW",
@@ -725,13 +728,19 @@ class StrategyA6(BaseStrategy):
             'bar_move_pct': round(bar_move_pct, 4),
             'momentum_sl_percent': round(self.momentum_sl_percent, 4),
             'momentum_max_roe': round(self.momentum_max_roe, 4),
+            'delta_price_momentum_gate': round(self.delta_price_momentum_gate, 4),
+            'momentum_min_rsi': round(self.momentum_min_rsi, 2),
+            'momentum_min_adx': round(self.momentum_min_adx, 2),
             'strategy': self.name,
             'session': session_name,
             'regime': regime,
+            'trend_bias': trend_bias,
             'indicators': {
                 'imbalance': round(imbalance, 4),
                 'atr': round(atr, 8),
                 'adx': round(adx_val, 2),
+                'rsi_14': round(rsi_val, 2),
+                'volume_ratio': round(float(volume_ratio) if volume_ratio == volume_ratio else 0, 2),
                 'whale_count': whale_data['count'],
                 'whale_net_pressure': whale_data['net_pressure'],
             }

@@ -35,6 +35,38 @@
 
 ---
 
+## 🔬 Momentum-Gated Entries (live since Sep 17 22:56 UTC, commit `f2e1c1a`)
+
+**What the gate is:** A6 entries now fire on an **intrabar momentum override** when
+the current 15m candle surges ≥2% (`delta_price_momentum_gate`, `strategy_a6.py:46`)
+even with **no buy wall** (|IMB| < 0.65). Confirmation stack before entry
+(`strategy_a6.py:507-742`): RSI(14) ≥ 70, trend_bias bullish (LONG-only so far),
+ADX ≥ 25 (Phase 27), confidence = 0.50 + |IMB|×0.25 + 0.10 momentum + 0.10 (volr>1.2)
++ 0.10 (strong/moderate trend), mid-band 0.85–0.90 skipped, <0.85 probe-sized ÷2,
+tight SL (momentum_sl_percent 0.5%, max 1% ROE).
+
+**INITIAL FINDING (Sep 18 — NOT a rule yet):** across the first 21 momentum trades,
+the **bar% at entry is the one discriminator** that separates P&L:
+
+- **bar% < 9% → 16 trades → net +$7.46** (4 trailing winners incl CC +2.37, LISTA +1.76, KAITO +1.48, AAVE +1.28)
+- **bar% ≥ 9% → 5 trades → net −$2.85** (USELESS −1.37 on 27% bar, FOLKS −0.96 on 10.2%, plus BILL/ROBO/M)
+- Negative-IMB entries actually won (CC −56.5% IMB → +2.37, LISTA −41.1% → +1.76);
+  the losers cluster on big bar% fades (high but fading bars), NOT on imbalance.
+- RSI/volume-ratio/session do NOT separate winners from losers. **bar% does.**
+
+**Needs more data before acting** — 21 trades is small; the ≥9% bucket is only 5.
+Candidate follow-up if the pattern holds: a `A6_MOMENTUM_BAR_MAX_PCT` cap (~9%)
+in config to skip fade-prone surges. **Do NOT add yet.**
+
+**Full signal DNA is now persisted** (commit pending): `confidence`, `trend_bias`,
+`momentum_sl_percent`, `momentum_max_roe`, `delta_price_momentum_gate`,
+`momentum_min_rsi`, `momentum_min_adx` + indicators `rsi_14`, `volume_ratio`
+added to the signal dict (`strategy_a6.py`) and `signal_extra` (`core/entry.py:341`).
+Audit with **`audit/momentum_audit.py`** (exchange-truth income-based ledger
++ `--bar-split`). Older rows predate persistence → RSI/VOLr show `?`.
+
+---
+
 ## 📉 The Aug-20 P&L Cliff (forensic conclusion)
 
 | Era | Closes/day | Win rate | Net |

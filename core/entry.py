@@ -345,6 +345,13 @@ class EntryMixin:
                     'tier': tier_tag,
                     'momentum_gated': momentum_gated_flag,
                     'bar_move_pct': signal.get('bar_move_pct', 0),
+                    'confidence': signal.get('confidence'),
+                    'trend_bias': signal.get('trend_bias'),
+                    'momentum_sl_percent': signal.get('momentum_sl_percent'),
+                    'momentum_max_roe': signal.get('momentum_max_roe'),
+                    'delta_price_momentum_gate': signal.get('delta_price_momentum_gate'),
+                    'momentum_min_rsi': signal.get('momentum_min_rsi'),
+                    'momentum_min_adx': signal.get('momentum_min_adx'),
                 }
                 # Initialize safety variables to prevent UnboundLocalError
                 position = None
