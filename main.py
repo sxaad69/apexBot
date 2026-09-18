@@ -1037,7 +1037,7 @@ class ApexHunterBot(SyncMixin):
                 # sweep_summary row records market conditions (walls forming?)
                 # independently of how many entries actually executed.
                 signal_branches = {}
-                for strategy in self.strategies:
+                for strategy in self.engine.strategies:
                     counts = getattr(strategy, 'branch_counts', None)
                     if counts is None:
                         continue
