@@ -364,7 +364,8 @@ class MongoLogger(Logger):
                 'entries_executed': sweep_stats.get('entries_executed', 0),
                 'batch_cap_skipped': sweep_stats.get('batch_cap_skipped', 0),
                 'strategy_rejections': sweep_stats.get('strategy_rejections', {}),
-                'risk_rejections': sweep_stats.get('risk_rejections', {})
+                'risk_rejections': sweep_stats.get('risk_rejections', {}),
+                'signal_branches': sweep_stats.get('signal_branches', {})
             }
             
             # Use log_activity to store the sweep summary

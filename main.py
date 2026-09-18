@@ -1031,6 +1031,24 @@ class ApexHunterBot(SyncMixin):
                 sweep_stats['duration_sec'] = time.time() - sweep_start_time
                 # Track batch-cap skips for visibility
                 sweep_stats['batch_cap_skipped'] = len(self.engine._batch_cap_skipped_symbols)
+
+                # Signal branch counters (2026-09-18): drain each strategy's
+                # wall/momentum/neither bucket counts for THIS sweep so the
+                # sweep_summary row records market conditions (walls forming?)
+                # independently of how many entries actually executed.
+                signal_branches = {}
+                for strategy in self.strategies:
+                    counts = getattr(strategy, 'branch_counts', None)
+                    if counts is None:
+                        continue
+                    with strategy._branch_lock:
+                        drained = dict(counts)
+                        counts['wall'] = counts['momentum'] = counts['neither'] = 0
+                    if any(drained.values()):
+                        signal_branches[strategy.name] = drained
+                if signal_branches:
+                    sweep_stats['signal_branches'] = signal_branches
+
                 if sweep_stats['batch_cap_skipped'] > 0:
                     self.logger.debug(
                         f"Batch-cap skipped {sweep_stats['batch_cap_skipped']} symbols "

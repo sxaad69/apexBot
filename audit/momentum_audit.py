@@ -57,6 +57,7 @@ except ImportError:
     load_dotenv = None
 
 DB_PATH = os.environ.get("APEX_DB_PATH", "data/apex_hunter.db")
+LOG_DB_PATH = os.environ.get("APEX_LOG_DB_PATH", "data/activity_log.db")
 INCOME_START = "2026-07-01T00:00:00Z"   # cover all-time A6 entries
 
 
@@ -174,6 +175,39 @@ def bar_split(trades, ex_inc, marks):
     return low, high, missing
 
 
+def branches(from_dt=None, to_dt=None):
+    """Aggregate wall/momentum/neither signal-branch counts from sweep_summary
+    rows (persisted since commit adding signal_branches __all__ handler)."""
+    import sqlite3 as _sq
+    db = _sq.connect(LOG_DB_PATH)
+    q = ("SELECT timestamp, metadata FROM activity_log WHERE type='sweep_summary' ")
+    conds, params = [], []
+    if from_dt:
+        conds.append("timestamp >= ?")
+        params.append(from_dt)
+    if to_dt:
+        conds.append("timestamp < ?")
+        params.append(to_dt)
+    if conds:
+        q += "AND " + " AND ".join(conds)
+    rows = db.execute(q, params).fetchall()
+    wall = momentum = neither = 0
+    rows_seen = 0
+    intervals = []
+    for ts, md in rows:
+        try:
+            m = json.loads(md)
+        except Exception:
+            continue
+        sb = m.get('signal_branches', {}) or {}
+        for strat, cnt in sb.items():
+            wall += cnt.get('wall', 0)
+            momentum += cnt.get('momentum', 0)
+            neither += cnt.get('neither', 0)
+            rows_seen += 1
+    return rows_seen, {'wall': wall, 'momentum': momentum, 'neither': neither}
+
+
 def main():
     ap = argparse.ArgumentParser(description='A6 entry audit (momentum vs wall).')
     ap.add_argument('--type', choices=['momentum', 'wall', 'all'], default='momentum')
@@ -182,10 +216,28 @@ def main():
     ap.add_argument('--to', dest='to_dt', help='window end YYYY-MM-DD')
     ap.add_argument('--symbol', help='filter by base symbol (e.g. SOON)')
     ap.add_argument('--no-split', action='store_true')
+    ap.add_argument('--branches', action='store_true',
+                    help='aggregate wall/momentum/neither signal-branch counts '
+                         'from persisted sweep_summary rows (no income API needed)')
     args = ap.parse_args()
 
     from_dt = args.from_dt or (datetime.date.today() - datetime.timedelta(days=args.days)).isoformat()
     to_dt = args.to_dt or '2099-12-31'
+
+    if args.branches:
+        rows_seen, cnt = branches(from_dt, to_dt)
+        if rows_seen == 0:
+            print("No sweep_summary rows with signal_branches in %s..%s "
+                  "(counters live since the Sep 18 2026 deploy — older rows lack them)."
+                  % (from_dt, args.to_dt or 'now'))
+            return
+        total = cnt['wall'] + cnt['momentum'] + cnt['neither']
+        print('signal-branch counts over %d sweep_summary rows in %s..%s:' % (rows_seen, from_dt, args.to_dt or 'now'))
+        print('  WALL     %5d  (%.1f%%)' % (cnt['wall'], 100.0 * cnt['wall'] / total if total else 0))
+        print('  MOMENTUM %5d  (%.1f%%)' % (cnt['momentum'], 100.0 * cnt['momentum'] / total if total else 0))
+        print('  NEITHER  %5d  (%.1f%%)' % (cnt['neither'], 100.0 * cnt['neither'] / total if total else 0))
+        print('note: these are SIGNAL REACH (incl. rejected by later gates), not entries.')
+        return
 
     trades = fetch_trades(args.type, from_dt, to_dt, args.symbol)
     if not trades:

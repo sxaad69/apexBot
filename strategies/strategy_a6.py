@@ -94,6 +94,13 @@ class StrategyA6(BaseStrategy):
         # WSS Memory tracking (speed advantage over A5's REST calls)
         self.latest_orderbooks = {}
 
+        # Signal branch counters (2026-09-18): how many signals reached the
+        # WALL vs MOMENTUM vs NEITHER branch each sweep. main.py drains these
+        # into sweep_summary.signal_branches so we can audit market conditions
+        # (were walls actually forming?) vs entry flow.
+        self.branch_counts = {'wall': 0, 'momentum': 0, 'neither': 0}
+        self._branch_lock = threading.Lock()
+
         # Publish the orderbook feed to the engine so composite strategies (A8)
         # and forensics can read the same real-time data without duplicating WSS.
         try:
@@ -516,9 +523,17 @@ class StrategyA6(BaseStrategy):
         momentum_gated = False
         if abs(imbalance) < self.imbalance_threshold and bar_move_pct >= self.delta_price_momentum_gate:
             momentum_gated = True
+            with self._branch_lock:
+                self.branch_counts['momentum'] += 1
             self.logger.info(f"[{self.name}] {symbol} MOMENTUM GATED ENTRY: "
                              f"bar_move={bar_move_pct*100:.2f}% >= {self.delta_price_momentum_gate*100:.0f}% "
                              f"(imbalance {imbalance*100:.1f}% < threshold {self.imbalance_threshold*100:.1f}%)")
+        elif abs(imbalance) >= self.imbalance_threshold:
+            with self._branch_lock:
+                self.branch_counts['wall'] += 1
+        else:
+            with self._branch_lock:
+                self.branch_counts['neither'] += 1
 
         if abs(imbalance) < self.imbalance_threshold:
             if not momentum_gated:
