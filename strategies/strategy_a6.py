@@ -195,12 +195,15 @@ class StrategyA6(BaseStrategy):
                 # prioritizing open positions + top-volume symbols.
                 max_watch = getattr(self.config, 'A6_MAX_WATCH_SYMBOLS', 150)
                 if len(pairs) > max_watch:
-                    # Prioritize: open positions first, then top-volume (already sorted)
+                    # Prioritize non-open top-volume symbols (already sorted);
+                    # open positions only fill leftover slots. Exits don't need an
+                    # orderbook (uncapped markPrice stream) and held symbols are
+                    # never re-entered, so non-open symbols get the slots first.
                     open_symbols = set()
                     if hasattr(self.logger, 'engine') and self.logger.engine:
                         open_symbols = {p['symbol'] for p in self.logger.engine.positions.values()}
-                    prioritized = [s for s in pairs if s in open_symbols]
-                    prioritized += [s for s in pairs if s not in open_symbols]
+                    prioritized = [s for s in pairs if s not in open_symbols]
+                    prioritized += [s for s in pairs if s in open_symbols]
                     pairs = prioritized[:max_watch]
 
                 for sym in list(active_tasks.keys()):

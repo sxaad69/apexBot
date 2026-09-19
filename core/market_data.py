@@ -140,8 +140,13 @@ class MarketDataMixin:
                         conn.close()
                     
                     if must_monitor:
-                        # Merge and deduplicate
-                        combined = list(set(top_pairs + must_monitor))
+                        # Merge and deduplicate preserving volume order.
+                        # NOTE: list(set(...)) was hash-ordered, silently scrambling
+                        # the volume ranking and starving top symbols (e.g. rank-12
+                        # AKE) from the WSS watch list even when within the cap.
+                        seen = set()
+                        combined = [s for s in top_pairs + must_monitor
+                                    if not (s in seen or seen.add(s))]
                         # Keep original volume order for top N, then append newcomers
                         top_pairs = combined
                         self.logger.info(f"📍 Position-Aware Sync: Added {len(must_monitor)} active trade symbols to monitoring cycle.")
