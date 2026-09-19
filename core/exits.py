@@ -15,6 +15,8 @@ Mixin design: PaperTradingEngine inherits this, so all self.* references resolve
 to the engine instance exactly as before. Method names/signatures are unchanged.
 """
 
+import time as _time
+
 
 class ExitsMixin:
 
@@ -727,6 +729,12 @@ class ExitsMixin:
                 tp_id = position.get('tp_order_id')
                 trailing_id = position.get('trailing_order_id')
                 fallback_trailing_id = position.get('trailing_fallback_id')
+
+                # A PENDING_EXIT position that just failed verification is within
+                # EXIT_RETRY_COOLDOWN — skip the exchange poll too, so record_exit's
+                # 3x verification (2s sleeps) can't block the sentinel every tick.
+                if position.get('status') == 'PENDING_EXIT' and _time.time() < float(position.get('_exit_retry_after') or 0):
+                    continue
                 
                 if sl_id or tp_id or trailing_id:
                     try:
@@ -840,7 +848,15 @@ class ExitsMixin:
                             import time
                             self.recent_liquidations[symbol] = time.time()
                             self._update_symbol_loss_streak(symbol, exchange_exit_reason, exit_result.get('net_pnl', 0) if exit_result else 0)
-                            closed_positions.append(position_key)
+                            if exit_result is not None and exit_result.get('verified'):
+                                closed_positions.append(position_key)
+                            else:
+                                # Exchange order apparently fired but position still open
+                                # (verification lag/race) — stay tracked so the next tick
+                                # re-records the verified exit instead of ghosting it.
+                                position['status'] = 'PENDING_EXIT'
+                                position['_exit_retry_after'] = _time.time() + 5.0
+                                self.positions[position_key] = position
                             continue # Skip the rest of the loop for this position
                             
                     except Exception as e:
@@ -859,6 +875,10 @@ class ExitsMixin:
 
             # Check for failed previous exits (PENDING_EXIT)
             is_pending_retry = position.get('status') == 'PENDING_EXIT'
+            # Cooldown gate: a failed close runs record_exit's 3x verification
+            # (2s sleeps each) — retrying every 0.5s tick would block the sentinel.
+            if is_pending_retry and _time.time() < float(position.get('_exit_retry_after') or 0):
+                continue
             should_exit, reason = self.check_position_exit(position, current_price)
 
             if should_exit or is_pending_retry:
@@ -894,6 +914,8 @@ class ExitsMixin:
                             finally:
                                 conn.close()
                         position['status'] = 'PENDING_EXIT'
+                        position['_exit_retry_after'] = _time.time() + float(
+                            getattr(self.config, 'EXIT_RETRY_COOLDOWN', 30.0))
                         self.positions[position_key] = position
                         continue # Skip capital updates until successfully closed
 
@@ -928,13 +950,33 @@ class ExitsMixin:
                         if self.mode == 'paper' and hasattr(self.logger, 'db'):
                             self.logger.db.set_setting('peak_balance', self.total_capital)
                 
+                # Unverified exit: the position is STILL OPEN on exchange. Keep it
+                # tracked (PENDING_EXIT) so the sentinel keeps monitoring and retries
+                # the close — otherwise it becomes a ghost (open on exchange, OPEN in
+                # DB, but dropped from engine memory: the GPS/QNT/T/VTHO bug).
+                if exit_result is None or not exit_result.get('verified'):
+                    self.logger.warning(f"🔄 {symbol}: exit NOT verified ({reason}) — keeping tracked as PENDING_EXIT.")
+                    if hasattr(self.logger, 'db'):
+                        conn = self.logger.db._get_connection(self.logger.db.main_db)
+                        try:
+                            cursor = conn.cursor()
+                            if position.get('status') != 'PENDING_EXIT':
+                                cursor.execute("UPDATE trades SET status = 'PENDING_EXIT' WHERE trade_id = ?", (position.get('trade_id'),))
+                                conn.commit()
+                        finally:
+                            conn.close()
+                    position['status'] = 'PENDING_EXIT'
+                    position['_exit_retry_after'] = _time.time() + float(
+                        getattr(self.config, 'EXIT_RETRY_COOLDOWN', 30.0))
+                    self.positions[position_key] = position
+                    continue
+
                 # Remove from memory loop
                 import time
                 self.recent_liquidations[symbol] = time.time()
-                self._update_symbol_loss_streak(symbol, reason, exit_result.get('net_pnl', 0) if exit_result else 0)
+                self._update_symbol_loss_streak(symbol, reason, exit_result.get('net_pnl', 0))
                 closed_positions.append(position_key)
                 continue
-                # (Legacy code removed)
 
                 # MongoDB structured logging
                 self.logger.trade_exit(

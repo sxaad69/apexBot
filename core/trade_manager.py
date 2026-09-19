@@ -135,8 +135,10 @@ class TradeManager:
         Grounded Exit Recorder with Zero-Position Verification.
         Only marks trade as CLOSED if exchange confirms position is 0.
         """
-        # 1. Fetch trade from DB to get entry data
-        trades = self.db.get_trades(status='OPEN')
+        # 1. Fetch trade from DB to get entry data. PENDING_EXIT trades (failed
+        # verify on a prior close attempt) must be findable so the retry in
+        # check_exits can finalize them once the close actually lands.
+        trades = self.db.get_trades(status='OPEN') + self.db.get_trades(status='PENDING_EXIT')
         trade = next((t for t in trades if t['trade_id'] == trade_id), None)
         
         if not trade:

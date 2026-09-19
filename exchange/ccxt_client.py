@@ -554,18 +554,62 @@ class CCXTExchangeClient(BaseExchangeClient):
             self.logger.error(f"Error fetching fees: {e}")
             return {}
     
+    def _fetch_position_ground_truth(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Ground-truth fetch of a single position dict (bypasses TTL cache).
+
+        The TTL cache in get_positions() can FALSELY report a position as gone
+        (stale cache / ban / limiter-timeout empty fallback), which previously
+        made close_position skip the real market order while the position stayed
+        open on exchange — the ghost-position root cause (GPS/QNT/T/VTHO).
+        Used ONLY on the close path, so the extra REST weight is acceptable.
+        """
+        import time as _time
+        sym = symbol
+        for _attempt in range(3):
+            try:
+                if self._is_banned():
+                    cached = getattr(self, '_positions_cache', None)
+                    if cached is not None:
+                        for p in cached:
+                            if p.get('symbol') == sym and abs(float(p.get('contracts', 0) or 0)) > 0:
+                                return dict(p)
+                    return None
+                rate_limiter = getattr(self, 'rate_limiter', None)
+                if rate_limiter is not None and not rate_limiter.acquire(weight=5, timeout=8):
+                    cached = getattr(self, '_positions_cache', None)
+                    if cached is not None:
+                        for p in cached:
+                            if p.get('symbol') == sym and abs(float(p.get('contracts', 0) or 0)) > 0:
+                                return dict(p)
+                    return None
+                positions = self.exchange.fetch_positions([sym])
+                active = [p for p in positions if abs(float(p.get('contracts', 0) or 0)) > 0]
+                self._positions_cache = active
+                self._positions_cache_ts = _time.time()
+                if active:
+                    return dict(active[0])
+                return None
+            except Exception as e:
+                self._record_ban(e)
+                _time.sleep(0.5)
+        # After retries, uncertain -> return None (caller treats as no position)
+        return None
+
     def close_position(self, symbol: str) -> Dict[str, Any]:
         """Close a position (futures-specific)"""
         try:
-            # Get current position
-            positions = self.get_positions(symbol)
-            if not positions:
-                self.logger.warning(f"No open position for {symbol}")
+            # Ground-truth fetch — do NOT trust the TTL cache here (stale/empty
+            # cache caused "No open position" to skip the real close order).
+            position = self._fetch_position_ground_truth(symbol)
+            if not position:
+                self.logger.warning(f"No open position for {symbol} (ground-truth fetch empty)")
                 return {}
             
-            position = positions[0]
-            side = 'sell' if position.get('side') == 'long' else 'buy'
-            amount = abs(float(position.get('contracts', 0)))
+            side = 'sell' if str(position.get('side', 'long')).lower() == 'long' else 'buy'
+            amount = abs(float(position.get('contracts', 0) or 0))
+            if amount <= 0:
+                self.logger.warning(f"No open position for {symbol} (zero size)")
+                return {}
             
             # Close with market order
             result = self.place_order(symbol, side, 'market', amount, reduceOnly=True)

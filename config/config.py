@@ -280,6 +280,11 @@ class Config:
         # 2026-09-05: tier re-place no longer retries in-loop (that blocked the
         # sentinel thread ~2s/tick); one attempt per tick with this cooldown.
         self.TIER_RETRY_COOLDOWN = float(os.getenv('TIER_RETRY_COOLDOWN', '60'))
+        # 2026-09-19: PENDING_EXIT retry cooldown — after a failed/unverified exit
+        # close, wait this long before retrying the market close (each failed close
+        # runs record_exit's 3x verification with 2s sleeps, which would otherwise
+        # block the entire sentinel thread every tick for a stuck position).
+        self.EXIT_RETRY_COOLDOWN = float(os.getenv('EXIT_RETRY_COOLDOWN', '30'))
         # 2026-09-05: cap trailing activation in PRICE terms. The 15%-ROE/leverage
         # formula needs +15% price at 1x — unreachable for strategies whose winners
         # peak at +2..8% (A6 trailing exits avg +1..4%; SKR gave back +12% to the
