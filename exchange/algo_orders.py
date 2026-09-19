@@ -94,9 +94,12 @@ class AlgoOrdersMixin:
                 'newOrderRespType': 'RESULT',
             }
             if trigger_price is not None:
-                params['triggerPrice'] = trigger_price
+                # Binance Algo API rejects float/scientific-notation triggerPrice
+                # (e.g. 1.115e-05 for 1000SATS/DOGS) with -1102. Convert to a
+                # fixed-point string to match what price_to_precision would return.
+                params['triggerPrice'] = f"{float(trigger_price):.10f}".rstrip('0').rstrip('.')
             if activate_price is not None:
-                params['activatePrice'] = activate_price
+                params['activatePrice'] = f"{float(activate_price):.10f}".rstrip('0').rstrip('.')
             if callback_rate is not None:
                 params['callbackRate'] = callback_rate
             if client_algo_id:
