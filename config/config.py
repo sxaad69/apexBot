@@ -109,11 +109,11 @@ class Config:
         self.FUTURES_AUTO_MIN_VOLUME = float('500000')
         # Comma-separated list of base symbols to exclude from discovery/A6 watch/sweeps.
         # Matching is case-insensitive on the base symbol (e.g. 'BTC' excludes BTC/USDT).
-        self.FUTURES_EXCLUDE_SYMBOLS = [s.strip().upper() for s in os.getenv('FUTURES_EXCLUDE_SYMBOLS', '').split(',') if s.strip()]
+        self.FUTURES_EXCLUDE_SYMBOLS = [s.strip().upper() for s in os.getenv('FUTURES_EXCLUDE_SYMBOLS', 'BTC,ETH,BNB,SOL,XRP,ADA,DOGE,DOT,LINK,LTC,BCH,AVAX,XLM,ATOM,TRX,NEAR,FIL,SUI,APT,ARB,OP,INJ,1000SHIB,1000PEPE,WIF').split(',') if s.strip()]
         
         # ===== Full-Universe Scanning (Phase 2) =====
         self.OHLCV_BATCH_MAX = int('100')  # Max stale-candle refreshes per sweep
-        self.A6_MAX_WATCH_SYMBOLS = int(os.getenv('A6_MAX_WATCH_SYMBOLS', '250'))  # Cap A6 orderbook WSS subscriptions. 400 pegged a core pre-2f51930 (GIL spin, since fixed); 150 was belt-and-braces — stepped to 250 on Sep 5 with host headroom verified (load 0.15-0.39 / 2 cores)
+        self.A6_MAX_WATCH_SYMBOLS = int(os.getenv('A6_MAX_WATCH_SYMBOLS', '400'))  # Cap A6 orderbook WSS subscriptions. 400 matches mainnet-universe headroom (load 0.15-0.39 / 2 cores); decrement only with host capacity evidence
         
         # ===== Discovery / Concurrency (Rate-Limit Task 1.5) =====
         self.DISCOVERY_MAX_WORKERS = int('3')   # Smoother concurrency vs 5
@@ -233,7 +233,7 @@ class Config:
         self.STRATEGY_A6_ENABLED = self._str_to_bool('true')
         self.STRATEGY_A7_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A7_ENABLED', 'false'))
         self.STRATEGY_A8_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A8_ENABLED', 'false'))
-        self.STRATEGY_A9_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A9_ENABLED', 'false'))
+        self.STRATEGY_A9_ENABLED = self._str_to_bool(os.getenv('STRATEGY_A9_ENABLED', 'true'))
         self.A8_IGNITION_THRESHOLD = float(os.getenv('A8_IGNITION_THRESHOLD', '0.40'))
         self.A6_ALLOW_SHORT = self._str_to_bool('false')
         
@@ -243,7 +243,7 @@ class Config:
         self.STRATEGY_A6_PAPER = self._str_to_bool(os.getenv('STRATEGY_A6_PAPER', 'false'))
         self.STRATEGY_A7_PAPER = self._str_to_bool(os.getenv('STRATEGY_A7_PAPER', 'false'))
         self.STRATEGY_A8_PAPER = self._str_to_bool(os.getenv('STRATEGY_A8_PAPER', 'false'))
-        self.STRATEGY_A9_PAPER = self._str_to_bool(os.getenv('STRATEGY_A9_PAPER', 'false'))
+        self.STRATEGY_A9_PAPER = self._str_to_bool(os.getenv('STRATEGY_A9_PAPER', 'true'))
         # A9 replay-validated gates (2026-09-05, measured on 640 real-fill replays):
         self.A9_SKIP_CONF_BAND = self._str_to_bool(os.getenv('A9_SKIP_CONF_BAND', 'true'))       # 0.80-0.85 lost -0.38%/trade
         self.A9_MAX_EXTENSION_PCT = float(os.getenv('A9_MAX_EXTENSION_PCT', '8.0'))              # skip entries >8% off the 12h low; 0 disables
@@ -313,8 +313,8 @@ class Config:
         #   true  -> place exchange-side stops (native trailing where supported,
         #            hard STOP_MARKET fallback + sentinel where not)
         #   false -> bot-side sentinel layer only (legacy behavior)
-        self.EXCHANGE_SIDE_SL = self._str_to_bool(os.getenv('EXCHANGE_SIDE_SL', 'false'))
-        self.ENABLE_EXCHANGE_STOPS = self._str_to_bool(os.getenv('ENABLE_EXCHANGE_STOPS', 'false'))
+        self.EXCHANGE_SIDE_SL = self._str_to_bool(os.getenv('EXCHANGE_SIDE_SL', 'true'))
+        self.ENABLE_EXCHANGE_STOPS = self._str_to_bool(os.getenv('ENABLE_EXCHANGE_STOPS', 'true'))
         self.EXCHANGE_TP_ORDER_TYPE = 'TAKE_PROFIT_MARKET'
         # B2: seconds between orphaned-algo-order sweeps (cancel SL/trailing/TP on
         # symbols with no live position so they don't accumulate).
