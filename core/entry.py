@@ -352,6 +352,7 @@ class EntryMixin:
                     'delta_price_momentum_gate': signal.get('delta_price_momentum_gate'),
                     'momentum_min_rsi': signal.get('momentum_min_rsi'),
                     'momentum_min_adx': signal.get('momentum_min_adx'),
+                    'momentum_bar_max_pct': signal.get('momentum_bar_max_pct'),
                 }
                 # Initialize safety variables to prevent UnboundLocalError
                 position = None

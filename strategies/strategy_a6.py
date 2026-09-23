@@ -56,6 +56,11 @@ class StrategyA6(BaseStrategy):
         # Require confirmation that this is a real squeeze, not noise.
         self.momentum_min_rsi = 70.0
         self.momentum_min_adx = 25.0
+        # Maximum permitted intrabar move before entry is REJECTED outright
+        # (anything above is a thin-wall fade trap — 2026-09-17 shout about
+        # "2%+ intrabar surge" was arming on bars so large they're always
+        # exhausted). Pairs with self.momentum_bar_max_pct in config.
+        self.momentum_bar_max_pct = 9.0 / 100.0
 
         # Whale confirmation: require larger institutional confirmation
         self.min_whale_value = 10000 if self.testing_mode else 150000
@@ -98,7 +103,7 @@ class StrategyA6(BaseStrategy):
         # WALL vs MOMENTUM vs NEITHER branch each sweep. main.py drains these
         # into sweep_summary.signal_branches so we can audit market conditions
         # (were walls actually forming?) vs entry flow.
-        self.branch_counts = {'wall': 0, 'momentum': 0, 'neither': 0}
+        self.branch_counts = {'wall': 0, 'momentum': 0, 'neither': 0, 'bar_cap': 0}
         self._branch_lock = threading.Lock()
 
         # Publish the orderbook feed to the engine so composite strategies (A8)
@@ -523,6 +528,28 @@ class StrategyA6(BaseStrategy):
         # that hasn't yet built measurable orderbook depth. Allow entry via
         # price momentum without requiring full 0.50 imbalance.
         bar_move_pct = abs(df['close'].iloc[-1] - df['open'].iloc[0]) / df['open'].iloc[0] if len(df) > 1 else 0
+
+        # --- MOMENTUM BAR MOVE CAP (2026-09-23) — Ph1 fix ---
+        # A 9%+ intrabar surge is a determined fade-trap, not a breakout: the
+        # 7-day momentum audit (Sep 20-23, 624 closed trades) showed the
+        # bar>=9% bucket at 324 entries / -21.91 / 17% win — the single worst
+        # entry bucket. Any entry (wall OR momentum) on a bar this exhausted
+        # is fade-stopping. Reject outright. Set A6_MOMENTUM_BAR_MAX_PCT=0 to disable.
+        if self.momentum_bar_max_pct > 0 and bar_move_pct > self.momentum_bar_max_pct:
+            with self._branch_lock:
+                self.branch_counts['bar_cap'] += 1
+            self.logger.warning(
+                f"[{self.name}] {symbol} MOMENTUM BAR CAP: bar_move={bar_move_pct*100:.2f}% "
+                f"> {self.momentum_bar_max_pct*100:.2f}% — fading exhausted 9%+ surge, skipping"
+            )
+            return self.set_rejection({
+                "reason": "MOMENTUM_BAR_TOO_HIGH",
+                "bar_move_pct": round(bar_move_pct, 4),
+                "bar_max_pct": round(self.momentum_bar_max_pct, 4),
+                "momentum_gate": round(self.delta_price_momentum_gate, 4),
+                "imbalance": round(imbalance, 4),
+            })
+
         momentum_gated = False
         if abs(imbalance) < self.imbalance_threshold and bar_move_pct >= self.delta_price_momentum_gate:
             momentum_gated = True
@@ -749,6 +776,7 @@ class StrategyA6(BaseStrategy):
             'delta_price_momentum_gate': round(self.delta_price_momentum_gate, 4),
             'momentum_min_rsi': round(self.momentum_min_rsi, 2),
             'momentum_min_adx': round(self.momentum_min_adx, 2),
+            'momentum_bar_max_pct': round(self.momentum_bar_max_pct, 4),
             'strategy': self.name,
             'session': session_name,
             'regime': regime,

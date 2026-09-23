@@ -371,6 +371,11 @@ class Config:
         # Multiplies position size for entries that passed via bar-move momentum
         # instead of orderbook imbalance wall. Reduces tail risk for thin-wall breakouts.
         self.A6_MOMENTUM_GATED_SIZE_MULT = float(os.getenv('A6_MOMENTUM_GATED_SIZE_MULT', '0.4'))
+        # A6_MOMENTUM_BAR_MAX_PCT (2026-09-23): cap on the absolute bar move for
+        # momentum-gated entries. bar% >= 9% fades lose (7d audit: 324 entries,
+        # 17% win rate, -$21.9). Reject momentum entries whose intrabar surge
+        # exceeds this % — they are exhausted/overextended, not breakouts.
+        self.A6_MOMENTUM_BAR_MAX_PCT = float(os.getenv('A6_MOMENTUM_BAR_MAX_PCT', '9.0'))
         self.ASIA_TRADING_ENABLED = self._str_to_bool(os.getenv('ASIA_TRADING_ENABLED', 'true'))
         self.ASIA_END_HOUR_UTC = int(os.getenv('ASIA_END_HOUR_UTC', '8'))
 
