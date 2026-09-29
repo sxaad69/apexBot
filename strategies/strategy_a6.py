@@ -530,22 +530,29 @@ class StrategyA6(BaseStrategy):
         bar_move_pct = abs(df['close'].iloc[-1] - df['open'].iloc[0]) / df['open'].iloc[0] if len(df) > 1 else 0
 
         # --- MOMENTUM BAR MOVE CAP (2026-09-23) — Ph1 fix ---
-        # A 9%+ intrabar surge is a determined fade-trap, not a breakout: the
-        # 7-day momentum audit (Sep 20-23, 624 closed trades) showed the
-        # bar>=9% bucket at 324 entries / -21.91 / 17% win — the single worst
-        # entry bucket. Any entry (wall OR momentum) on a bar this exhausted
-        # is fade-stopping. Reject outright. Set A6_MOMENTUM_BAR_MAX_PCT=0 to disable.
-        if self.momentum_bar_max_pct > 0 and bar_move_pct > self.momentum_bar_max_pct:
+        # A 9%+ intrabar surge is usually a fade-trap: the 7-day momentum audit
+        # (Sep 20-23, 624 closed trades) showed the bar>=9% bucket at -21.91 /
+        # 17% win. HOWEVER — the Sep 25-29 recall audit (coin_recall_audit.py)
+        # proved this cap blocks the day's top runners (QNT +89, RARE +35,
+        # SOON +43, 龙虾 +25) while the ONLY green executed cohort on paper was
+        # quiet thin-book breakouts (vl<0.5 = +$4.95, 13.9% win vs vl>=1.5
+        # churn = -$16.32). So the cap now applies ONLY to high-volume churn:
+        # thin-book (vl<0.5) surges are a breakout, not a fade, and pass.
+        volume_ratio_here = df.get('volume_ratio', pd.Series([1])).iloc[-1]
+        if self.momentum_bar_max_pct > 0 and bar_move_pct > self.momentum_bar_max_pct \
+                and volume_ratio_here is not None and float(volume_ratio_here) >= 0.5:
             with self._branch_lock:
                 self.branch_counts['bar_cap'] += 1
             self.logger.warning(
                 f"[{self.name}] {symbol} MOMENTUM BAR CAP: bar_move={bar_move_pct*100:.2f}% "
-                f"> {self.momentum_bar_max_pct*100:.2f}% — fading exhausted 9%+ surge, skipping"
+                f"> {self.momentum_bar_max_pct*100:.2f}% vl={volume_ratio_here:.2f} "
+                f"— fading high-volume exhausted surge, skipping"
             )
             return self.set_rejection({
                 "reason": "MOMENTUM_BAR_TOO_HIGH",
                 "bar_move_pct": round(bar_move_pct, 4),
                 "bar_max_pct": round(self.momentum_bar_max_pct, 4),
+                "volume_ratio": round(float(volume_ratio_here), 3),
                 "momentum_gate": round(self.delta_price_momentum_gate, 4),
                 "imbalance": round(imbalance, 4),
             })
