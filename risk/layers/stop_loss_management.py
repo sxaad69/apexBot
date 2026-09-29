@@ -54,20 +54,44 @@ class StopLossManagementLayer:
             if entry_price > 0 and momentum_sl_pct > 0:
                 distance_percent = momentum_sl_pct
                 actual_roe_loss = distance_percent * trade_params.get('leverage', 1)
-                
-                # Hard cap at momentum_max_roe
+
+                # Hard cap at momentum_max_roe: if leverage makes the intended
+                # stop risk MORE than the ROE cap, WIDEN the stop and REDUCE
+                # leverage so ROE stays bounded — never crush the stop into
+                # wick-noise. Compressing the stop (old behavior: dividing the
+                # ROE cap by leverage, e.g. 1.0/5 = 0.2%) made every momentum
+                # entry die on a 0.2% wiggle before the 3-4% trailing arm could
+                # catch a runner. That pressure was the root cause of the
+                # 87-94% stop-loss-fade rate on BOTH the live archive and paper.
+                cur_lev = trade_params.get('leverage', 1)
                 if actual_roe_loss > momentum_max_roe:
-                    distance_percent = momentum_max_roe / trade_params.get('leverage', 1)
+                    # keep the strategy stop, de-lever to fit the ROE budget
+                    distance_percent = max(momentum_sl_pct, 0.5)
+                    new_lev = max(1, int(momentum_max_roe / distance_percent))
+                    if new_lev < cur_lev:
+                        trade_params['leverage'] = new_lev
+                    actual_roe_loss = distance_percent * trade_params['leverage']
                     if side == 'buy':
                         strategy_sl = entry_price * (1 - distance_percent / 100)
                     else:
                         strategy_sl = entry_price * (1 + distance_percent / 100)
-                
+                    self.logger.warning(
+                        f"[{strategy_tag}] MOMENTUM-GATED ROE CAP: intended {momentum_sl_pct}% stop "
+                        f"violates {momentum_max_roe}% ROE cap at {cur_lev}x -> keeping stop "
+                        f"{distance_percent}% and de-levering to {trade_params['leverage']}x "
+                        f"(roe {actual_roe_loss:.1f}%)"
+                    )
+                else:
+                    if side == 'buy':
+                        strategy_sl = entry_price * (1 - distance_percent / 100)
+                    else:
+                        strategy_sl = entry_price * (1 + distance_percent / 100)
+
                 trade_params['stop_loss'] = strategy_sl
                 trade_params['stop_loss_percent'] = distance_percent
                 trade_params['stop_loss_roe'] = actual_roe_loss
                 trade_params['stop_loss_roe_capped'] = momentum_max_roe
-                
+
                 self.logger.info(f"[{strategy_tag}] MOMENTUM-GATED SL: {distance_percent:.2f}% | "
                                  f"Leverage: {trade_params.get('leverage', 1)}x | "
                                  f"Risk: {actual_roe_loss:.1f}% ROE (cap: {momentum_max_roe}%)")

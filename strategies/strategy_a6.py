@@ -48,8 +48,8 @@ class StrategyA6(BaseStrategy):
         # --- MOMENTUM-GATED STOP LOSS TIGHTENING (2026-09-17) ---
         # For momentum-gated entries, use tighter stop (0.5% instead of volatility-adjusted)
         # to limit ROE exposure, since momentum entries lack wall validation.
-        self.momentum_sl_percent = 0.5
-        self.momentum_max_roe = 1.0  # Max 1% ROE loss for momentum-gated entries
+        self.momentum_sl_percent = 3.0
+        self.momentum_max_roe = 6.0  # ROE budget = 3% stop x 2x leverage
         self.momentum_atr_multiplier = 0.5  # ATR/2 buffer for noise tolerance
 
         # --- MOMENTUM ENTRY VALIDATION FILTERS ---
