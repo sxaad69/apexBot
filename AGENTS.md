@@ -174,6 +174,7 @@ Audit with **`audit/momentum_audit.py`** (exchange-truth income-based ledger
 - **log file writes stop being representative if the daily-file name misleads** — mtime, not name, tells freshness.
 
 **Carried forward (still true):**
+- **Reading X (Twitter):** Always use CLI via `https://api.fxtwitter.com`. Never open a browser or invoke the browser subagent for X content.
 - `record_entry()` returns a fresh dict — re-apply exchange order IDs onto the final `self.positions[...]` object or they're lost.
 - The sentinel calls `check_exits` directly, not `run_cycle` — exit/trailing logic must live in `check_exits` or it's dead code.
 - Two `config.py` files — edit `config/config.py`, never root `config.py`.
