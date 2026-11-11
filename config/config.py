@@ -140,25 +140,23 @@ class Config:
         self.INITIAL_CAPITAL = self.FUTURES_VIRTUAL_CAPITAL
         self.POSITION_SIZE_PERCENT = self.FUTURES_POSITION_SIZE_PERCENT
         self.MAX_LEVERAGE = self.FUTURES_MAX_LEVERAGE
-        # Strategy-Specific Overrides (The "Breathing Room" Knobs)
+        # Strategy-Specific Overrides (Strict Risk Shield: 5% ROE loss cap per trade)
         self.A5_MAX_LEVERAGE = int('3')
-        self.A5_STOP_LOSS_ROE = float('10.0')
-        self.A6_STOP_LOSS_ROE = float('10.0')
+        self.A5_STOP_LOSS_ROE = float(os.getenv('A5_STOP_LOSS_ROE', '5.0'))
+        self.A6_STOP_LOSS_ROE = float(os.getenv('A6_STOP_LOSS_ROE', '5.0'))
+        self.A8_STOP_LOSS_ROE = float(os.getenv('A8_STOP_LOSS_ROE', '5.0'))
 
         # 2026-09-05 confidence-gated risk program (evidence in AGENTS.md):
         self.A6_SKIP_MID_BAND = self._str_to_bool(os.getenv('A6_SKIP_MID_BAND', 'true'))   # 0.85-0.90: -$25.56 all-time, negative at every leverage
         self.A6_PROBE_SIZE_MULTIPLIER = float(os.getenv('A6_PROBE_SIZE_MULTIPLIER', '0.5'))  # sub-0.85 band was breakeven at best (+$3.69 golden era)
-        self.ELITE_STOP_LOSS_ROE = float(os.getenv('ELITE_STOP_LOSS_ROE', '15.0'))         # conf>=0.90 ROE budget -> 6x at the 2.5% stop floor
+        self.ELITE_STOP_LOSS_ROE = float(os.getenv('ELITE_STOP_LOSS_ROE', '8.0'))          # conf>=0.90 ROE budget capped at 8%
         
-        # GLOBAL ROE Shield (The "Safety Guard")
-        self.GLOBAL_STOP_LOSS_ROE = float('10.0')
-        self.MAX_ROE_DRAWDOWN = float('10.0')
+        # GLOBAL ROE Shield (Strict 5.0% ROE loss limit -> ~$0.75 max loss on $15 size)
+        self.GLOBAL_STOP_LOSS_ROE = float(os.getenv('GLOBAL_STOP_LOSS_ROE', '5.0'))
+        self.MAX_ROE_DRAWDOWN = float(os.getenv('MAX_ROE_DRAWDOWN', '6.0'))
         self.MAX_EQUITY_RISK_PERCENT = float('5.0')
-        # Phase-1 core fix: enforce a minimum RAW price distance to the stop.
-        # At 10x the ATR stop collapses to ~0.71% raw (wick-noise distance) and
-        # hits 0-for-17; 2.5% is the noise-survival floor from the SL forensics.
-        # Vol-sync layers may set a wider stop; this only widens too-tight ones.
-        self.MIN_RAW_STOP_PERCENT = float(os.getenv('MIN_RAW_STOP_PERCENT', '2.5'))
+        # Enforce minimum RAW price distance to survive normal micro-wiggles
+        self.MIN_RAW_STOP_PERCENT = float(os.getenv('MIN_RAW_STOP_PERCENT', '1.8'))
         self.TAKE_PROFIT_PERCENT = self.FUTURES_TAKE_PROFIT_PERCENT
         self.MAX_DAILY_LOSS_PERCENT = self.FUTURES_MAX_DAILY_LOSS_PERCENT
         self.MAX_DRAWDOWN_PERCENT = self.FUTURES_MAX_DRAWDOWN_PERCENT
