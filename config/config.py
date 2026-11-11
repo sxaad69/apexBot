@@ -285,12 +285,11 @@ class Config:
         # runs record_exit's 3x verification with 2s sleeps, which would otherwise
         # block the entire sentinel thread every tick for a stuck position).
         self.EXIT_RETRY_COOLDOWN = float(os.getenv('EXIT_RETRY_COOLDOWN', '30'))
-        # 2026-09-05: cap trailing activation in PRICE terms. The 15%-ROE/leverage
-        # formula needs +15% price at 1x — unreachable for strategies whose winners
-        # peak at +2..8% (A6 trailing exits avg +1..4%; SKR gave back +12% to the
-        # SL because activation never armed). Cap applies to A6 live AND the paper
-        # exit engine. 0 disables (pre-Sep-5 behavior).
-        self.TRAILING_ACTIVATION_PRICE_CAP = float(os.getenv('TRAILING_ACTIVATION_PRICE_CAP', '4.0'))
+        # 2026-11-11: cap trailing activation in PRICE terms. 2.5% cap ensures
+        # runners arm quickly (~8-10% ROE) instead of lagging and giving back gains.
+        self.TRAILING_ACTIVATION_PRICE_CAP = float(os.getenv('TRAILING_ACTIVATION_PRICE_CAP', '2.5'))
+        # Break-even protection: lock stop loss to entry (+ fee buffer) once price gains 1.5%
+        self.BREAK_EVEN_PROFIT_PCT = float(os.getenv('BREAK_EVEN_PROFIT_PCT', '1.5'))
         # Leverage-aware trailing (2026-08-29): the exchange callbackRate is a % of
         # PRICE, so ROE give-back = callback x leverage. A flat 3% price trail gave
         # back 21% ROE at 7x (XMR FUT-2FDE2B0F: peak +39.85% ROE, closed +18.57%).
@@ -299,11 +298,10 @@ class Config:
         self.TRAILING_CALLBACK_LEV_HIGH = float(os.getenv('TRAILING_CALLBACK_LEV_HIGH', '1.0'))  # lev >= 5
         self.TRAILING_CALLBACK_LEV_MID = float(os.getenv('TRAILING_CALLBACK_LEV_MID', '2.0'))    # lev 2-4
         self.TRAILING_CALLBACK_LEV_LOW = float(os.getenv('TRAILING_CALLBACK_LEV_LOW', '3.0'))    # lev 1
-        # Activation is also price-based: 5% price = 35% ROE at 7x before trailing
-        # even starts (XMR armed 0.7% below its peak). Arm earlier on high leverage:
+        # Activation is also price-based: arm earlier on high leverage:
         # activation = max(floor, target_roe / leverage).
-        self.TRAILING_ACTIVATION_TARGET_ROE = float(os.getenv('TRAILING_ACTIVATION_TARGET_ROE', '15.0'))
-        self.TRAILING_ACTIVATION_LEV_FLOOR = float(os.getenv('TRAILING_ACTIVATION_LEV_FLOOR', '2.0'))
+        self.TRAILING_ACTIVATION_TARGET_ROE = float(os.getenv('TRAILING_ACTIVATION_TARGET_ROE', '8.0'))
+        self.TRAILING_ACTIVATION_LEV_FLOOR = float(os.getenv('TRAILING_ACTIVATION_LEV_FLOOR', '1.5'))
         # C1: re-entry blacklist — consecutive SL losses before blocking the symbol
         # for the session. 2 as designed on Aug 20; 1 (set 6182127) is only safe
         # while the D4 startup seed is broken — with a working seed it ratchets

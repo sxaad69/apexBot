@@ -71,8 +71,17 @@ class ExitsMixin:
                     # the pre-activation adverse moves too.
                     self._persist_stop_watermark(position['trade_id'], trough=current_price)
                 
+                # Check for Break-Even Protection (Never let a +1.5% profit turn into a loss)
+                be_pct = getattr(self.config, 'BREAK_EVEN_PROFIT_PCT', 1.5) / 100.0
+                if profit_percent >= be_pct and position.get('stop_loss') is not None:
+                    safe_be = position['entry_price'] * 1.001  # entry + 0.1% fee floor
+                    if position['stop_loss'] < safe_be:
+                        old_sl = position['stop_loss']
+                        position['stop_loss'] = safe_be
+                        self.logger.info(f"🛡️ [{strategy_name}] {symbol} BREAK-EVEN ACTIVE @ ${current_price:.5f} | SL: ${old_sl:.5f} -> ${safe_be:.5f}")
+                        self._persist_stop_watermark(position['trade_id'], peak=position.get('highest_price'))
+
                 # Check for activation
-                profit_percent = (current_price - position['entry_price']) / position['entry_price']
                 if not position['trailing_stop_active'] and profit_percent >= activation_threshold:
                     position['trailing_stop_active'] = True
                     position['trailing_activation_price'] = current_price
@@ -102,6 +111,16 @@ class ExitsMixin:
 
                 # For a SHORT: profit_percent is how much price has DROPPED from entry
                 profit_percent = (position['entry_price'] - current_price) / position['entry_price']
+
+                # Check for Break-Even Protection (Never let a +1.5% profit turn into a loss)
+                be_pct = getattr(self.config, 'BREAK_EVEN_PROFIT_PCT', 1.5) / 100.0
+                if profit_percent >= be_pct and position.get('stop_loss') is not None:
+                    safe_be = position['entry_price'] * 0.999  # entry - 0.1% fee floor
+                    if position['stop_loss'] > safe_be:
+                        old_sl = position['stop_loss']
+                        position['stop_loss'] = safe_be
+                        self.logger.info(f"🛡️ [{strategy_name}] {symbol} BREAK-EVEN ACTIVE @ ${current_price:.5f} | SL: ${old_sl:.5f} -> ${safe_be:.5f}")
+                        self._persist_stop_watermark(position['trade_id'], trough=position.get('lowest_price'))
 
                 # Activation: once we're >= activation threshold in profit
                 if not position['trailing_stop_active'] and profit_percent >= activation_threshold:
