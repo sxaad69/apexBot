@@ -113,7 +113,7 @@ class Config:
         
         # ===== Full-Universe Scanning (Phase 2) =====
         self.OHLCV_BATCH_MAX = int('100')  # Max stale-candle refreshes per sweep
-        self.A6_MAX_WATCH_SYMBOLS = int(os.getenv('A6_MAX_WATCH_SYMBOLS', '400'))  # Cap A6 orderbook WSS subscriptions. 400 matches mainnet-universe headroom (load 0.15-0.39 / 2 cores); decrement only with host capacity evidence
+        self.A6_MAX_WATCH_SYMBOLS = int(os.getenv('A6_MAX_WATCH_SYMBOLS', '150'))  # Cap A6 orderbook WSS subscriptions (150 safe default for local/Linode memory)
         
         # ===== Discovery / Concurrency (Rate-Limit Task 1.5) =====
         self.DISCOVERY_MAX_WORKERS = int('3')   # Smoother concurrency vs 5
@@ -426,7 +426,7 @@ class Config:
         self.LOG_PERFORMANCE = self._str_to_bool('true')
         self.LOG_SYSTEM_EVENTS = self._str_to_bool('true')
         self.LOG_ERROR_TRACES = self._str_to_bool('true')
-        self.LOG_LEVEL = 'DEBUG'.upper()
+        self.LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
         self.LOG_OUTPUT = 'both'
         self.LOG_FILE_PATH = './logs'
         self.LOG_FILE_MAX_SIZE = int('10')
