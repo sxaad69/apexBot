@@ -22,8 +22,8 @@ class SyncMixin:
         4. Hydrates synced memory.
         """
         try:
-            # 1. Fetch Global Exchange State ONCE
-            global_positions = []
+            # 1. Fetch Global Exchange State ONCE (Only in LIVE mode or strict sync; in paper mode keep None to preserve paper trades)
+            global_positions = None
             if self.mode == 'live' or getattr(self.config, 'FUTURES_STRICT_SYNC', False):
                 try:
                     self.logger.info("🌐 Fetching Global Positions from Exchange for absolute sync...")
@@ -31,9 +31,7 @@ class SyncMixin:
                     global_positions = [p for p in ex_positions if abs(float(p.get('contracts', 0) or 0)) > 0]
                 except Exception as e:
                     self.logger.warning(f"⚠️ Exchange sync failed on startup: {e}. Falling back to DB state.")
-                    # Keep empty list if failed so we don't accidentally close all DB trades, 
-                    # but wait, if it fails we might close valid DB trades because list is empty!
-                    global_positions = None # None means API failed, distinguish from [] which means 0 positions
+                    global_positions = None
 
             conn = self.logger.db._get_connection(self.logger.db.main_db)
             t3_updates = []

@@ -53,7 +53,7 @@ def run_audit(lookback_minutes=60):
         cur = conn.cursor()
         try:
             cur.execute("""
-                SELECT symbol, side, entry_price, exit_price, pnl_amount, pnl_percent, reason, entry_time, exit_time 
+                SELECT symbol, side, entry_price, exit_price, pnl_amount, pnl_percent, reason, status, entry_time, exit_time 
                 FROM trades 
                 WHERE entry_time >= ?
                 ORDER BY entry_time DESC
@@ -65,18 +65,20 @@ def run_audit(lookback_minutes=60):
     
     print(f"\n[1] TRADES EXECUTED IN LAST {lookback_minutes}m: {len(trades_in_window)}")
     if trades_in_window:
-        closed = [t for t in trades_in_window if t[4] is not None]
+        closed = [t for t in trades_in_window if t[7] == 'CLOSED' and t[4] is not None]
         tot_pnl = sum((t[4] or 0.0) for t in closed)
         wins = [t for t in closed if (t[4] or 0.0) > 0]
         losses = [t for t in closed if (t[4] or 0.0) <= 0]
         wr = (len(wins) / len(closed) * 100) if closed else 0.0
-        print(f"    Closed: {len(closed)} | Open: {len(trades_in_window) - len(closed)} | Win Rate: {wr:.1f}% ({len(wins)}W / {len(losses)}L) | Net PnL: ${tot_pnl:+.2f} USDT")
+        open_trades = [t for t in trades_in_window if t[7] == 'OPEN']
+        print(f"    Closed: {len(closed)} | Open: {len(open_trades)} | Win Rate: {wr:.1f}% ({len(wins)}W / {len(losses)}L) | Net PnL: ${tot_pnl:+.2f} USDT")
         print(f"    {'Symbol':18} | {'Side':4} | {'Entry':10} | {'Exit':10} | {'PnL%':7} | {'Reason':15}")
         print("    " + "-" * 70)
         for t in trades_in_window[:10]:
-            p_exit = f"{t[3]:10.4f}" if t[3] is not None else "OPEN      "
-            p_pnl = f"{t[5]:+6.2f}%" if t[5] is not None else "  --- "
-            reason = str(t[6] or "OPEN")[:15]
+            is_open = t[7] == 'OPEN'
+            p_exit = f"{t[3]:10.4f}" if (t[3] is not None and not is_open) else "OPEN      "
+            p_pnl = f"{t[5]:+6.2f}%" if (t[5] is not None and not is_open) else "  --- "
+            reason = "OPEN" if is_open else str(t[6] or "closed")[:15]
             print(f"    {t[0]:18} | {t[1]:4} | {t[2]:10.4f} | {p_exit} | {p_pnl} | {reason}")
     else:
         print("    No paper trades opened or closed yet in this 1-hour window.")
