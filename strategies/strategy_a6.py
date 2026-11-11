@@ -44,8 +44,8 @@ class StrategyA6(BaseStrategy):
         # Whale confirmation: require larger institutional confirmation
         self.min_whale_value = 10000 if self.testing_mode else 150000
 
-        # ATR multipliers: 2.5x stop gives more room vs 2.0x which was being suffocated
-        self.atr_sl_mult = 2.5
+        # ATR multipliers: 1.8x stop gives tight invalidation (~3-4% risk)
+        self.atr_sl_mult = 1.8
         self.atr_tp_mult = 100.0
 
         # Session-based confidence floors (UTC hours)
@@ -620,9 +620,15 @@ class StrategyA6(BaseStrategy):
         #         })
         #         return None
 
-        # 13. ATR-Based Dynamic Stops (2.0x for breathing room)
-        stop_loss, take_profit = self.get_dynamic_stops(df, side, self.atr_sl_mult, self.atr_tp_mult)
+        # 13. ATR-Based Dynamic Stops with strict risk boundaries (1.5% min room, 4.5% max price loss)
         current_price = df['close'].iloc[-1]
+        stop_loss, take_profit = self.get_dynamic_stops(df, side, self.atr_sl_mult, self.atr_tp_mult)
+        if side == 'buy':
+            stop_loss = max(stop_loss, current_price * 0.955)  # max -4.5% loss
+            stop_loss = min(stop_loss, current_price * 0.985)  # min -1.5% breathing room
+        else:
+            stop_loss = min(stop_loss, current_price * 1.045)
+            stop_loss = max(stop_loss, current_price * 1.015)
         atr = df['atr'].iloc[-1] if 'atr' in df.columns else current_price * 0.01
 
         # 14. Confidence-gated risk program (2026-09-05, evidence in AGENTS.md):
