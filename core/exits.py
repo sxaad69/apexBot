@@ -33,12 +33,22 @@ class ExitsMixin:
 
             strategy_name = position['strategy']
 
-            # Calculate profit threshold for activation — leverage-aware (ROE
-            # give-back = price % x leverage; see config.get_trailing_*).
+            # Calculate profit threshold for activation — leverage-aware and tier-aware (ROE
+            # give-back = price % x leverage; see config.get_trailing_* and get_tier_callback).
             try:
                 _lev = position.get('leverage') or 1
+                entry_px = float(position.get('entry_price') or 1)
+                _is_long = position.get('side') == 'buy'
+                prof_pct = (current_price - entry_px) / entry_px if _is_long else (entry_px - current_price) / entry_px
+                tier1_at = getattr(self.config, 'TRAILING_TIER_1_AT', 8.0) / 100.0
+                tier2_at = getattr(self.config, 'TRAILING_TIER_2_AT', 20.0) / 100.0
+                if prof_pct >= tier2_at:
+                    trailing_distance = self.config.get_tier_callback(_lev, 2) / 100.0
+                elif prof_pct >= tier1_at:
+                    trailing_distance = self.config.get_tier_callback(_lev, 1) / 100.0
+                else:
+                    trailing_distance = self.config.get_trailing_callback(_lev) / 100.0
                 activation_threshold = self.config.get_trailing_activation(_lev) / 100
-                trailing_distance = self.config.get_trailing_callback(_lev) / 100
             except AttributeError:
                 activation_threshold = self.config.TRAILING_STOP_ACTIVATION / 100  # Convert to decimal
                 trailing_distance = self.config.TRAILING_STOP_DISTANCE / 100  # Convert to decimal
