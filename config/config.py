@@ -133,8 +133,8 @@ class Config:
         self.RATE_LIMIT_MAX_WEIGHT_PER_MIN = int('1500')  # Binance cap is 2400
         
         # Position Boundary Sync
-        self.MIN_POSITION_SIZE = float('10.0')  # SETTING FOR TESTNET (Previous Live: 10.0)
-        self.MAX_POSITION_SIZE = float('30.0')  # SETTING FOR TESTNET (Previous Live: 30.0)
+        self.MIN_POSITION_SIZE = float(os.getenv('MIN_POSITION_SIZE', '15.0'))  # $15 min base size for meaningful returns
+        self.MAX_POSITION_SIZE = float(os.getenv('MAX_POSITION_SIZE', '35.0'))  # $35 max size (~25-30% capital)
 
         # ===== Global Synchronization (For Legacy/Risk Layers compatibility) =====
         self.INITIAL_CAPITAL = self.FUTURES_VIRTUAL_CAPITAL

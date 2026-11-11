@@ -43,10 +43,10 @@ class StrategyA8(BaseStrategy):
         self.timeframe = '5m'
         self.min_candles = 40
 
-        # Layer 3 — sizing gates
+        # Layer 3 — sizing gates & risk-to-reward stops
         self.adx_min_size = 25     # below this -> size down
-        self.atr_sl_mult = 3.0
-        self.atr_tp_mult = 3.0
+        self.atr_sl_mult = 1.8     # tighter invalidation on failed ignitions (~3-4% instead of 10-12%)
+        self.atr_tp_mult = 100.0   # uncap TP to hand full control to trailing stop ladder (Tier 1/2)
 
         self.filters = get_strategy_filters(config)
 
@@ -206,8 +206,14 @@ class StrategyA8(BaseStrategy):
         if current_price < conf['ema200']:
             size_multiplier = min(size_multiplier, 0.5)  # below EMA200 -> half size
 
-        # ATR-based stops
+        # ATR-based stops with strict risk boundaries (1.5% min room, 4.5% max price loss)
         stop_loss, take_profit = self.get_dynamic_stops(df, side, self.atr_sl_mult, self.atr_tp_mult)
+        if side == 'buy':
+            stop_loss = max(stop_loss, current_price * 0.955)  # max -4.5% loss
+            stop_loss = min(stop_loss, current_price * 0.985)  # min -1.5% breathing room
+        else:
+            stop_loss = min(stop_loss, current_price * 1.045)
+            stop_loss = max(stop_loss, current_price * 1.015)
         atr = conf['atr']
 
         confidence = 0.50
