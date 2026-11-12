@@ -156,6 +156,16 @@ class CCXTExchangeClient(BaseExchangeClient):
                 }
             }
             
+            # Proxy support (e.g. Webshare proxy to bypass Binance geoblocking)
+            proxy_url = getattr(self.config, 'HTTP_PROXY', None) or os.getenv('HTTP_PROXY') or os.getenv('HTTPS_PROXY')
+            if proxy_url:
+                exchange_config['proxies'] = {
+                    'http': proxy_url,
+                    'https': proxy_url,
+                }
+                exchange_config['aiohttp_proxy'] = proxy_url
+                self.logger.info(f"🌐 Routing exchange traffic through configured proxy: {proxy_url.split('@')[-1] if '@' in proxy_url else 'enabled'}")
+            
             # Set testnet/sandbox if configured
             # NOTE: For Binance, sandbox mode is deprecated for futures (ccxt >= 4.5).
             #       We use demo trading instead via enable_demo_trading().

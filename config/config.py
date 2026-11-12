@@ -146,6 +146,10 @@ class Config:
         self.A6_STOP_LOSS_ROE = float(os.getenv('A6_STOP_LOSS_ROE', '5.0'))
         self.A8_STOP_LOSS_ROE = float(os.getenv('A8_STOP_LOSS_ROE', '5.0'))
 
+        # Global Proxy Configuration (Bypasses Binance regional geoblocks)
+        self.HTTP_PROXY = os.getenv('HTTP_PROXY', '')
+        self.HTTPS_PROXY = os.getenv('HTTPS_PROXY', '')
+
         # 2026-09-05 confidence-gated risk program (evidence in AGENTS.md):
         self.A6_SKIP_MID_BAND = self._str_to_bool(os.getenv('A6_SKIP_MID_BAND', 'true'))   # 0.85-0.90: -$25.56 all-time, negative at every leverage
         self.A6_PROBE_SIZE_MULTIPLIER = float(os.getenv('A6_PROBE_SIZE_MULTIPLIER', '0.5'))  # sub-0.85 band was breakeven at best (+$3.69 golden era)
