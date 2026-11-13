@@ -111,6 +111,18 @@ class Config:
         # Matching is case-insensitive on the base symbol (e.g. 'BTC' excludes BTC/USDT).
         self.FUTURES_EXCLUDE_SYMBOLS = [s.strip().upper() for s in os.getenv('FUTURES_EXCLUDE_SYMBOLS', 'BTC,ETH,BNB,SOL,XRP,ADA,DOGE,DOT,LINK,LTC,BCH,AVAX,XLM,ATOM,TRX,NEAR,FIL,SUI,APT,ARB,OP,INJ,1000SHIB,1000PEPE,WIF').split(',') if s.strip()]
         
+        # ===== Pre-Breakout Quantitative Funnel =====
+        self.PRE_BREAKOUT_ENABLED = self._str_to_bool(os.getenv('PRE_BREAKOUT_ENABLED', 'true'))
+        self.PRE_BREAKOUT_MIN_VOL_USDT = float(os.getenv('PRE_BREAKOUT_MIN_VOL_USDT', '2000000'))
+        self.PRE_BREAKOUT_PROXIMITY_HIGH_PCT = float(os.getenv('PRE_BREAKOUT_PROXIMITY_HIGH_PCT', '0.965'))  # Within 3.5% of 24h high
+        self.PRE_BREAKOUT_MIN_PCT = float(os.getenv('PRE_BREAKOUT_MIN_PCT', '0.5'))
+        self.PRE_BREAKOUT_MAX_PCT = float(os.getenv('PRE_BREAKOUT_MAX_PCT', '8.0'))  # Anti-FOMO: skip >8% extended
+        
+        # ===== Strategy A8 Sniper Upgrades =====
+        self.A8_VOLUME_SPIKE_MULT = float(os.getenv('A8_VOLUME_SPIKE_MULT', '2.5'))  # was 1.5x, raised to 2.5x institutional volume
+        self.A8_MAX_EXTENSION_PCT = float(os.getenv('A8_MAX_EXTENSION_PCT', '8.0'))  # Anti-FOMO extension cap
+        self.A8_IGNITION_THRESHOLD = float(os.getenv('A8_IGNITION_THRESHOLD', '0.40'))
+        
         # ===== Full-Universe Scanning (Phase 2) =====
         self.OHLCV_BATCH_MAX = int('100')  # Max stale-candle refreshes per sweep
         self.A6_MAX_WATCH_SYMBOLS = int(os.getenv('A6_MAX_WATCH_SYMBOLS', '150'))  # Cap A6 orderbook WSS subscriptions (150 safe default for local/Linode memory)

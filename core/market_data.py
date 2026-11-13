@@ -83,12 +83,17 @@ class MarketDataMixin:
                     if market_info.get('info', {}).get('status') and market_info['info']['status'] != 'TRADING':
                         continue
                         
-                    # --- PHASE 2 FIX: Skip TradFi contracts requiring agreement ---
-                    # Binance marks equity/commodity perps (META, LITE, XAU, etc.)
-                    # as contractType='TRADIFI_PERPETUAL'. Trading them returns
-                    # -4411 "you need to sign the agreement" errors. Filter out.
-                    market_type = market_info.get('info', {}).get('contractType', '')
-                    if market_type == 'TRADIFI_PERPETUAL':
+                    # --- PURE CRYPTO FILTER ---
+                    # Strictly allow only native cryptocurrency linear contracts.
+                    # Skip synthetic stocks (EQUITY, HK_EQUITY, KR_EQUITY, CN_EQUITY),
+                    # commodities (COMMODITY: Gold, Silver, Oil), indices (INDEX),
+                    # forex (FX), and pre-market tokens (PREMARKET).
+                    m_info = market_info.get('info', {})
+                    if m_info.get('underlyingType') and m_info.get('underlyingType') != 'COIN':
+                        continue
+                    if m_info.get('contractType') and m_info.get('contractType') != 'PERPETUAL':
+                        continue
+                    if 'TradFi' in m_info.get('underlyingSubType', []):
                         continue
 
                 # Skip specific non-trading symbols if necessary
@@ -117,16 +122,77 @@ class MarketDataMixin:
                 if not quote_volume or quote_volume < min_volume_usdt:
                     continue
 
+                # Extract 24h metrics for the Quantitative Funnel
+                pct_change = ticker.get('percentage', 0.0)
+                if pct_change is None:
+                    pct_change = 0.0
+                high_24h = ticker.get('high', 0.0) or (ticker.get('info', {}).get('highPrice', 0.0))
+                last_price = ticker.get('last', 0.0) or ticker.get('close', 0.0)
+                try:
+                    high_24h = float(high_24h)
+                    last_price = float(last_price)
+                except (ValueError, TypeError):
+                    high_24h = 0.0
+                    last_price = 0.0
+
                 usdt_pairs.append({
                     'symbol': symbol,
-                    'volume': quote_volume
+                    'volume': quote_volume,
+                    'pct': float(pct_change),
+                    'high_24h': high_24h,
+                    'last_price': last_price
                 })
 
-            # Sort by volume (descending)
-            usdt_pairs.sort(key=lambda x: x['volume'], reverse=True)
+            # ===== 3-STAGE QUANTITATIVE DISCOVERY FUNNEL =====
+            # Stage 1: Coiled Springs / Pre-Breakout Candidates
+            # Criteria: Liquidity >= min_vol, proximity to 24h high >= 96.5%, 0.5% <= 24h change <= 8.0% (anti-FOMO)
+            pre_breakout_enabled = getattr(self.config, 'PRE_BREAKOUT_ENABLED', True)
+            min_pre_vol = getattr(self.config, 'PRE_BREAKOUT_MIN_VOL_USDT', 2000000.0)
+            prox_high = getattr(self.config, 'PRE_BREAKOUT_PROXIMITY_HIGH_PCT', 0.965)
+            min_pct = getattr(self.config, 'PRE_BREAKOUT_MIN_PCT', 0.5)
+            max_pct = getattr(self.config, 'PRE_BREAKOUT_MAX_PCT', 8.0)
 
-            # Get top N base list
-            top_pairs = [p['symbol'] for p in usdt_pairs[:top_n]]
+            coiled_springs = []
+            if pre_breakout_enabled:
+                for p in usdt_pairs:
+                    if p['volume'] >= min_pre_vol and min_pct <= p['pct'] <= max_pct:
+                        if p['high_24h'] > 0 and (p['last_price'] / p['high_24h']) >= prox_high:
+                            coiled_springs.append(p)
+                # Sort coiled springs by proximity to 24h high (closest to breakout first)
+                coiled_springs.sort(key=lambda x: (x['last_price'] / x['high_24h']), reverse=True)
+
+            # Stage 2: Momentum / Active Gainers Pool (positive 24h change, not over-extended)
+            gainers = [p for p in usdt_pairs if 0.5 <= p['pct'] <= 15.0]
+            gainers.sort(key=lambda x: x['pct'], reverse=True)
+
+            # Stage 3: High-Volume Core Pool (descending 24h volume)
+            volume_sorted = sorted(usdt_pairs, key=lambda x: x['volume'], reverse=True)
+
+            # Assemble Priority Queue: Coiled Springs (up to 30) -> Gainers (up to 30) -> High-Volume Backfill
+            seen = set()
+            top_pairs = []
+
+            for p in coiled_springs[:30]:
+                if p['symbol'] not in seen:
+                    seen.add(p['symbol'])
+                    top_pairs.append(p['symbol'])
+
+            for p in gainers[:30]:
+                if len(top_pairs) >= top_n:
+                    break
+                if p['symbol'] not in seen:
+                    seen.add(p['symbol'])
+                    top_pairs.append(p['symbol'])
+
+            for p in volume_sorted:
+                if len(top_pairs) >= top_n:
+                    break
+                if p['symbol'] not in seen:
+                    seen.add(p['symbol'])
+                    top_pairs.append(p['symbol'])
+
+            if coiled_springs:
+                self.logger.info(f"🎯 Funnel Discovered {len(coiled_springs)} Pre-Breakout Candidate(s) (within 3.5% of 24h High): {[p['symbol'] for p in coiled_springs[:5]]}")
 
             # --- PHASE 26: Inject Open Positions into Monitoring Cycle ---
             try:

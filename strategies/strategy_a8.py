@@ -36,8 +36,9 @@ class StrategyA8(BaseStrategy):
         self.ignition_threshold = getattr(config, 'A8_IGNITION_THRESHOLD', 0.40)
         self.min_whale_value = 150000  # same as A6 production
 
-        # Layer 2 — A7 confirmation thresholds (A7's validated edge, untouched)
-        self.volume_spike_mult = 1.5
+        # Layer 2 — A7 confirmation thresholds (tightened for institutional volume & anti-FOMO)
+        self.volume_spike_mult = getattr(config, 'A8_VOLUME_SPIKE_MULT', 2.5)  # was 1.5, now 2.5x RVOL
+        self.max_extension_pct = getattr(config, 'A8_MAX_EXTENSION_PCT', 8.0)  # skip >8% extended bars
         self.min_move_pct = 0.5
         self.lookback = 20
         self.timeframe = '5m'
@@ -45,7 +46,7 @@ class StrategyA8(BaseStrategy):
 
         # Layer 3 — sizing gates & risk-to-reward stops
         self.adx_min_size = 25     # below this -> size down
-        self.atr_sl_mult = 1.8     # tighter invalidation on failed ignitions (~3-4% instead of 10-12%)
+        self.atr_sl_mult = getattr(config, 'A8_ATR_SL_MULT', 1.5)  # tight invalidation on failed ignitions
         self.atr_tp_mult = 100.0   # uncap TP to hand full control to trailing stop ladder (Tier 1/2)
 
         self.filters = get_strategy_filters(config)
@@ -149,6 +150,8 @@ class StrategyA8(BaseStrategy):
             return None
         if bar_move < 0:
             return None  # long-only
+        if bar_move > self.max_extension_pct:
+            return None  # Anti-FOMO: skip over-extended candle spikes (>8%)
 
         return {
             'volume_ratio': round(vol_ratio, 2),
@@ -206,14 +209,14 @@ class StrategyA8(BaseStrategy):
         if current_price < conf['ema200']:
             size_multiplier = min(size_multiplier, 0.5)  # below EMA200 -> half size
 
-        # ATR-based stops with strict risk boundaries (1.5% min room, 4.5% max price loss)
+        # ATR-based stops with strict risk boundaries (1.2% min room, 2.5% max price loss for tight invalidation)
         stop_loss, take_profit = self.get_dynamic_stops(df, side, self.atr_sl_mult, self.atr_tp_mult)
         if side == 'buy':
-            stop_loss = max(stop_loss, current_price * 0.955)  # max -4.5% loss
-            stop_loss = min(stop_loss, current_price * 0.985)  # min -1.5% breathing room
+            stop_loss = max(stop_loss, current_price * 0.975)  # max -2.5% loss (tight pivot invalidation)
+            stop_loss = min(stop_loss, current_price * 0.988)  # min -1.2% breathing room
         else:
-            stop_loss = min(stop_loss, current_price * 1.045)
-            stop_loss = max(stop_loss, current_price * 1.015)
+            stop_loss = min(stop_loss, current_price * 1.025)
+            stop_loss = max(stop_loss, current_price * 1.012)
         atr = conf['atr']
 
         confidence = 0.50
