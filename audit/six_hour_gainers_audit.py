@@ -84,7 +84,7 @@ def get_symbol_6h_candle(symbol):
     return None
 
 
-def get_bot_records(six_hours_ago_iso):
+def get_bot_records(six_hours_ago_str):
     """Query bot DBs for trades, active positions, rejections, and sweeps."""
     trades_map = {}
     
@@ -93,12 +93,15 @@ def get_bot_records(six_hours_ago_iso):
         conn = sqlite3.connect(TRADE_DB)
         c = conn.cursor()
         c.execute("""SELECT trade_id, symbol, strategy, entry_price, exit_price, pnl_amount, pnl_percent, reason, status, entry_time 
-                     FROM trades WHERE entry_time >= ?""", (six_hours_ago_iso,))
+                     FROM trades WHERE entry_time >= ? OR exit_time >= ?""", (six_hours_ago_str, six_hours_ago_str))
         for r in c.fetchall():
-            sym = r[1].split('/')[0].split(':')[0].upper()
+            raw_sym = r[1]
+            if ':' in raw_sym:
+                raw_sym = raw_sym.split(':')[-2]
+            sym = raw_sym.split('/')[0].strip().upper()
             trades_map[sym] = {
                 'trade_id': r[0],
-                'strategy': 'A8' if 'A8' in r[2] else ('A9' if 'A9' in r[2] else 'A6'),
+                'strategy': 'A8' if 'A8' in str(r[2]) else ('A9' if 'A9' in str(r[2]) else 'A6'),
                 'entry_price': r[3],
                 'exit_price': r[4],
                 'pnl_amount': r[5],
@@ -110,10 +113,13 @@ def get_bot_records(six_hours_ago_iso):
             
         c.execute("SELECT symbol, strategy, entry_price, leverage FROM active_positions")
         for r in c.fetchall():
-            sym = r[0].split(':')[-2].split('/')[0].upper()
-            if sym not in trades_map:
+            raw_sym = r[0]
+            if ':' in raw_sym:
+                raw_sym = raw_sym.split(':')[-2]
+            sym = raw_sym.split('/')[0].strip().upper()
+            if sym not in trades_map or trades_map[sym]['status'] != 'OPEN':
                 trades_map[sym] = {
-                    'strategy': 'A8' if 'A8' in r[1] else ('A9' if 'A9' in r[1] else 'A6'),
+                    'strategy': 'A8' if 'A8' in str(r[1]) else ('A9' if 'A9' in str(r[1]) else 'A6'),
                     'entry_price': r[2],
                     'status': 'OPEN',
                     'reason': 'active_holding'
@@ -125,18 +131,25 @@ def get_bot_records(six_hours_ago_iso):
     if os.path.exists(ACT_DB):
         conn = sqlite3.connect(ACT_DB)
         c = conn.cursor()
+        
+        # Format for activity_log (supports both ' ' and 'T')
+        ts_space = six_hours_ago_str.replace('T', ' ')
+        
         try:
             c.execute("""SELECT symbol, strategy, reason, layer, timestamp 
-                         FROM rejections WHERE timestamp >= ?""", (six_hours_ago_iso,))
+                         FROM rejections WHERE timestamp >= ? OR timestamp >= ?""", (ts_space, six_hours_ago_str))
             for r in c.fetchall():
-                sym = r[0].split('/')[0].split(':')[0].upper()
-                rejections_map[sym].append((r[2], r[3], r[4]))
+                raw_sym = r[0]
+                if ':' in raw_sym:
+                    raw_sym = raw_sym.split(':')[-2]
+                sym = raw_sym.split('/')[0].strip().upper()
+                rejections_map[sym].append((r[2], r[1], r[3]))
         except Exception:
             pass
 
         # 3. Check sweep_summary rejections
         try:
-            c.execute("""SELECT metadata FROM activity_log WHERE type='sweep_summary' AND timestamp >= ?""", (six_hours_ago_iso,))
+            c.execute("""SELECT metadata FROM activity_log WHERE type='sweep_summary' AND (timestamp >= ? OR timestamp >= ?)""", (ts_space, six_hours_ago_str))
             for r in c.fetchall():
                 try:
                     d = json.loads(r[0])
@@ -145,7 +158,7 @@ def get_bot_records(six_hours_ago_iso):
                             for reason, sym_dict in reasons.items():
                                 if isinstance(sym_dict, dict):
                                     for s in sym_dict.keys():
-                                        base = s.split('/')[0].upper()
+                                        base = s.split('/')[0].strip().upper()
                                         rejections_map[base].append((reason, strat, 'sweep'))
                 except Exception:
                     pass
