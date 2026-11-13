@@ -102,10 +102,16 @@ class StrategyA6(BaseStrategy):
         self._whale_cache_stagger = {}  # symbol -> deterministic jitter offset
         
         # Initialize WebSocket client once (Fixes memory leak and high CPU)
-        self.wss_exchange = ccxt.pro.binance({
+        wss_params = {
             'enableRateLimit': True,
             'options': {'defaultType': 'future'}
-        })
+        }
+        proxy_url = getattr(self.config, 'HTTP_PROXY', None) or os.getenv('HTTP_PROXY') or os.getenv('HTTPS_PROXY')
+        if proxy_url:
+            wss_params['httpProxy'] = proxy_url
+            wss_params['wsProxy'] = proxy_url
+
+        self.wss_exchange = ccxt.pro.binance(wss_params)
         if getattr(self.config, 'EXCHANGE_ENVIRONMENT', 'production').lower() == 'testnet':
             try:
                 self.wss_exchange.enable_demo_trading(True)
