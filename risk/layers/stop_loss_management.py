@@ -15,9 +15,9 @@ class StopLossManagementLayer:
         global_target_roe = getattr(self.config, 'GLOBAL_STOP_LOSS_ROE', 10.0)
         
         # Override for specific strategies if configured
-        if "A5" in strategy_tag or "A6" in strategy_tag:
+        if any(tag in strategy_tag for tag in ["A5", "A6", "A8", "A9"]):
             override_key = f"{strategy_tag.split(':')[0]}_STOP_LOSS_ROE"
-            global_target_roe = getattr(self.config, override_key, 10.0)
+            global_target_roe = getattr(self.config, override_key, global_target_roe)
 
         # 2026-09-05 elite risk uplift: conf >= ELITE_CONFIDENCE_LEVEL trades get a
         # bigger ROE budget (ELITE_STOP_LOSS_ROE, default 15) -> 6x at the 2.5%

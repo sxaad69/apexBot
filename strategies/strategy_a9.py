@@ -52,10 +52,10 @@ class StrategyA9(BaseStrategy):
         self.adx_min = float(getattr(config, 'A9_ADX_MIN', 25.0))
         self.lookback = 20
 
-        # ATR stops: 3.0x ATR gives the vol-sync layer room; the Phase-1
-        # MIN_RAW_STOP_PERCENT floor catches any coin whose ATR is too tight.
-        self.atr_sl_mult = 3.0
-        self.atr_tp_mult = 3.0  # trailing TP handles exits
+        # ATR-based stops: 1.5x gives tight invalidation; uncap TP (100.0) to
+        # hand full exit control to the Sentinel trailing stop ladder (Tier 1/2).
+        self.atr_sl_mult = float(getattr(config, 'A9_ATR_SL_MULT', 1.5))
+        self.atr_tp_mult = float(getattr(config, 'A9_ATR_TP_MULT', 100.0))
 
         # Operates on the SHARED 15m df passed into generate_signal (no
         # independent fetch -> zero added rate-limit weight per sweep).
@@ -188,7 +188,10 @@ class StrategyA9(BaseStrategy):
         if price_now < ema200_now:
             return _common("BELOW_EMA200", ema200=round(ema200_now, 8))
 
+        # ATR-based stops with strict risk boundaries (1.2% min room, 2.5% max price loss for tight invalidation)
         stop_loss, take_profit = self.get_dynamic_stops(df, 'buy', self.atr_sl_mult, self.atr_tp_mult)
+        stop_loss = max(stop_loss, price_now * 0.975)  # max -2.5% loss (tight pivot invalidation)
+        stop_loss = min(stop_loss, price_now * 0.988)  # min -1.2% breathing room
         atr = df['atr'].iloc[-1] if 'atr' in df.columns else price_now * 0.01
 
         confidence = 0.50

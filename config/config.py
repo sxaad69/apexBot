@@ -157,6 +157,7 @@ class Config:
         self.A5_STOP_LOSS_ROE = float(os.getenv('A5_STOP_LOSS_ROE', '5.0'))
         self.A6_STOP_LOSS_ROE = float(os.getenv('A6_STOP_LOSS_ROE', '5.0'))
         self.A8_STOP_LOSS_ROE = float(os.getenv('A8_STOP_LOSS_ROE', '5.0'))
+        self.A9_STOP_LOSS_ROE = float(os.getenv('A9_STOP_LOSS_ROE', '5.0'))
 
         # Global Proxy Configuration (Bypasses Binance regional geoblocks)
         self.HTTP_PROXY = os.getenv('HTTP_PROXY', '')
@@ -264,6 +265,8 @@ class Config:
         self.A9_BRAKE_ENABLED = self._str_to_bool(os.getenv('A9_BRAKE_ENABLED', 'true'))         # pause when recent cohort win rate collapses
         self.A9_BRAKE_WINDOW = int(os.getenv('A9_BRAKE_WINDOW', '20'))
         self.A9_BRAKE_MIN_WINRATE = float(os.getenv('A9_BRAKE_MIN_WINRATE', '35.0'))
+        self.A9_ATR_SL_MULT = float(os.getenv('A9_ATR_SL_MULT', '1.5'))      # tight invalidation on failed breakout
+        self.A9_ATR_TP_MULT = float(os.getenv('A9_ATR_TP_MULT', '100.0'))    # uncap TP to hand full control to trailing stop ladder (Tier 1/2)
         
         # Strategy-specific Risk Overrides
         self.STRATEGY_A3_SL_ROE = float('5.0')
