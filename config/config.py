@@ -257,7 +257,7 @@ class Config:
         self.STRATEGY_A6_PAPER = self._str_to_bool(os.getenv('STRATEGY_A6_PAPER', 'false'))
         self.STRATEGY_A7_PAPER = self._str_to_bool(os.getenv('STRATEGY_A7_PAPER', 'false'))
         self.STRATEGY_A8_PAPER = self._str_to_bool(os.getenv('STRATEGY_A8_PAPER', 'false'))
-        self.STRATEGY_A9_PAPER = self._str_to_bool(os.getenv('STRATEGY_A9_PAPER', 'true'))
+        self.STRATEGY_A9_PAPER = self._str_to_bool(os.getenv('STRATEGY_A9_PAPER', 'false'))
         # A9 replay-validated gates (2026-09-05, measured on 640 real-fill replays):
         self.A9_SKIP_CONF_BAND = self._str_to_bool(os.getenv('A9_SKIP_CONF_BAND', 'true'))       # 0.80-0.85 lost -0.38%/trade
         self.A9_MAX_EXTENSION_PCT = float(os.getenv('A9_MAX_EXTENSION_PCT', '8.0'))              # skip entries >8% off the 12h low; 0 disables
