@@ -105,7 +105,7 @@ class Config:
 
         # Market Discovery Sync
         self.FUTURES_PAIRS = 'auto'
-        self.FUTURES_AUTO_TOP_N = int(os.getenv('FUTURES_AUTO_TOP_N', '1000'))  # env-overridable universe size
+        self.FUTURES_AUTO_TOP_N = int(os.getenv('FUTURES_AUTO_TOP_N', '60'))  # Focused breakout universe (30 coiled springs + 30 momentum gainers)
         self.FUTURES_AUTO_MIN_VOLUME = float('500000')
         # Comma-separated list of base symbols to exclude from discovery/A6 watch/sweeps.
         # Matching is case-insensitive on the base symbol (e.g. 'BTC' excludes BTC/USDT).
@@ -125,7 +125,7 @@ class Config:
         
         # ===== Full-Universe Scanning (Phase 2) =====
         self.OHLCV_BATCH_MAX = int('100')  # Max stale-candle refreshes per sweep
-        self.A6_MAX_WATCH_SYMBOLS = int(os.getenv('A6_MAX_WATCH_SYMBOLS', '150'))  # Cap A6 orderbook WSS subscriptions (150 safe default for local/Linode memory)
+        self.A6_MAX_WATCH_SYMBOLS = int(os.getenv('A6_MAX_WATCH_SYMBOLS', '75'))  # Cap A6 orderbook WSS subscriptions (matches focused universe + open positions)
         
         # ===== Discovery / Concurrency (Rate-Limit Task 1.5) =====
         self.DISCOVERY_MAX_WORKERS = int('3')   # Smoother concurrency vs 5

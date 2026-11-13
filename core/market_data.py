@@ -193,6 +193,10 @@ class MarketDataMixin:
 
             if coiled_springs:
                 self.logger.info(f"🎯 Funnel Discovered {len(coiled_springs)} Pre-Breakout Candidate(s) (within 3.5% of 24h High): {[p['symbol'] for p in coiled_springs[:5]]}")
+            num_coiled = len([p for p in coiled_springs[:30] if p['symbol'] in top_pairs])
+            num_gainers = len([p for p in gainers[:30] if p['symbol'] in top_pairs and p['symbol'] not in [c['symbol'] for c in coiled_springs[:30]]])
+            num_backfill = max(0, len(top_pairs) - num_coiled - num_gainers)
+            self.logger.info(f"🎯 Focused Universe: {len(top_pairs)} symbols targeted for WSS ({num_coiled} Coiled Springs, {num_gainers} Gainers, {num_backfill} Volume Backfill)")
 
             # --- PHASE 26: Inject Open Positions into Monitoring Cycle ---
             try:
