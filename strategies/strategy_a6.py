@@ -112,14 +112,6 @@ class StrategyA6(BaseStrategy):
             wss_params['wsProxy'] = proxy_url
 
         self.wss_exchange = ccxt.pro.binance(wss_params)
-        if getattr(self.config, 'EXCHANGE_ENVIRONMENT', 'production').lower() == 'testnet':
-            try:
-                self.wss_exchange.enable_demo_trading(True)
-            except AttributeError:
-                self.logger.warning(
-                    'ccxt.pro Binance demo trading helper is unavailable; '
-                    'continuing without sandbox mode.'
-                )
 
         # Launch dedicated WSS Thread strictly for A6
         self.wss_thread = threading.Thread(target=self._start_wss_loop, daemon=True)
