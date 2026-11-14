@@ -169,21 +169,19 @@ class StrategyA8(BaseStrategy):
         if not self.filters._check_stablecoin_filter(symbol):
             return self.set_rejection({"reason": "STABLECOIN_FILTER"})
 
-        # Layer 1 — ignition
-        ign = self._ignition_signal(symbol)
-        if not ign['ignited']:
-            return self.set_rejection({
-                "reason": "NO_IGNITION",
-                "imbalance": round(ign['imbalance'], 4),
-                "whale_count": ign['whale']['count'],
-                "whale_net_pressure": ign['whale']['net_pressure'],
-            })
-
         # Layer 2 — A7 confirmation on 5m
         conf = self._confirm_on_5m(symbol)
         if conf is None:
             return self.set_rejection({
                 "reason": "NO_CONFIRM",
+            })
+
+        # Layer 1 — ignition (satisfied by resting orderbook wall OR institutional taker volume spike >= 2.5x)
+        ign = self._ignition_signal(symbol)
+        is_vol_ignited = conf.get('volume_ratio', 0) >= self.volume_spike_mult
+        if not (ign['ignited'] or is_vol_ignited):
+            return self.set_rejection({
+                "reason": "NO_IGNITION",
                 "imbalance": round(ign['imbalance'], 4),
                 "whale_count": ign['whale']['count'],
                 "whale_net_pressure": ign['whale']['net_pressure'],

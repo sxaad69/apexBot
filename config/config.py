@@ -105,27 +105,27 @@ class Config:
 
         # Market Discovery Sync
         self.FUTURES_PAIRS = 'auto'
-        self.FUTURES_AUTO_TOP_N = int(os.getenv('FUTURES_AUTO_TOP_N', '60'))  # Focused breakout universe (30 coiled springs + 30 momentum gainers)
-        self.FUTURES_AUTO_MIN_VOLUME = float('500000')
+        self.FUTURES_AUTO_TOP_N = int(os.getenv('FUTURES_AUTO_TOP_N', '120'))  # Focused breakout universe (top volume & momentum)
+        self.FUTURES_AUTO_MIN_VOLUME = float(os.getenv('FUTURES_AUTO_MIN_VOLUME', '5000000'))  # $5M liquidity floor (kills zombie tokens)
         # Comma-separated list of base symbols to exclude from discovery/A6 watch/sweeps.
         # Matching is case-insensitive on the base symbol (e.g. 'BTC' excludes BTC/USDT).
         self.FUTURES_EXCLUDE_SYMBOLS = [s.strip().upper() for s in os.getenv('FUTURES_EXCLUDE_SYMBOLS', 'BTC,ETH,BNB,SOL,XRP,ADA,DOGE,DOT,LINK,LTC,BCH,AVAX,XLM,ATOM,TRX,NEAR,FIL,SUI,APT,ARB,OP,INJ,1000SHIB,1000PEPE,WIF').split(',') if s.strip()]
         
         # ===== Pre-Breakout Quantitative Funnel =====
         self.PRE_BREAKOUT_ENABLED = self._str_to_bool(os.getenv('PRE_BREAKOUT_ENABLED', 'true'))
-        self.PRE_BREAKOUT_MIN_VOL_USDT = float(os.getenv('PRE_BREAKOUT_MIN_VOL_USDT', '2000000'))
+        self.PRE_BREAKOUT_MIN_VOL_USDT = float(os.getenv('PRE_BREAKOUT_MIN_VOL_USDT', '5000000'))  # $5M volume floor
         self.PRE_BREAKOUT_PROXIMITY_HIGH_PCT = float(os.getenv('PRE_BREAKOUT_PROXIMITY_HIGH_PCT', '0.965'))  # Within 3.5% of 24h high
         self.PRE_BREAKOUT_MIN_PCT = float(os.getenv('PRE_BREAKOUT_MIN_PCT', '0.5'))
-        self.PRE_BREAKOUT_MAX_PCT = float(os.getenv('PRE_BREAKOUT_MAX_PCT', '8.0'))  # Anti-FOMO: skip >8% extended
+        self.PRE_BREAKOUT_MAX_PCT = float(os.getenv('PRE_BREAKOUT_MAX_PCT', '50.0'))  # Allow high-momentum continuation coils
         
         # ===== Strategy A8 Sniper Upgrades =====
         self.A8_VOLUME_SPIKE_MULT = float(os.getenv('A8_VOLUME_SPIKE_MULT', '2.5'))  # was 1.5x, raised to 2.5x institutional volume
-        self.A8_MAX_EXTENSION_PCT = float(os.getenv('A8_MAX_EXTENSION_PCT', '8.0'))  # Anti-FOMO extension cap
+        self.A8_MAX_EXTENSION_PCT = float(os.getenv('A8_MAX_EXTENSION_PCT', '15.0'))  # Anti-FOMO extension cap
         self.A8_IGNITION_THRESHOLD = float(os.getenv('A8_IGNITION_THRESHOLD', '0.40'))
         
         # ===== Full-Universe Scanning (Phase 2) =====
         self.OHLCV_BATCH_MAX = int('100')  # Max stale-candle refreshes per sweep
-        self.A6_MAX_WATCH_SYMBOLS = int(os.getenv('A6_MAX_WATCH_SYMBOLS', '75'))  # Cap A6 orderbook WSS subscriptions (matches focused universe + open positions)
+        self.A6_MAX_WATCH_SYMBOLS = int(os.getenv('A6_MAX_WATCH_SYMBOLS', '120'))  # Match expanded universe
         
         # ===== Discovery / Concurrency (Rate-Limit Task 1.5) =====
         self.DISCOVERY_MAX_WORKERS = int('3')   # Smoother concurrency vs 5
@@ -276,17 +276,22 @@ class Config:
         self.SPOT_FEE_PERCENT = float('0.1')
         
         # ===== Trailing Stop Configuration =====
-        # ONE place to control trailing. Change these two values only.
-        self.TRAILING_STOP_ACTIVATION = float('5.0')  # % profit before trailing starts
-        self.TRAILING_STOP_DISTANCE = float('3.0')    # % trail distance from peak
-        # Tiered trailing (B1): widen the exchange callback as a position proves it runs.
-        # Tier thresholds are profit % from entry; callback rates replace the trailing order.
-        # Env-overridable so testnet can exercise tiers at low thresholds without committing
-        # testnet-specific values to the repo.
-        self.TRAILING_TIER_1_AT = float(os.getenv('TRAILING_TIER_1_AT', '8.0'))  # above this profit → tier 1
-        self.TRAILING_TIER_1_CALLBACK = float(os.getenv('TRAILING_TIER_1_CALLBACK', '5.0'))  # tier 1 callback %
-        self.TRAILING_TIER_2_AT = float(os.getenv('TRAILING_TIER_2_AT', '20.0'))  # above this profit → tier 2
-        self.TRAILING_TIER_2_CALLBACK = float(os.getenv('TRAILING_TIER_2_CALLBACK', '8.0'))  # tier 2 callback %
+        # 3-Target ROE Ladder:
+        # Target 1 (+2.5% ROE): Trailing arms immediately on exchange.
+        # Target 2 (+5.0% ROE): Ratchet tightens callback to bank guaranteed profit.
+        # Target 3 (+8.0% ROE+): Runner Mode widens callback to ride explosive moonshots.
+        self.TRAILING_STOP_ACTIVATION = float('2.5')  # % profit before trailing starts
+        self.TRAILING_STOP_DISTANCE = float('2.0')    # % trail distance from peak
+        self.TRAILING_ACTIVATION_TARGET_ROE = float(os.getenv('TRAILING_ACTIVATION_TARGET_ROE', '2.5'))
+        self.TRAILING_ACTIVATION_PRICE_CAP = float(os.getenv('TRAILING_ACTIVATION_PRICE_CAP', '1.25'))
+        self.TRAILING_TIER_1_AT = float(os.getenv('TRAILING_TIER_1_AT', '5.0'))  # Target 2: +5.0% ROE
+        self.TRAILING_TIER_1_CALLBACK = float(os.getenv('TRAILING_TIER_1_CALLBACK', '2.0'))  # Tight trail at 5% ROE
+        self.TRAILING_TIER_2_AT = float(os.getenv('TRAILING_TIER_2_AT', '8.0'))  # Target 3: +8.0% ROE (Runner mode)
+        self.TRAILING_TIER_2_CALLBACK = float(os.getenv('TRAILING_TIER_2_CALLBACK', '4.0'))  # Wide runner callback
+        
+        # Dead Money Stagnation Exit: If open > 60m with peak profit < 1.5% ROE, close and recycle capital
+        self.STAGNATION_TIMEOUT_MINUTES = int(os.getenv('STAGNATION_TIMEOUT_MINUTES', '60'))
+        self.STAGNATION_MIN_PROFIT_ROE = float(os.getenv('STAGNATION_MIN_PROFIT_ROE', '1.5'))
         # A1: buffer % ahead of current mark used to re-arm the exchange trailing on a
         # tier upgrade (avoids -2021 "Order would immediately trigger" when activation
         # is set at/behind the live mark).
@@ -317,8 +322,8 @@ class Config:
         self.TRAILING_CALLBACK_LEV_LOW = float(os.getenv('TRAILING_CALLBACK_LEV_LOW', '3.0'))    # lev 1
         # Activation is also price-based: arm earlier on high leverage:
         # activation = max(floor, target_roe / leverage).
-        self.TRAILING_ACTIVATION_TARGET_ROE = float(os.getenv('TRAILING_ACTIVATION_TARGET_ROE', '8.0'))
-        self.TRAILING_ACTIVATION_LEV_FLOOR = float(os.getenv('TRAILING_ACTIVATION_LEV_FLOOR', '1.5'))
+        self.TRAILING_ACTIVATION_TARGET_ROE = float(os.getenv('TRAILING_ACTIVATION_TARGET_ROE', '2.5'))
+        self.TRAILING_ACTIVATION_LEV_FLOOR = float(os.getenv('TRAILING_ACTIVATION_LEV_FLOOR', '0.8'))
         # C1: re-entry blacklist — consecutive SL losses before blocking the symbol
         # for the session. 2 as designed on Aug 20; 1 (set 6182127) is only safe
         # while the D4 startup seed is broken — with a working seed it ratchets

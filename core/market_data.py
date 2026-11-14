@@ -145,12 +145,12 @@ class MarketDataMixin:
 
             # ===== 3-STAGE QUANTITATIVE DISCOVERY FUNNEL =====
             # Stage 1: Coiled Springs / Pre-Breakout Candidates
-            # Criteria: Liquidity >= min_vol, proximity to 24h high >= 96.5%, 0.5% <= 24h change <= 8.0% (anti-FOMO)
+            # Criteria: Liquidity >= min_vol, proximity to 24h high >= 96.5%, positive momentum without ceiling cutoff
             pre_breakout_enabled = getattr(self.config, 'PRE_BREAKOUT_ENABLED', True)
-            min_pre_vol = getattr(self.config, 'PRE_BREAKOUT_MIN_VOL_USDT', 2000000.0)
+            min_pre_vol = getattr(self.config, 'PRE_BREAKOUT_MIN_VOL_USDT', 5000000.0)
             prox_high = getattr(self.config, 'PRE_BREAKOUT_PROXIMITY_HIGH_PCT', 0.965)
             min_pct = getattr(self.config, 'PRE_BREAKOUT_MIN_PCT', 0.5)
-            max_pct = getattr(self.config, 'PRE_BREAKOUT_MAX_PCT', 8.0)
+            max_pct = getattr(self.config, 'PRE_BREAKOUT_MAX_PCT', 50.0)  # Support massive runners (e.g. AKE, SHELL)
 
             coiled_springs = []
             if pre_breakout_enabled:
@@ -161,23 +161,26 @@ class MarketDataMixin:
                 # Sort coiled springs by proximity to 24h high (closest to breakout first)
                 coiled_springs.sort(key=lambda x: (x['last_price'] / x['high_24h']), reverse=True)
 
-            # Stage 2: Momentum / Active Gainers Pool (positive 24h change, not over-extended)
-            gainers = [p for p in usdt_pairs if 0.5 <= p['pct'] <= 15.0]
+            # Store verified coiled springs set for strategy fast-track
+            self.coiled_springs_set = {p['symbol'] for p in coiled_springs}
+
+            # Stage 2: Momentum / Active Gainers Pool (positive 24h change, uncapped for true momentum leaders)
+            gainers = [p for p in usdt_pairs if p['pct'] >= 0.5]
             gainers.sort(key=lambda x: x['pct'], reverse=True)
 
             # Stage 3: High-Volume Core Pool (descending 24h volume)
             volume_sorted = sorted(usdt_pairs, key=lambda x: x['volume'], reverse=True)
 
-            # Assemble Priority Queue: Coiled Springs (up to 30) -> Gainers (up to 30) -> High-Volume Backfill
+            # Assemble Priority Queue: Coiled Springs (up to 40) -> Gainers (up to 40) -> High-Volume Backfill (up to top_n)
             seen = set()
             top_pairs = []
 
-            for p in coiled_springs[:30]:
+            for p in coiled_springs[:40]:
                 if p['symbol'] not in seen:
                     seen.add(p['symbol'])
                     top_pairs.append(p['symbol'])
 
-            for p in gainers[:30]:
+            for p in gainers[:40]:
                 if len(top_pairs) >= top_n:
                     break
                 if p['symbol'] not in seen:
@@ -193,8 +196,8 @@ class MarketDataMixin:
 
             if coiled_springs:
                 self.logger.info(f"🎯 Funnel Discovered {len(coiled_springs)} Pre-Breakout Candidate(s) (within 3.5% of 24h High): {[p['symbol'] for p in coiled_springs[:5]]}")
-            num_coiled = len([p for p in coiled_springs[:30] if p['symbol'] in top_pairs])
-            num_gainers = len([p for p in gainers[:30] if p['symbol'] in top_pairs and p['symbol'] not in [c['symbol'] for c in coiled_springs[:30]]])
+            num_coiled = len([p for p in coiled_springs[:40] if p['symbol'] in top_pairs])
+            num_gainers = len([p for p in gainers[:40] if p['symbol'] in top_pairs and p['symbol'] not in [c['symbol'] for c in coiled_springs[:40]]])
             num_backfill = max(0, len(top_pairs) - num_coiled - num_gainers)
             self.logger.info(f"🎯 Focused Universe: {len(top_pairs)} symbols targeted for WSS ({num_coiled} Coiled Springs, {num_gainers} Gainers, {num_backfill} Volume Backfill)")
 

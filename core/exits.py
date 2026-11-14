@@ -254,21 +254,25 @@ class ExitsMixin:
             if entry <= 0:
                 self.logger.debug(f"[tier] {symbol} {position_key}: skip (bad entry {entry})")
                 continue
-            profit_percent = (current_price - entry) / entry
+            
+            _lev = float(position.get('leverage') or 1)
+            _is_long = position.get('side', 'buy') == 'buy'
+            raw_gain = (current_price - entry) / entry if _is_long else (entry - current_price) / entry
+            profit_roe = raw_gain * _lev  # ROE decimal (e.g. 0.05 = 5% ROE)
+            profit_percent = raw_gain
 
             # Leverage-aware tier callbacks (ROE give-back = price callback x lev)
-            _lev = float(position.get('leverage') or 1)
             try:
                 tier1_cb = self.config.get_tier_callback(_lev, 1)
                 tier2_cb = self.config.get_tier_callback(_lev, 2)
             except AttributeError:
-                tier1_cb = getattr(self.config, 'TRAILING_TIER_1_CALLBACK', 5.0)
-                tier2_cb = getattr(self.config, 'TRAILING_TIER_2_CALLBACK', 8.0)
+                tier1_cb = getattr(self.config, 'TRAILING_TIER_1_CALLBACK', 2.0)
+                tier2_cb = getattr(self.config, 'TRAILING_TIER_2_CALLBACK', 4.0)
 
-            # Determine target tier from current profit
-            if profit_percent >= tier2_at:
+            # Determine target tier from current ROE profit (3-Target ROE Ladder)
+            if profit_roe >= tier2_at:
                 target_tier, target_cb = 2, tier2_cb
-            elif profit_percent >= tier1_at:
+            elif profit_roe >= tier1_at:
                 target_tier, target_cb = 1, tier1_cb
             else:
                 continue  # still in tier 0 — keep entry callback (no log: normal path, noisy)
@@ -744,6 +748,65 @@ class ExitsMixin:
                             position['_last_wm_persist'] = now_ts
             except Exception:
                 pass
+
+            # --- 60-MINUTE STAGNATION TIMEOUT (Dead Money Pruning) ---
+            # If position has been open > STAGNATION_TIMEOUT_MINUTES (default 60m)
+            # and its peak profit has never crossed STAGNATION_MIN_PROFIT_ROE (default 1.5%),
+            # trigger an immediate market exit to recycle capital for real breakout runners.
+            stagnation_enabled = getattr(self.config, 'STAGNATION_TIMEOUT_MINUTES', 0) > 0
+            if stagnation_enabled:
+                entry_time_str = position.get('entry_time')
+                if entry_time_str:
+                    try:
+                        import datetime as _dt
+                        if isinstance(entry_time_str, str):
+                            t_clean = entry_time_str.split('+')[0].replace('Z', '')
+                            entry_dt = _dt.datetime.fromisoformat(t_clean)
+                        else:
+                            entry_dt = entry_time_str
+                        
+                        now_utc = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+                        elapsed_min = (now_utc - entry_dt).total_seconds() / 60.0
+                        timeout_min = getattr(self.config, 'STAGNATION_TIMEOUT_MINUTES', 60)
+                        
+                        if elapsed_min >= timeout_min:
+                            _lev = float(position.get('leverage') or 1)
+                            _is_long = position.get('side', 'buy') == 'buy'
+                            entry_px = float(position.get('entry_price') or current_price)
+                            peak_px = float(position.get('highest_price' if _is_long else 'lowest_price') or entry_px)
+                            peak_raw_gain = (peak_px - entry_px) / entry_px if _is_long else (entry_px - peak_px) / entry_px
+                            peak_roe = peak_raw_gain * _lev * 100.0
+                            min_profit_roe = getattr(self.config, 'STAGNATION_MIN_PROFIT_ROE', 1.5)
+                            
+                            if peak_roe < min_profit_roe:
+                                self.logger.info(
+                                    f"⏰ [STAGNATION] {symbol} open for {elapsed_min:.0f}m with peak ROE +{peak_roe:.2f}% "
+                                    f"< {min_profit_roe}%. Closing dead position to free capital."
+                                )
+                                if position.get('sl_order_id'):
+                                    self._cancel_exchange_conditional(symbol, position['sl_order_id'])
+                                if position.get('tp_order_id'):
+                                    self._cancel_exchange_conditional(symbol, position['tp_order_id'])
+                                if position.get('trailing_order_id'):
+                                    self._cancel_exchange_conditional(symbol, position['trailing_order_id'])
+                                if position.get('trailing_fallback_id'):
+                                    self._cancel_exchange_conditional(symbol, position['trailing_fallback_id'])
+                                
+                                close_order = self.trade_manager.close_position(
+                                    symbol, position['side'], position['size'], position.get('leverage')
+                                )
+                                exit_res = self.trade_manager.record_exit(
+                                    symbol=symbol,
+                                    trade_id=position['trade_id'],
+                                    reason='stagnation_timeout',
+                                    current_price=current_price,
+                                    order_response=close_order
+                                )
+                                if exit_res and exit_res.get('verified'):
+                                    closed_positions.append(position_key)
+                                continue
+                    except Exception as e:
+                        self.logger.warning(f"Error in stagnation check for {symbol}: {e}")
 
             # --- [PHASE 15.3: EXCHANGE-SIDE SL/TP POLLING] ---
             # If we placed exchange orders, check their status FIRST before software checks.

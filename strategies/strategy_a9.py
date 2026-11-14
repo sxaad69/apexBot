@@ -171,12 +171,21 @@ class StrategyA9(BaseStrategy):
             d.update(extra)
             return self.set_rejection(d)
 
-        # Core acceleration signal
-        if vol_ratio < self.volume_spike_mult:
-            return _common("LOW_VOLUME_RATIO", required=self.volume_spike_mult)
+        # Funnel Fast-Track Gate for Coiled Pre-Breakout Springs:
+        # If coin is close to 24h high with strong trend (ADX >= 30), relax entry threshold
+        # to catch the coil at the base (e.g. SOPH at 0.22% move and 1.42x volume)
+        coiled_set = getattr(getattr(self.logger, 'engine', None), 'coiled_springs_set', set())
+        is_coiled = symbol in coiled_set or (price_now >= ema200_now and adx_val >= 30.0)
+        
+        req_vol = 1.20 if is_coiled else self.volume_spike_mult
+        req_move = 0.20 if is_coiled else self.min_move_pct
 
-        if abs(bar_move) < self.min_move_pct:
-            return _common("LOW_MOMENTUM", required=self.min_move_pct)
+        # Core acceleration signal
+        if vol_ratio < req_vol:
+            return _common("LOW_VOLUME_RATIO", required=req_vol)
+
+        if abs(bar_move) < req_move:
+            return _common("LOW_MOMENTUM", required=req_move)
 
         # Long-only: negative momentum with high volume = distribution, not a setup
         if bar_move < 0:

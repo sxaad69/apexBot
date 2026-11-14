@@ -190,8 +190,10 @@ class EntryMixin:
             # Dynamically pull limits from config (supports 85% Normal / 95% Elite)
             opportunity_threshold = getattr(self.config, 'FUTURES_OPPORTUNITY_THRESHOLD', 0.90)
 
-            if confidence >= opportunity_threshold:
-                # Elite signal: uses higher exposure limit (e.g., 95%)
+            # High-conviction signals and Funnel breakout candidates get Elite exposure access (95%)
+            is_funnel = signal.get('is_funnel', False) or (strategy_name == 'A9: Volume-Momentum Grinder')
+            if confidence >= opportunity_threshold or is_funnel:
+                # Elite / Funnel signal: uses higher exposure limit (e.g., 95%)
                 max_exposure_pct = getattr(self.config, 'FUTURES_MAX_EXPOSURE_ELITE', 0.95)
             else:
                 # Normal signal: uses standard exposure limit (e.g., 85%)
@@ -203,8 +205,8 @@ class EntryMixin:
 
             reserve_min_pct = getattr(self.config, 'FUTURES_RESERVE_MIN_PCT', 0.03)
             if available_for_new_trade < total_capital * reserve_min_pct:  # Min 3% must be free
-                if confidence >= opportunity_threshold:
-                    self.logger.warning(f"[{strategy_name}] {symbol} HIGH-CONFIDENCE SIGNAL SKIPPED - Even reserve is exhausted")
+                if confidence >= opportunity_threshold or is_funnel:
+                    self.logger.warning(f"[{strategy_name}] {symbol} HIGH-PRIORITY SIGNAL SKIPPED - Even 95% reserve is exhausted")
                 else:
                     self.logger.warning(f"[{strategy_name}] {symbol} INSUFFICIENT RESERVE CAPITAL - Max exposure reached")
                 return
