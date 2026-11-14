@@ -190,8 +190,9 @@ class EntryMixin:
             # Dynamically pull limits from config (supports 85% Normal / 95% Elite)
             opportunity_threshold = getattr(self.config, 'FUTURES_OPPORTUNITY_THRESHOLD', 0.90)
 
-            # High-conviction signals and Funnel breakout candidates get Elite exposure access (95%)
-            is_funnel = signal.get('is_funnel', False) or (strategy_name == 'A9: Volume-Momentum Grinder')
+            # High-conviction signals and Funnel/Breakout candidates get Elite exposure access (95%)
+            is_high_volume_a8 = ('A8' in strategy_name) and (signal.get('volume_ratio', 0) >= 2.0 or signal.get('taker_burst', False))
+            is_funnel = signal.get('is_funnel', False) or ('A9' in strategy_name) or is_high_volume_a8
             if confidence >= opportunity_threshold or is_funnel:
                 # Elite / Funnel signal: uses higher exposure limit (e.g., 95%)
                 max_exposure_pct = getattr(self.config, 'FUTURES_MAX_EXPOSURE_ELITE', 0.95)

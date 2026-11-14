@@ -792,9 +792,14 @@ class ExitsMixin:
                                 if position.get('trailing_fallback_id'):
                                     self._cancel_exchange_conditional(symbol, position['trailing_fallback_id'])
                                 
-                                close_order = self.trade_manager.close_position(
-                                    symbol, position['side'], position['size'], position.get('leverage')
-                                )
+                                close_order = None
+                                if self.mode == 'live':
+                                    try:
+                                        self.logger.system(f"🚀 [LIVE] Executing Market Close for {symbol} (stagnation_timeout)")
+                                        close_order = self.exchange.close_position(symbol)
+                                    except Exception as ce:
+                                        self.logger.error(f"🚨 LIVE EXIT FAILED for {symbol}: {ce}")
+
                                 exit_res = self.trade_manager.record_exit(
                                     symbol=symbol,
                                     trade_id=position['trade_id'],
