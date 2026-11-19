@@ -207,14 +207,14 @@ class StrategyA8(BaseStrategy):
         if current_price < conf['ema200']:
             size_multiplier = min(size_multiplier, 0.5)  # below EMA200 -> half size
 
-        # ATR-based stops with strict risk boundaries (1.2% min room, 2.5% max price loss for tight invalidation)
+        # ATR-based stops with strict risk boundaries (0.8% min room, 1.5% max price loss for tight invalidation)
         stop_loss, take_profit = self.get_dynamic_stops(df, side, self.atr_sl_mult, self.atr_tp_mult)
         if side == 'buy':
-            stop_loss = max(stop_loss, current_price * 0.975)  # max -2.5% loss (tight pivot invalidation)
-            stop_loss = min(stop_loss, current_price * 0.988)  # min -1.2% breathing room
+            stop_loss = max(stop_loss, current_price * 0.985)  # max -1.5% price loss (-3.0% ROE at 2x)
+            stop_loss = min(stop_loss, current_price * 0.992)  # min -0.8% breathing room
         else:
-            stop_loss = min(stop_loss, current_price * 1.025)
-            stop_loss = max(stop_loss, current_price * 1.012)
+            stop_loss = min(stop_loss, current_price * 1.015)
+            stop_loss = max(stop_loss, current_price * 1.008)
         atr = conf['atr']
 
         confidence = 0.50

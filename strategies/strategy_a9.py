@@ -197,10 +197,10 @@ class StrategyA9(BaseStrategy):
         if price_now < ema200_now:
             return _common("BELOW_EMA200", ema200=round(ema200_now, 8))
 
-        # ATR-based stops with strict risk boundaries (1.2% min room, 2.5% max price loss for tight invalidation)
+        # ATR-based stops with strict risk boundaries (0.8% min room, 1.5% max price loss for tight invalidation)
         stop_loss, take_profit = self.get_dynamic_stops(df, 'buy', self.atr_sl_mult, self.atr_tp_mult)
-        stop_loss = max(stop_loss, price_now * 0.975)  # max -2.5% loss (tight pivot invalidation)
-        stop_loss = min(stop_loss, price_now * 0.988)  # min -1.2% breathing room
+        stop_loss = max(stop_loss, price_now * 0.985)  # max -1.5% price loss (-3.0% ROE at 2x)
+        stop_loss = min(stop_loss, price_now * 0.992)  # min -0.8% breathing room
         atr = df['atr'].iloc[-1] if 'atr' in df.columns else price_now * 0.01
 
         confidence = 0.50

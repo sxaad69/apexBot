@@ -34,7 +34,9 @@ class MaximumDrawdownLayer:
                 return None
             
             # Tier 2: Normal Signal Gate (e.g. 50%)
-            if drawdown >= self.config.NORMAL_SIGNAL_THRESHOLD and not is_elite:
+            # High-conviction breakout signals (A8 ignition or A9 volume grinder) pass as Elite-equivalent
+            is_breakout = trade_params.get('is_funnel', False) or ('A8' in trade_params.get('strategy', '')) or ('A9' in trade_params.get('strategy', ''))
+            if drawdown >= self.config.NORMAL_SIGNAL_THRESHOLD and not is_elite and not is_breakout:
                 self.logger.position_rejected(
                     symbol=trade_params.get('symbol', 'UNKNOWN'),
                     reason='Preserving capital for Elite signals (Normal Gate)',

@@ -84,7 +84,7 @@ class Config:
         self.FUTURES_TAKE_PROFIT_PERCENT = float('10')
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float('5')
         self.FUTURES_MAX_DRAWDOWN_PERCENT = float('70')
-        self.FUTURES_MAX_OPEN_POSITIONS = int(os.getenv('FUTURES_MAX_OPEN_POSITIONS', '15'))
+        self.FUTURES_MAX_OPEN_POSITIONS = int(os.getenv('FUTURES_MAX_OPEN_POSITIONS', '3'))
         # Core-fix leverage ceiling (Phase 1): 5x base, 6x only for high-confidence
         # signals (conf >= TIER_HOT_CONF). Forensics: conf rescues 3-5x but dies at 10x
         # (12.5% win); 10x raw stops get hit by wick noise (0 wins in 17 SLs).
@@ -289,9 +289,9 @@ class Config:
         self.TRAILING_TIER_2_AT = float(os.getenv('TRAILING_TIER_2_AT', '8.0'))  # Target 3: +8.0% ROE (Runner mode)
         self.TRAILING_TIER_2_CALLBACK = float(os.getenv('TRAILING_TIER_2_CALLBACK', '4.0'))  # Wide runner callback
         
-        # Dead Money Stagnation Exit: If open > 60m with peak profit < 1.5% ROE, close and recycle capital
-        self.STAGNATION_TIMEOUT_MINUTES = int(os.getenv('STAGNATION_TIMEOUT_MINUTES', '60'))
-        self.STAGNATION_MIN_PROFIT_ROE = float(os.getenv('STAGNATION_MIN_PROFIT_ROE', '1.5'))
+        # Dead Money Stagnation Exit: If open > 15m with peak profit < 1.0% ROE, close and recycle capital
+        self.STAGNATION_TIMEOUT_MINUTES = int(os.getenv('STAGNATION_TIMEOUT_MINUTES', '15'))
+        self.STAGNATION_MIN_PROFIT_ROE = float(os.getenv('STAGNATION_MIN_PROFIT_ROE', '1.0'))
         # A1: buffer % ahead of current mark used to re-arm the exchange trailing on a
         # tier upgrade (avoids -2021 "Order would immediately trigger" when activation
         # is set at/behind the live mark).
@@ -352,8 +352,8 @@ class Config:
         
         # ===== Tiered Risk Management (Phase 14) =====
         self.TIERED_RISK_ENABLED = self._str_to_bool('true')
-        self.NORMAL_SIGNAL_THRESHOLD = float('50.0')
-        self.ELITE_SIGNAL_THRESHOLD = float('70.0')
+        self.NORMAL_SIGNAL_THRESHOLD = float(os.getenv('NORMAL_SIGNAL_THRESHOLD', '65.0'))
+        self.ELITE_SIGNAL_THRESHOLD = float(os.getenv('ELITE_SIGNAL_THRESHOLD', '75.0'))
         self.ELITE_CONFIDENCE_LEVEL = float('0.90')
         
         self.CORRELATION_THRESHOLD = float('0.7')
@@ -384,7 +384,7 @@ class Config:
         self.TIER_HOT_CONF = float(os.getenv('TIER_HOT_CONF', '0.90'))
         self.TIER_HOT_SIZE = float(os.getenv('TIER_HOT_SIZE', '0.25'))
         self.TIER_HOT_LEV = int(os.getenv('TIER_HOT_LEV', '3'))
-        self.TIER_BASE_SIZE = float(os.getenv('TIER_BASE_SIZE', '0.10'))
+        self.TIER_BASE_SIZE = float(os.getenv('TIER_BASE_SIZE', '0.30'))
         self.TIER_BASE_LEV = int(os.getenv('TIER_BASE_LEV', '2'))
         self.LEV_CAP = int(os.getenv('LEV_CAP', '5'))
         # --- Momentum-Gated Entry Sizing (2026-09-17) ---
