@@ -808,6 +808,13 @@ class ExitsMixin:
                                     order_response=close_order
                                 )
                                 if exit_res and exit_res.get('verified'):
+                                    if self.mode == 'paper':
+                                        self.total_capital += exit_res.get('capital_return', 0)
+                                    self.logger.info(f"💰 CAPITAL RECOVERED: ${exit_res.get('capital_return', 0):.2f} (stagnation exit)")
+                                    is_win = exit_res.get('net_pnl', 0) > 0
+                                    self.risk_manager.record_trade_result(is_win, exit_res.get('net_pnl', 0))
+                                    if self.total_capital > self.peak_balance:
+                                        self.peak_balance = self.total_capital
                                     closed_positions.append(position_key)
                                 continue
                     except Exception as e:
