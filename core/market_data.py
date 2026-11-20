@@ -10,6 +10,7 @@ Mixin design: PaperTradingEngine inherits this, so all self.* references resolve
 to the engine instance exactly as before. Method names/signatures are unchanged.
 """
 
+import math
 import time
 
 import pandas as pd
@@ -38,7 +39,7 @@ class MarketDataMixin:
         if top_n is None:
             top_n = int(getattr(self.config, 'FUTURES_AUTO_TOP_N', 30))
         if min_volume_usdt is None:
-            min_volume_usdt = float(getattr(self.config, 'FUTURES_AUTO_MIN_VOLUME', 1000000))
+            min_volume_usdt = float(getattr(self.config, 'FUTURES_AUTO_MIN_VOLUME', 20000000))
 
         if (self.last_pairs_update and
             now - self.last_pairs_update < timedelta(minutes=15) and
@@ -147,7 +148,7 @@ class MarketDataMixin:
             # Stage 1: Coiled Springs / Pre-Breakout Candidates
             # Criteria: Liquidity >= min_vol, proximity to 24h high >= 96.5%, positive momentum without ceiling cutoff
             pre_breakout_enabled = getattr(self.config, 'PRE_BREAKOUT_ENABLED', True)
-            min_pre_vol = getattr(self.config, 'PRE_BREAKOUT_MIN_VOL_USDT', 5000000.0)
+            min_pre_vol = getattr(self.config, 'PRE_BREAKOUT_MIN_VOL_USDT', 20000000.0)
             prox_high = getattr(self.config, 'PRE_BREAKOUT_PROXIMITY_HIGH_PCT', 0.965)
             min_pct = getattr(self.config, 'PRE_BREAKOUT_MIN_PCT', 0.5)
             max_pct = getattr(self.config, 'PRE_BREAKOUT_MAX_PCT', 50.0)  # Support massive runners (e.g. AKE, SHELL)
@@ -158,8 +159,9 @@ class MarketDataMixin:
                     if p['volume'] >= min_pre_vol and min_pct <= p['pct'] <= max_pct:
                         if p['high_24h'] > 0 and (p['last_price'] / p['high_24h']) >= prox_high:
                             coiled_springs.append(p)
-                # Sort coiled springs by proximity to 24h high (closest to breakout first)
-                coiled_springs.sort(key=lambda x: (x['last_price'] / x['high_24h']), reverse=True)
+                # Sort coiled springs by liquidity-weighted proximity: (last_price / high_24h) * log10(volume)
+                # Ensures $50M-$200M institutional breakout candidates (e.g. CYBER, EVAA, MMT) rank top
+                coiled_springs.sort(key=lambda x: (x['last_price'] / x['high_24h']) * math.log10(max(x['volume'], 1e6)), reverse=True)
 
             # Store verified coiled springs set for strategy fast-track
             self.coiled_springs_set = {p['symbol'] for p in coiled_springs}

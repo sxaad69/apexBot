@@ -172,13 +172,12 @@ class StrategyA9(BaseStrategy):
             return self.set_rejection(d)
 
         # Funnel Fast-Track Gate for Coiled Pre-Breakout Springs:
-        # If coin is close to 24h high with strong trend (ADX >= 30), relax entry threshold
-        # to catch the coil at the base (e.g. SOPH at 0.22% move and 1.42x volume)
+        # Require institutional volume explosion (>= 2.0x) and true candle expansion (>= 0.60%)
         coiled_set = getattr(getattr(self.logger, 'engine', None), 'coiled_springs_set', set())
         is_coiled = symbol in coiled_set or (price_now >= ema200_now and adx_val >= 30.0)
         
-        req_vol = 1.20 if is_coiled else self.volume_spike_mult
-        req_move = 0.20 if is_coiled else self.min_move_pct
+        req_vol = 2.0 if is_coiled else self.volume_spike_mult
+        req_move = 0.60 if is_coiled else self.min_move_pct
 
         # Core acceleration signal
         if vol_ratio < req_vol:

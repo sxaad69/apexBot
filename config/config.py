@@ -106,22 +106,24 @@ class Config:
         # Market Discovery Sync
         self.FUTURES_PAIRS = 'auto'
         self.FUTURES_AUTO_TOP_N = int(os.getenv('FUTURES_AUTO_TOP_N', '120'))  # Focused breakout universe (top volume & momentum)
-        self.FUTURES_AUTO_MIN_VOLUME = float(os.getenv('FUTURES_AUTO_MIN_VOLUME', '5000000'))  # $5M liquidity floor (kills zombie tokens)
+        self.FUTURES_AUTO_MIN_VOLUME = float(os.getenv('FUTURES_AUTO_MIN_VOLUME', '20000000'))  # $20M liquidity floor (kills microcaps)
         # Comma-separated list of base symbols to exclude from discovery/A6 watch/sweeps.
         # Matching is case-insensitive on the base symbol (e.g. 'BTC' excludes BTC/USDT).
         self.FUTURES_EXCLUDE_SYMBOLS = [s.strip().upper() for s in os.getenv('FUTURES_EXCLUDE_SYMBOLS', 'BTC,ETH,BNB,SOL,XRP,ADA,DOGE,DOT,LINK,LTC,BCH,AVAX,XLM,ATOM,TRX,NEAR,FIL,SUI,APT,ARB,OP,INJ,1000SHIB,1000PEPE,WIF').split(',') if s.strip()]
         
         # ===== Pre-Breakout Quantitative Funnel =====
         self.PRE_BREAKOUT_ENABLED = self._str_to_bool(os.getenv('PRE_BREAKOUT_ENABLED', 'true'))
-        self.PRE_BREAKOUT_MIN_VOL_USDT = float(os.getenv('PRE_BREAKOUT_MIN_VOL_USDT', '5000000'))  # $5M volume floor
+        self.PRE_BREAKOUT_MIN_VOL_USDT = float(os.getenv('PRE_BREAKOUT_MIN_VOL_USDT', '20000000'))  # $20M volume floor
         self.PRE_BREAKOUT_PROXIMITY_HIGH_PCT = float(os.getenv('PRE_BREAKOUT_PROXIMITY_HIGH_PCT', '0.965'))  # Within 3.5% of 24h high
         self.PRE_BREAKOUT_MIN_PCT = float(os.getenv('PRE_BREAKOUT_MIN_PCT', '0.5'))
         self.PRE_BREAKOUT_MAX_PCT = float(os.getenv('PRE_BREAKOUT_MAX_PCT', '50.0'))  # Allow high-momentum continuation coils
         
-        # ===== Strategy A8 Sniper Upgrades =====
-        self.A8_VOLUME_SPIKE_MULT = float(os.getenv('A8_VOLUME_SPIKE_MULT', '2.5'))  # was 1.5x, raised to 2.5x institutional volume
+        # ===== Strategy A8 & A9 Sniper Upgrades =====
+        self.A8_VOLUME_SPIKE_MULT = float(os.getenv('A8_VOLUME_SPIKE_MULT', '2.5'))  # 2.5x institutional volume
         self.A8_MAX_EXTENSION_PCT = float(os.getenv('A8_MAX_EXTENSION_PCT', '15.0'))  # Anti-FOMO extension cap
         self.A8_IGNITION_THRESHOLD = float(os.getenv('A8_IGNITION_THRESHOLD', '0.40'))
+        self.A9_VOLUME_SPIKE_MULT = float(os.getenv('A9_VOLUME_SPIKE_MULT', '2.5'))  # 2.5x volume expansion
+        self.A9_MIN_MOVE_PCT = float(os.getenv('A9_MIN_MOVE_PCT', '0.8'))  # 0.8% candle expansion minimum
         
         # ===== Full-Universe Scanning (Phase 2) =====
         self.OHLCV_BATCH_MAX = int('100')  # Max stale-candle refreshes per sweep
