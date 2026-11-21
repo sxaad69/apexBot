@@ -119,7 +119,8 @@ class Config:
         self.PRE_BREAKOUT_MAX_PCT = float(os.getenv('PRE_BREAKOUT_MAX_PCT', '50.0'))  # Allow high-momentum continuation coils
         
         # ===== Strategy A8 & A9 Sniper Upgrades =====
-        self.A8_VOLUME_SPIKE_MULT = float(os.getenv('A8_VOLUME_SPIKE_MULT', '2.5'))  # 2.5x institutional volume
+        self.A8_VOLUME_SPIKE_MULT = float(os.getenv('A8_VOLUME_SPIKE_MULT', '3.0'))  # 3.0x institutional volume
+        self.A8_MIN_MOVE_PCT = float(os.getenv('A8_MIN_MOVE_PCT', '1.0'))  # 1.0% breakout candle move
         self.A8_MAX_EXTENSION_PCT = float(os.getenv('A8_MAX_EXTENSION_PCT', '15.0'))  # Anti-FOMO extension cap
         self.A8_IGNITION_THRESHOLD = float(os.getenv('A8_IGNITION_THRESHOLD', '0.40'))
         self.A9_VOLUME_SPIKE_MULT = float(os.getenv('A9_VOLUME_SPIKE_MULT', '2.5'))  # 2.5x volume expansion
@@ -170,12 +171,12 @@ class Config:
         self.A6_PROBE_SIZE_MULTIPLIER = float(os.getenv('A6_PROBE_SIZE_MULTIPLIER', '0.5'))  # sub-0.85 band was breakeven at best (+$3.69 golden era)
         self.ELITE_STOP_LOSS_ROE = float(os.getenv('ELITE_STOP_LOSS_ROE', '8.0'))          # conf>=0.90 ROE budget capped at 8%
         
-        # GLOBAL ROE Shield (Strict 5.0% ROE loss limit -> ~$0.75 max loss on $15 size)
+        # GLOBAL ROE Shield (Strict 5.0% ROE loss limit -> ~$1.50 max loss on $30 size at 2x)
         self.GLOBAL_STOP_LOSS_ROE = float(os.getenv('GLOBAL_STOP_LOSS_ROE', '5.0'))
-        self.MAX_ROE_DRAWDOWN = float(os.getenv('MAX_ROE_DRAWDOWN', '6.0'))
+        self.MAX_ROE_DRAWDOWN = float(os.getenv('MAX_ROE_DRAWDOWN', '8.0'))
         self.MAX_EQUITY_RISK_PERCENT = float('5.0')
-        # Enforce minimum RAW price distance to survive normal micro-wiggles
-        self.MIN_RAW_STOP_PERCENT = float(os.getenv('MIN_RAW_STOP_PERCENT', '1.8'))
+        # Enforce minimum RAW price distance to survive normal micro-wiggles (2.5% absorbs standard retests)
+        self.MIN_RAW_STOP_PERCENT = float(os.getenv('MIN_RAW_STOP_PERCENT', '2.5'))
         self.TAKE_PROFIT_PERCENT = self.FUTURES_TAKE_PROFIT_PERCENT
         self.MAX_DAILY_LOSS_PERCENT = self.FUTURES_MAX_DAILY_LOSS_PERCENT
         self.MAX_DRAWDOWN_PERCENT = self.FUTURES_MAX_DRAWDOWN_PERCENT

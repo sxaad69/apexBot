@@ -37,9 +37,9 @@ class StrategyA8(BaseStrategy):
         self.min_whale_value = 150000  # same as A6 production
 
         # Layer 2 — A7 confirmation thresholds (tightened for institutional volume & anti-FOMO)
-        self.volume_spike_mult = getattr(config, 'A8_VOLUME_SPIKE_MULT', 2.5)  # was 1.5, now 2.5x RVOL
+        self.volume_spike_mult = getattr(config, 'A8_VOLUME_SPIKE_MULT', 3.0)  # 3.0x institutional RVOL
         self.max_extension_pct = getattr(config, 'A8_MAX_EXTENSION_PCT', 8.0)  # skip >8% extended bars
-        self.min_move_pct = 0.5
+        self.min_move_pct = getattr(config, 'A8_MIN_MOVE_PCT', 1.0)  # 1.0% breakout candle move
         self.lookback = 20
         self.timeframe = '5m'
         self.min_candles = 40
@@ -207,14 +207,14 @@ class StrategyA8(BaseStrategy):
         if current_price < conf['ema200']:
             size_multiplier = min(size_multiplier, 0.5)  # below EMA200 -> half size
 
-        # ATR-based stops with strict risk boundaries (0.8% min room, 1.5% max price loss for tight invalidation)
+        # ATR-based stops with breathing room (1.0% min room, 2.5% max price loss / -5.0% ROE at 2x)
         stop_loss, take_profit = self.get_dynamic_stops(df, side, self.atr_sl_mult, self.atr_tp_mult)
         if side == 'buy':
-            stop_loss = max(stop_loss, current_price * 0.985)  # max -1.5% price loss (-3.0% ROE at 2x)
-            stop_loss = min(stop_loss, current_price * 0.992)  # min -0.8% breathing room
+            stop_loss = max(stop_loss, current_price * 0.975)  # max -2.5% price loss (-5.0% ROE at 2x)
+            stop_loss = min(stop_loss, current_price * 0.990)  # min -1.0% breathing room
         else:
-            stop_loss = min(stop_loss, current_price * 1.015)
-            stop_loss = max(stop_loss, current_price * 1.008)
+            stop_loss = min(stop_loss, current_price * 1.025)
+            stop_loss = max(stop_loss, current_price * 1.010)
         atr = conf['atr']
 
         confidence = 0.50
