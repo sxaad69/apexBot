@@ -123,7 +123,7 @@ class Config:
         self.A8_MIN_MOVE_PCT = float(os.getenv('A8_MIN_MOVE_PCT', '0.8'))  # 0.8% breakout candle move
         self.A8_MAX_EXTENSION_PCT = float(os.getenv('A8_MAX_EXTENSION_PCT', '15.0'))  # Anti-FOMO extension cap
         self.A8_IGNITION_THRESHOLD = float(os.getenv('A8_IGNITION_THRESHOLD', '0.40'))
-        self.A9_VOLUME_SPIKE_MULT = float(os.getenv('A9_VOLUME_SPIKE_MULT', '2.5'))  # 2.5x volume expansion
+        self.A9_VOLUME_SPIKE_MULT = float(os.getenv('A9_VOLUME_SPIKE_MULT', '1.5'))  # 1.5x volume expansion (calibrated from 2.5)
         self.A9_MIN_MOVE_PCT = float(os.getenv('A9_MIN_MOVE_PCT', '0.8'))  # 0.8% candle expansion minimum
         
         # ===== Full-Universe Scanning (Phase 2) =====
