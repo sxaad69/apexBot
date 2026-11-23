@@ -119,8 +119,8 @@ class Config:
         self.PRE_BREAKOUT_MAX_PCT = float(os.getenv('PRE_BREAKOUT_MAX_PCT', '50.0'))  # Allow high-momentum continuation coils
         
         # ===== Strategy A8 & A9 Sniper Upgrades =====
-        self.A8_VOLUME_SPIKE_MULT = float(os.getenv('A8_VOLUME_SPIKE_MULT', '3.0'))  # 3.0x institutional volume
-        self.A8_MIN_MOVE_PCT = float(os.getenv('A8_MIN_MOVE_PCT', '1.0'))  # 1.0% breakout candle move
+        self.A8_VOLUME_SPIKE_MULT = float(os.getenv('A8_VOLUME_SPIKE_MULT', '1.4'))  # 1.4x institutional volume (calibrated from 3.0x)
+        self.A8_MIN_MOVE_PCT = float(os.getenv('A8_MIN_MOVE_PCT', '0.8'))  # 0.8% breakout candle move
         self.A8_MAX_EXTENSION_PCT = float(os.getenv('A8_MAX_EXTENSION_PCT', '15.0'))  # Anti-FOMO extension cap
         self.A8_IGNITION_THRESHOLD = float(os.getenv('A8_IGNITION_THRESHOLD', '0.40'))
         self.A9_VOLUME_SPIKE_MULT = float(os.getenv('A9_VOLUME_SPIKE_MULT', '2.5'))  # 2.5x volume expansion

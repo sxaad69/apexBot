@@ -36,10 +36,10 @@ class StrategyA8(BaseStrategy):
         self.ignition_threshold = getattr(config, 'A8_IGNITION_THRESHOLD', 0.40)
         self.min_whale_value = 150000  # same as A6 production
 
-        # Layer 2 — A7 confirmation thresholds (tightened for institutional volume & anti-FOMO)
-        self.volume_spike_mult = getattr(config, 'A8_VOLUME_SPIKE_MULT', 3.0)  # 3.0x institutional RVOL
+        # Layer 2 — A7 confirmation thresholds (calibrated for high-volume breakout runners)
+        self.volume_spike_mult = getattr(config, 'A8_VOLUME_SPIKE_MULT', 1.4)  # 1.4x institutional RVOL (calibrated from 3.0x)
         self.max_extension_pct = getattr(config, 'A8_MAX_EXTENSION_PCT', 8.0)  # skip >8% extended bars
-        self.min_move_pct = getattr(config, 'A8_MIN_MOVE_PCT', 1.0)  # 1.0% breakout candle move
+        self.min_move_pct = getattr(config, 'A8_MIN_MOVE_PCT', 0.8)  # 0.8% breakout candle move
         self.lookback = 20
         self.timeframe = '5m'
         self.min_candles = 40
@@ -144,9 +144,29 @@ class StrategyA8(BaseStrategy):
         vol_ratio = float(current['volume_ratio'])
         bar_move = float(current['bar_move'])
 
-        if vol_ratio < self.volume_spike_mult:
+        # Check if symbol is an identified pre-breakout coiled spring (<3.5% from 24h high)
+        is_pre_breakout = False
+        try:
+            if hasattr(self.logger, 'engine') and hasattr(self.logger.engine, 'market_data'):
+                coiled = getattr(self.logger.engine.market_data, 'coiled_springs_set', set())
+                if symbol in coiled:
+                    is_pre_breakout = True
+        except Exception:
+            pass
+
+        # Breakout Hurdles:
+        # 1. Coiled springs near 24h highs require 1.2x RVOL (or 1.0x on strong >=1.5% candle)
+        # 2. Strong price momentum (>=1.5% candle) confirms on baseline volume (>=1.0x)
+        # 3. General universe requires calibrated 1.4x RVOL
+        target_vol_mult = 1.2 if is_pre_breakout else self.volume_spike_mult
+
+        if bar_move >= 1.5 and vol_ratio >= 1.0:
+            pass  # Confirmed by strong price expansion candle
+        elif vol_ratio < target_vol_mult:
             return None
-        if abs(bar_move) < self.min_move_pct:
+
+        target_move_pct = 0.6 if is_pre_breakout else self.min_move_pct
+        if abs(bar_move) < target_move_pct:
             return None
         if bar_move < 0:
             return None  # long-only
@@ -160,6 +180,7 @@ class StrategyA8(BaseStrategy):
             'atr': float(current['atr']) if 'atr' in df.columns else 0.0,
             'adx': float(current['adx']) if 'adx' in df.columns else 0.0,
             'ema200': float(current['ema_200']) if 'ema_200' in df.columns else float(current['close']),
+            'is_pre_breakout': is_pre_breakout,
         }
 
     # =====================================================================
@@ -176,10 +197,11 @@ class StrategyA8(BaseStrategy):
                 "reason": "NO_CONFIRM",
             })
 
-        # Layer 1 — ignition (satisfied by resting orderbook wall OR institutional taker volume spike >= 2.5x)
+        # Layer 1 — ignition (satisfied by resting orderbook wall OR taker volume spike >= 1.2x OR pre-breakout coiled spring)
         ign = self._ignition_signal(symbol)
-        is_vol_ignited = conf.get('volume_ratio', 0) >= self.volume_spike_mult
-        if not (ign['ignited'] or is_vol_ignited):
+        is_vol_ignited = conf.get('volume_ratio', 0) >= (1.2 if conf.get('is_pre_breakout') else self.volume_spike_mult)
+        is_breakout_ignited = conf.get('is_pre_breakout', False) or (conf.get('bar_move', 0) >= 1.5)
+        if not (ign['ignited'] or is_vol_ignited or is_breakout_ignited):
             return self.set_rejection({
                 "reason": "NO_IGNITION",
                 "imbalance": round(ign['imbalance'], 4),
