@@ -926,8 +926,8 @@ class ApexHunterBot(SyncMixin):
 
                 # Check if auto mode
                 if isinstance(pairs_config, str) and pairs_config.lower() == 'auto':
-                    top_n = int(getattr(self.config, 'FUTURES_AUTO_TOP_N', 30))
-                    min_volume = float(getattr(self.config, 'FUTURES_AUTO_MIN_VOLUME', 1000000))
+                    top_n = int(getattr(self.config, 'FUTURES_AUTO_TOP_N', 35))
+                    min_volume = float(getattr(self.config, 'FUTURES_AUTO_MIN_VOLUME', 25000000))
                     pairs = self.engine.get_top_pairs_by_volume(top_n=top_n, min_volume_usdt=min_volume)
                 elif isinstance(pairs_config, str):
                     # Parse comma-separated string

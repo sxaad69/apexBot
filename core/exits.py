@@ -769,54 +769,73 @@ class ExitsMixin:
                         elapsed_min = (now_utc - entry_dt).total_seconds() / 60.0
                         timeout_min = getattr(self.config, 'STAGNATION_TIMEOUT_MINUTES', 60)
                         
-                        if elapsed_min >= timeout_min:
-                            _lev = float(position.get('leverage') or 1)
-                            _is_long = position.get('side', 'buy') == 'buy'
-                            entry_px = float(position.get('entry_price') or current_price)
-                            peak_px = float(position.get('highest_price' if _is_long else 'lowest_price') or entry_px)
-                            peak_raw_gain = (peak_px - entry_px) / entry_px if _is_long else (entry_px - peak_px) / entry_px
-                            peak_roe = peak_raw_gain * _lev * 100.0
-                            min_profit_roe = getattr(self.config, 'STAGNATION_MIN_PROFIT_ROE', 1.5)
+                        _lev = float(position.get('leverage') or 1)
+                        _is_long = position.get('side', 'buy') == 'buy'
+                        entry_px = float(position.get('entry_price') or current_price)
+                        peak_px = float(position.get('highest_price' if _is_long else 'lowest_price') or entry_px)
+                        peak_raw_gain = (peak_px - entry_px) / entry_px if _is_long else (entry_px - peak_px) / entry_px
+                        peak_roe = peak_raw_gain * _lev * 100.0
+                        
+                        current_raw_gain = (current_price - entry_px) / entry_px if _is_long else (entry_px - current_price) / entry_px
+                        current_roe = current_raw_gain * _lev * 100.0
+                        
+                        early_exit_reason = None
+                        
+                        # 1. BREAKEVEN LOCK: If trade was green (+1.5% ROE) and is now giving back all gains to +0.2% ROE (fee buffer), exit immediately!
+                        if peak_roe >= 1.5 and current_roe <= 0.2:
+                            early_exit_reason = 'breakeven_lock'
+                            self.logger.info(f"🛡️ [BREAKEVEN LOCK] {symbol} peaked at +{peak_roe:.2f}% ROE, now dropped to +{current_roe:.2f}%. Locking breakeven exit.")
                             
+                        # 2. UNDERWATER TIMEOUT: If trade has been open >= 20m and is continuously underwater (ROE < -0.3%), momentum has failed. Cut early!
+                        elif elapsed_min >= 20.0 and current_roe < -0.3:
+                            early_exit_reason = 'underwater_timeout'
+                            self.logger.info(f"✂️ [UNDERWATER CUT] {symbol} open for {elapsed_min:.0f}m with negative ROE {current_roe:.2f}%. Cutting failed breakout early.")
+                            
+                        # 3. STAGNATION TIMEOUT: If trade open >= timeout_min and peak ROE never crossed threshold
+                        elif elapsed_min >= timeout_min:
+                            min_profit_roe = getattr(self.config, 'STAGNATION_MIN_PROFIT_ROE', 1.5)
                             if peak_roe < min_profit_roe:
+                                early_exit_reason = 'stagnation_timeout'
                                 self.logger.info(
                                     f"⏰ [STAGNATION] {symbol} open for {elapsed_min:.0f}m with peak ROE +{peak_roe:.2f}% "
                                     f"< {min_profit_roe}%. Closing dead position to free capital."
                                 )
-                                if position.get('sl_order_id'):
-                                    self._cancel_exchange_conditional(symbol, position['sl_order_id'])
-                                if position.get('tp_order_id'):
-                                    self._cancel_exchange_conditional(symbol, position['tp_order_id'])
-                                if position.get('trailing_order_id'):
-                                    self._cancel_exchange_conditional(symbol, position['trailing_order_id'])
-                                if position.get('trailing_fallback_id'):
-                                    self._cancel_exchange_conditional(symbol, position['trailing_fallback_id'])
-                                
-                                close_order = None
-                                if self.mode == 'live':
-                                    try:
-                                        self.logger.system(f"🚀 [LIVE] Executing Market Close for {symbol} (stagnation_timeout)")
-                                        close_order = self.exchange.close_position(symbol)
-                                    except Exception as ce:
-                                        self.logger.error(f"🚨 LIVE EXIT FAILED for {symbol}: {ce}")
+                        
+                        if early_exit_reason:
+                            if position.get('sl_order_id'):
+                                self._cancel_exchange_conditional(symbol, position['sl_order_id'])
+                            if position.get('tp_order_id'):
+                                self._cancel_exchange_conditional(symbol, position['tp_order_id'])
+                            if position.get('trailing_order_id'):
+                                self._cancel_exchange_conditional(symbol, position['trailing_order_id'])
+                            if position.get('trailing_fallback_id'):
+                                self._cancel_exchange_conditional(symbol, position['trailing_fallback_id'])
+                            
+                            close_order = None
+                            if self.mode == 'live':
+                                try:
+                                    self.logger.system(f"🚀 [LIVE] Executing Market Close for {symbol} ({early_exit_reason})")
+                                    close_order = self.exchange.close_position(symbol)
+                                except Exception as ce:
+                                    self.logger.error(f"🚨 LIVE EXIT FAILED for {symbol}: {ce}")
 
-                                exit_res = self.trade_manager.record_exit(
-                                    symbol=symbol,
-                                    trade_id=position['trade_id'],
-                                    reason='stagnation_timeout',
-                                    current_price=current_price,
-                                    order_response=close_order
-                                )
-                                if exit_res and exit_res.get('verified'):
-                                    if self.mode == 'paper':
-                                        self.total_capital += exit_res.get('capital_return', 0)
-                                    self.logger.info(f"💰 CAPITAL RECOVERED: ${exit_res.get('capital_return', 0):.2f} (stagnation exit)")
-                                    is_win = exit_res.get('net_pnl', 0) > 0
-                                    self.risk_manager.record_trade_result(is_win, exit_res.get('net_pnl', 0))
-                                    if self.total_capital > self.peak_balance:
-                                        self.peak_balance = self.total_capital
-                                    closed_positions.append(position_key)
-                                continue
+                            exit_res = self.trade_manager.record_exit(
+                                symbol=symbol,
+                                trade_id=position['trade_id'],
+                                reason=early_exit_reason,
+                                current_price=current_price,
+                                order_response=close_order
+                            )
+                            if exit_res and exit_res.get('verified'):
+                                if self.mode == 'paper':
+                                    self.total_capital += exit_res.get('capital_return', 0)
+                                self.logger.info(f"💰 CAPITAL RECOVERED: ${exit_res.get('capital_return', 0):.2f} ({early_exit_reason})")
+                                is_win = exit_res.get('net_pnl', 0) > 0
+                                self.risk_manager.record_trade_result(is_win, exit_res.get('net_pnl', 0))
+                                if self.total_capital > self.peak_balance:
+                                    self.peak_balance = self.total_capital
+                                closed_positions.append(position_key)
+                            continue
                     except Exception as e:
                         self.logger.warning(f"Error in stagnation check for {symbol}: {e}")
 

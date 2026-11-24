@@ -189,13 +189,19 @@ class TradeManager:
         if order_response and order_response.get('average'):
             exit_price = float(order_response['average'])
             self.logger.info(f"📊 [GROUNDED] Actual exit for {symbol}: {exit_price}")
-        elif (not exit_price or exit_price == 0) and is_live:
-             try:
-                 history = self.exchange.exchange.fetch_my_trades(symbol, limit=1)
-                 if history:
-                     exit_price = float(history[0]['price'])
-                     self.logger.info(f"📊 [GHOST RECOVERY] Found fill price from history: {exit_price}")
-             except: pass
+        elif is_live:
+            try:
+                history = self.exchange.exchange.fetch_my_trades(symbol, limit=3)
+                if history:
+                    exit_side = 'sell' if trade.get('side', 'buy').lower() == 'buy' else 'buy'
+                    matching_trades = [h for h in history if h.get('side', '').lower() == exit_side]
+                    if matching_trades:
+                        exit_price = float(matching_trades[-1]['price'])
+                        self.logger.info(f"📊 [EXCHANGE FILL GROUNDED] Actual fill price from Binance history: {exit_price}")
+                    else:
+                        exit_price = float(history[-1]['price'])
+            except Exception as e:
+                self.logger.warning(f"Could not ground fill price from history: {e}")
 
         # 4. Calculate P&L accurately
         leverage = trade.get('leverage', 1)
@@ -207,10 +213,11 @@ class TradeManager:
         leveraged_pnl_percent = pnl_percent * leverage
         gross_pnl_amount = trade_size * leveraged_pnl_percent
         
-        # Calculate exit fee
-        fee_pct = getattr(self.config, 'FUTURES_FEE_PERCENT', 0.04) / 100
-        exit_fee = trade_size * (1 + pnl_percent) * fee_pct 
-        net_pnl_amount = gross_pnl_amount - exit_fee
+        # Calculate roundtrip taker fee accurately on leveraged notional
+        notional_value = trade_size * leverage
+        fee_pct = getattr(self.config, 'FUTURES_FEE_PERCENT', 0.05) / 100
+        roundtrip_fee = notional_value * fee_pct * 2.0  # entry fee (0.05%) + exit fee (0.05%)
+        net_pnl_amount = gross_pnl_amount - roundtrip_fee
         
         # 5. Update Database
         exit_time = datetime.utcnow().isoformat()

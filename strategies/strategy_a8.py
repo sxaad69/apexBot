@@ -146,13 +146,23 @@ class StrategyA8(BaseStrategy):
 
         # Check if symbol is an identified pre-breakout coiled spring (<3.5% from 24h high)
         is_pre_breakout = False
+        is_top_momentum_leader = False
         try:
             if hasattr(self.logger, 'engine') and hasattr(self.logger.engine, 'market_data'):
                 coiled = getattr(self.logger.engine.market_data, 'coiled_springs_set', set())
                 if symbol in coiled:
                     is_pre_breakout = True
+                
+                # Check if symbol is an active 24h momentum leader (>= +5% change and >= $25M volume)
+                top_pairs_cache = getattr(self.logger.engine.market_data, 'top_pairs_cache', [])
+                if symbol in top_pairs_cache[:20]:
+                    is_top_momentum_leader = True
         except Exception:
             pass
+
+        # HARD ANTI-MICROCAP GATE: Only allow coiled springs near 24h highs OR top-tier momentum leaders
+        if not (is_pre_breakout or is_top_momentum_leader):
+            return None
 
         # Breakout Hurdles:
         # 1. Coiled springs near 24h highs require 1.2x RVOL (or 1.0x on strong >=1.5% candle)
@@ -229,14 +239,14 @@ class StrategyA8(BaseStrategy):
         if current_price < conf['ema200']:
             size_multiplier = min(size_multiplier, 0.5)  # below EMA200 -> half size
 
-        # ATR-based stops with breathing room (1.0% min room, 2.5% max price loss / -5.0% ROE at 2x)
+        # ATR-based stops with tight breakout protection (0.7% min room, 1.2% max price loss / -2.4% ROE at 2x)
         stop_loss, take_profit = self.get_dynamic_stops(df, side, self.atr_sl_mult, self.atr_tp_mult)
         if side == 'buy':
-            stop_loss = max(stop_loss, current_price * 0.975)  # max -2.5% price loss (-5.0% ROE at 2x)
-            stop_loss = min(stop_loss, current_price * 0.990)  # min -1.0% breathing room
+            stop_loss = max(stop_loss, current_price * 0.988)  # max -1.2% price loss (-2.4% ROE at 2x)
+            stop_loss = min(stop_loss, current_price * 0.993)  # min -0.7% breathing room
         else:
-            stop_loss = min(stop_loss, current_price * 1.025)
-            stop_loss = max(stop_loss, current_price * 1.010)
+            stop_loss = min(stop_loss, current_price * 1.012)
+            stop_loss = max(stop_loss, current_price * 1.007)
         atr = conf['atr']
 
         confidence = 0.50
