@@ -831,7 +831,7 @@ class ExitsMixin:
                                     self.total_capital += exit_res.get('capital_return', 0)
                                 self.logger.info(f"💰 CAPITAL RECOVERED: ${exit_res.get('capital_return', 0):.2f} ({early_exit_reason})")
                                 is_win = exit_res.get('net_pnl', 0) > 0
-                                self.risk_manager.record_trade_result(is_win, exit_res.get('net_pnl', 0))
+                                self.risk_manager.record_trade_result(is_win, exit_res.get('net_pnl', 0), reason=early_exit_reason)
                                 if self.total_capital > self.peak_balance:
                                     self.peak_balance = self.total_capital
                                 closed_positions.append(position_key)
@@ -961,7 +961,7 @@ class ExitsMixin:
                                 if self.mode == 'paper':
                                     self.total_capital += exit_result.get('capital_return', 0)
                                 is_win = exit_result.get('net_pnl', 0) > 0
-                                self.risk_manager.record_trade_result(is_win, exit_result.get('net_pnl', 0))
+                                self.risk_manager.record_trade_result(is_win, exit_result.get('net_pnl', 0), reason=exchange_exit_reason)
                                 if self.total_capital > self.peak_balance:
                                     self.peak_balance = self.total_capital
                                     self.risk_manager.update_peak_balance(self.total_capital)
@@ -1062,7 +1062,7 @@ class ExitsMixin:
 
                     # Record result with risk manager
                     is_win = exit_result.get('net_pnl', 0) > 0
-                    self.risk_manager.record_trade_result(is_win, exit_result.get('net_pnl', 0))
+                    self.risk_manager.record_trade_result(is_win, exit_result.get('net_pnl', 0), reason=exit_result.get('reason'))
 
                     # Update peak balance and drawdown tracking.
                     # Only persist to DB in paper mode — in live mode, peak is updated

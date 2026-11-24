@@ -20,11 +20,17 @@ class CircuitBreakerLayer:
         self.halt_until = None
         self.last_trade_time = None
     
-    def record_trade_result(self, is_win: bool):
+    def record_trade_result(self, is_win: bool, pnl: float = 0.0, reason: Optional[str] = None):
         """Record trade result for consecutive loss tracking"""
         # Respect the global circuit breaker disable flag
         if not self.config.ENABLE_CIRCUIT_BREAKER:
             return
+
+        # Breakeven locks and stagnation cuts are capital preservation, not strategy failure
+        if reason in ('breakeven_lock', 'stagnation_timeout') or (pnl >= -0.30 and reason != 'stop_loss'):
+            self.logger.debug(f"[CircuitBreaker] Neutral/preservation exit ({reason}, pnl={pnl:+.4f}) - consecutive losses unchanged ({self.consecutive_losses})")
+            return
+
         if is_win:
             self.consecutive_losses = 0
         else:

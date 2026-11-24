@@ -126,13 +126,13 @@ class RiskManager:
         self.logger.debug(f"Risk evaluation: Trade approved through all {len(self.layers)} risk layers for {symbol}")
         return approved_params
     
-    def record_trade_result(self, is_win: bool, pnl: float):
+    def record_trade_result(self, is_win: bool, pnl: float, reason: Optional[str] = None):
         """Record trade result for layers that track history"""
         # Update daily loss limit
         self.layers[3].record_trade(pnl)  # DailyLossLimitLayer
         
         # Update circuit breaker
-        self.layers[9].record_trade_result(is_win)  # CircuitBreakerLayer
+        self.layers[9].record_trade_result(is_win, pnl=pnl, reason=reason)  # CircuitBreakerLayer
     
     def record_critical_failure(self, reason: str):
         """Record a critical failure that should trigger circuit breaker"""

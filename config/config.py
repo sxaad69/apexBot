@@ -362,10 +362,10 @@ class Config:
         # ===== Circuit Breaker Configuration =====
         # D2: consecutive-loss circuit breaker. Halts trading for TRADE_FAILURE_HALT_HOURS
         # after CONSECUTIVE_LOSSES_THRESHOLD consecutive losses (a win resets the counter).
-        # Enabled by default (was false); env-overridable.
-        self.ENABLE_CIRCUIT_BREAKER = self._str_to_bool(os.getenv('ENABLE_CIRCUIT_BREAKER', 'true'))
+        # Disabled by default so capital preservation / breakeven cuts never halt active hunting.
+        self.ENABLE_CIRCUIT_BREAKER = self._str_to_bool(os.getenv('ENABLE_CIRCUIT_BREAKER', 'false'))
         self.TRADE_FAILURE_HALT_HOURS = float('0.5')
-        self.CONSECUTIVE_LOSSES_THRESHOLD = int('5')
+        self.CONSECUTIVE_LOSSES_THRESHOLD = int(os.getenv('CONSECUTIVE_LOSSES_THRESHOLD', '15'))
         self.FLASH_CRASH_THRESHOLD = float('-10')
         
         # ===== Portfolio Loss Circuit Breaker =====
