@@ -176,7 +176,7 @@ class Config:
         self.MAX_ROE_DRAWDOWN = float(os.getenv('MAX_ROE_DRAWDOWN', '8.0'))
         self.MAX_EQUITY_RISK_PERCENT = float('5.0')
         # Enforce minimum RAW price distance to survive normal micro-wiggles (2.5% absorbs standard retests)
-        self.MIN_RAW_STOP_PERCENT = float(os.getenv('MIN_RAW_STOP_PERCENT', '2.5'))
+        self.MIN_RAW_STOP_PERCENT = float(os.getenv('MIN_RAW_STOP_PERCENT', '1.2'))  # Tight fast cut: max 1.2% price loss (-2.4% ROE at 2x)
         self.TAKE_PROFIT_PERCENT = self.FUTURES_TAKE_PROFIT_PERCENT
         self.MAX_DAILY_LOSS_PERCENT = self.FUTURES_MAX_DAILY_LOSS_PERCENT
         self.MAX_DRAWDOWN_PERCENT = self.FUTURES_MAX_DRAWDOWN_PERCENT

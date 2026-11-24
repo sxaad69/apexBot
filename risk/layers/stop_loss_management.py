@@ -105,7 +105,7 @@ class StopLossManagementLayer:
             # 10x, 0-for-17 SLs). Wide the stop to the floor if the strategy
             # placed it closer; leverage then recomputes OFF the wider distance,
             # so the ROE risk stays bounded without forcing leverage down to 1x.
-            min_raw = getattr(self.config, 'MIN_RAW_STOP_PERCENT', 2.5)
+            min_raw = getattr(self.config, 'MIN_RAW_STOP_PERCENT', 1.2)
             if distance_percent < min_raw:
                 self.logger.warning(f"[{strategy_tag}] ATR stop too tight ({distance_percent:.2f}% raw < {min_raw}% floor). Widening.")
                 distance_percent = min_raw
