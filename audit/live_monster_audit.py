@@ -27,7 +27,6 @@ total_wallet = float(acc.get("totalWalletBalance", 0))
 total_margin = float(acc.get("totalMarginBalance", 0))
 total_upnl = float(acc.get("totalUnrealizedProfit", 0))
 
-# Fetch all income records from starting session baseline
 incomes = []
 start_time = 1795392000000 # Nov 23 00:00 UTC approx
 now_ms = int(time.time() * 1000)
@@ -62,12 +61,14 @@ print(f"  Fee Drag on Gains:     {fee_drag:.1f}%")
 print("\n[3. ACTIVE POSITIONS QUALITY & VOLUME HEALTH]")
 positions = [p for p in acc.get("positions", []) if abs(float(p.get("positionAmt", 0))) > 0]
 tickers = {t['symbol']: t for t in ex.fapiPublicGetTicker24hr()}
+held_symbols = set()
 
 if not positions:
     print("  No active open positions (0/3 slots used).")
 else:
     for p in positions:
         sym = p.get("symbol")
+        held_symbols.add(sym)
         amt = float(p.get("positionAmt", 0))
         entry = float(p.get("entryPrice", 0) or 0)
         upnl = float(p.get("unrealizedProfit", 0))
@@ -78,7 +79,6 @@ else:
         last_px = float(tick.get("lastPrice", 0))
         dist_high = ((high_24h - last_px) / high_24h * 100) if high_24h > 0 else 999.0
         
-        # Microcap check
         quality_flag = "✅ INSTITUTIONAL LEADER" if vol_24h >= 25_000_000 else "🚨 MICROCAP LEAK (< $25M)!"
         print(f"  {sym:<12}: Notional=${notional:.2f} | uPnL={upnl:+.4f} USDT | 24h Vol=${vol_24h/1e6:5.1f}M | Dist24hHigh={dist_high:4.1f}% | {quality_flag}")
 
@@ -89,7 +89,7 @@ print(f"  Total Resting Algo Orders: {len(algo_orders)}")
 for o in algo_orders:
     print(f"  - {o.get('symbol'):<12} {o.get('orderType'):<22} side={o.get('side'):<4} triggerPx={o.get('triggerPrice')} callback={o.get('callbackRate')}")
 
-# 5. Win / Loss Asymmetry & DB Reconciliation
+# 5. Win / Loss Asymmetry & DB Health
 print("\n[5. WIN/LOSS ASYMMETRY & DB HEALTH]")
 conn = sqlite3.connect('/home/ubuntu/apexBot/data/apex_hunter.db')
 c = conn.cursor()
@@ -120,20 +120,53 @@ print(f"\n[6. TRADES CLOSED IN LAST 30 MINUTES: {len(recent_trades)}]")
 for t in recent_trades:
     print(f"  {t[1]:<12} ({t[2][:10]}): in={t[3]}, out={t[4]}, pnl={t[5]:+.4f} USDT ({t[6]:+.2f}%), reason={t[7]}")
 
-# 7. Top 5 Real Breakout Leaders (> $25M volume)
-print("\n[7. TOP BREAKOUT OPPORTUNITY RECALL (> $25M VOL)]")
-valid_tickers = []
-for sym, t in tickers.items():
-    vol = float(t.get('quoteVolume', 0))
-    chg = float(t.get('priceChangePercent', 0))
-    if vol >= 25_000_000 and sym.endswith('USDT'):
-        high = float(t.get('highPrice', 0))
-        last = float(t.get('lastPrice', 0))
-        dist_high = ((high - last) / high * 100) if high > 0 else 999.0
-        valid_tickers.append((sym, chg, vol, last, dist_high))
+# 7. INTRADAY 30M-1H BREAKOUT VELOCITY & COILED SPRING RADAR
+print("\n[7. INTRADAY 30M-1H BREAKOUT VELOCITY & COILED SPRING RADAR]")
+print("  Scanning for tokens coiling within 3.5% of 24h High with exploding 30m volume...")
 
-valid_tickers.sort(key=lambda x: x[1], reverse=True)
-for s, ch, v, lp, dh in valid_tickers[:5]:
-    print(f"  {s:<12}: 24h={ch:+6.2f}% | Vol=${v/1e6:5.1f}M | Price={lp:<10} | Dist24hHigh={dh:4.1f}%")
+# Filter markets for native crypto only
+markets = ex.load_markets()
+crypto_coiled = []
+
+for sym, t in tickers.items():
+    if not sym.endswith('USDT'): continue
+    market = markets.get(f"{sym.replace('USDT', '')}/USDT:USDT") or markets.get(sym)
+    if market:
+        info = market.get('info', {})
+        if info.get('underlyingType') and info.get('underlyingType') != 'COIN':
+            continue  # skip equities/indices/commodities
+            
+    vol = float(t.get('quoteVolume', 0))
+    if vol < 20_000_000: continue
+    high = float(t.get('highPrice', 0))
+    last = float(t.get('lastPrice', 0))
+    if high <= 0 or last <= 0: continue
+    dist = (high - last) / high * 100
+    if 0.0 <= dist <= 3.5:
+        chg = float(t.get('priceChangePercent', 0))
+        crypto_coiled.append((sym, dist, chg, vol, last))
+
+crypto_coiled.sort(key=lambda x: x[1])
+
+if not crypto_coiled:
+    print("  No coiled springs currently within 3.5% of 24h high.")
+else:
+    for c in crypto_coiled[:6]:
+        sym = c[0]
+        try:
+            kl = ex.fapiPublicGetKlines({"symbol": sym, "interval": "5m", "limit": 25})
+            vols = [float(k[5]) for k in kl]
+            vol_30m = sum(vols[-6:])
+            avg_30m = sum(vols[:-6]) / (len(vols) - 6) * 6 if len(vols) > 6 else 1.0
+            rvol_30m = vol_30m / avg_30m if avg_30m > 0 else 1.0
+            p_30m_ago = float(kl[-6][1])
+            p_now = float(kl[-1][4])
+            chg_30m = (p_now - p_30m_ago) / p_30m_ago * 100
+            
+            # Status check
+            status_tag = "🎯 HOOKED (IN PORTFOLIO)" if sym in held_symbols else ("🔥 IGNITING (RVOL > 1.5x)" if rvol_30m >= 1.5 else "👀 COILING")
+            print(f"  {sym:<12}: Dist={c[1]:4.2f}% | 30m RVOL={rvol_30m:4.2f}x | 30m Move={chg_30m:+5.2f}% | 24h={c[2]:+6.2f}% | {status_tag}")
+        except Exception as e:
+            print(f"  {sym:<12}: Dist={c[1]:4.2f}% | 24h={c[2]:+6.2f}% | (Radar Error: {e})")
 
 print("=" * 80)
