@@ -153,13 +153,15 @@ class StrategyA8(BaseStrategy):
         is_pre_breakout = False
         is_top_momentum_leader = False
         try:
-            if hasattr(self.logger, 'engine') and hasattr(self.logger.engine, 'market_data'):
-                coiled = getattr(self.logger.engine.market_data, 'coiled_springs_set', set())
+            engine = getattr(self.logger, 'engine', None)
+            if engine is not None:
+                md = getattr(engine, 'market_data', None)
+                coiled = getattr(engine, 'coiled_springs_set', None) or (getattr(md, 'coiled_springs_set', None) if md else None) or set()
                 if symbol in coiled:
                     is_pre_breakout = True
                 
                 # Check if symbol is an active 24h momentum leader (all pairs in top_pairs_cache are >= $25M)
-                top_pairs_cache = getattr(self.logger.engine.market_data, 'top_pairs_cache', [])
+                top_pairs_cache = getattr(engine, 'top_pairs_cache', None) or (getattr(md, 'top_pairs_cache', None) if md else None) or []
                 if symbol in top_pairs_cache:
                     is_top_momentum_leader = True
         except Exception:
