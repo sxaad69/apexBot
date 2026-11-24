@@ -165,17 +165,19 @@ class StrategyA8(BaseStrategy):
             return None
 
         # Breakout Hurdles:
-        # 1. Coiled springs near 24h highs require 1.2x RVOL (or 1.0x on strong >=1.5% candle)
+        # 1. Coiled springs near 24h highs: confirm on steady volume (>=0.8x RVOL) or steady expansion (>=0.4% move)
         # 2. Strong price momentum (>=1.5% candle) confirms on baseline volume (>=1.0x)
-        # 3. General universe requires calibrated 1.4x RVOL
-        target_vol_mult = 1.2 if is_pre_breakout else self.volume_spike_mult
+        # 3. General momentum leaders require calibrated 1.2x RVOL
+        target_vol_mult = 0.8 if is_pre_breakout else self.volume_spike_mult
 
         if bar_move >= 1.5 and vol_ratio >= 1.0:
             pass  # Confirmed by strong price expansion candle
+        elif is_pre_breakout and bar_move >= 0.4 and vol_ratio >= 0.6:
+            pass  # Confirmed by coiled spring pressing 24h high with steady volume
         elif vol_ratio < target_vol_mult:
             return None
 
-        target_move_pct = 0.6 if is_pre_breakout else self.min_move_pct
+        target_move_pct = 0.4 if is_pre_breakout else self.min_move_pct
         if abs(bar_move) < target_move_pct:
             return None
         if bar_move < 0:

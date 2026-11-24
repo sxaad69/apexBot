@@ -109,7 +109,7 @@ class Config:
         self.FUTURES_AUTO_MIN_VOLUME = float(os.getenv('FUTURES_AUTO_MIN_VOLUME', '25000000'))  # $25M strict liquidity floor (purges microcaps)
         # Comma-separated list of base symbols to exclude from discovery/A6 watch/sweeps.
         # Matching is case-insensitive on the base symbol (e.g. 'BTC' excludes BTC/USDT).
-        self.FUTURES_EXCLUDE_SYMBOLS = [s.strip().upper() for s in os.getenv('FUTURES_EXCLUDE_SYMBOLS', 'BTC,ETH,BNB,SOL,XRP,ADA,DOGE,DOT,LINK,LTC,BCH,AVAX,XLM,ATOM,TRX,NEAR,FIL,SUI,APT,ARB,OP,INJ,1000SHIB,1000PEPE,WIF').split(',') if s.strip()]
+        self.FUTURES_EXCLUDE_SYMBOLS = [s.strip().upper() for s in os.getenv('FUTURES_EXCLUDE_SYMBOLS', 'BTC,ETH').split(',') if s.strip()]
         
         # ===== Pre-Breakout Quantitative Funnel =====
         self.PRE_BREAKOUT_ENABLED = self._str_to_bool(os.getenv('PRE_BREAKOUT_ENABLED', 'true'))
