@@ -129,6 +129,7 @@ class StrategyA8(BaseStrategy):
 
     def _confirm_on_5m(self, symbol: str) -> Optional[Dict]:
         """Run A7's acceleration logic on the coin's own 5m frame. Returns signal or None."""
+        self._last_confirm_rejection = None
         try:
             if hasattr(self.logger, 'engine') and self.logger.engine:
                 df5 = self.logger.engine.fetch_market_data(symbol, timeframe=self.timeframe)
@@ -137,6 +138,10 @@ class StrategyA8(BaseStrategy):
         except Exception:
             df5 = None
         if df5 is None or len(df5) < self.min_candles:
+            self._last_confirm_rejection = {
+                "reason": "NO_CONFIRM_FETCH_FAILED",
+                "candles": len(df5) if df5 is not None else 0
+            }
             return None
 
         df = self._cached_indicators(symbol, df5)
@@ -153,15 +158,20 @@ class StrategyA8(BaseStrategy):
                 if symbol in coiled:
                     is_pre_breakout = True
                 
-                # Check if symbol is an active 24h momentum leader (>= +5% change and >= $25M volume)
+                # Check if symbol is an active 24h momentum leader (all pairs in top_pairs_cache are >= $25M)
                 top_pairs_cache = getattr(self.logger.engine.market_data, 'top_pairs_cache', [])
-                if symbol in top_pairs_cache[:20]:
+                if symbol in top_pairs_cache:
                     is_top_momentum_leader = True
         except Exception:
             pass
 
         # HARD ANTI-MICROCAP GATE: Only allow coiled springs near 24h highs OR top-tier momentum leaders
         if not (is_pre_breakout or is_top_momentum_leader):
+            self._last_confirm_rejection = {
+                "reason": "NO_CONFIRM_NOT_LEADER",
+                "is_pre_breakout": is_pre_breakout,
+                "is_top_momentum_leader": is_top_momentum_leader
+            }
             return None
 
         # Breakout Hurdles:
@@ -175,14 +185,37 @@ class StrategyA8(BaseStrategy):
         elif is_pre_breakout and bar_move >= 0.4 and vol_ratio >= 0.6:
             pass  # Confirmed by coiled spring pressing 24h high with steady volume
         elif vol_ratio < target_vol_mult:
+            self._last_confirm_rejection = {
+                "reason": "NO_CONFIRM_LOW_VOL",
+                "volume_ratio": round(vol_ratio, 2),
+                "required": target_vol_mult,
+                "bar_move": round(bar_move, 2),
+                "is_pre_breakout": is_pre_breakout
+            }
             return None
 
         target_move_pct = 0.4 if is_pre_breakout else self.min_move_pct
         if abs(bar_move) < target_move_pct:
+            self._last_confirm_rejection = {
+                "reason": "NO_CONFIRM_LOW_MOVE",
+                "bar_move": round(bar_move, 2),
+                "required": target_move_pct,
+                "volume_ratio": round(vol_ratio, 2),
+                "is_pre_breakout": is_pre_breakout
+            }
             return None
         if bar_move < 0:
+            self._last_confirm_rejection = {
+                "reason": "NO_CONFIRM_NEGATIVE_MOVE",
+                "bar_move": round(bar_move, 2)
+            }
             return None  # long-only
         if bar_move > self.max_extension_pct:
+            self._last_confirm_rejection = {
+                "reason": "NO_CONFIRM_OVEREXTENDED",
+                "bar_move": round(bar_move, 2),
+                "max": self.max_extension_pct
+            }
             return None  # Anti-FOMO: skip over-extended candle spikes (>8%)
 
         return {
@@ -205,7 +238,7 @@ class StrategyA8(BaseStrategy):
         # Layer 2 — A7 confirmation on 5m
         conf = self._confirm_on_5m(symbol)
         if conf is None:
-            return self.set_rejection({
+            return self.set_rejection(self._last_confirm_rejection or {
                 "reason": "NO_CONFIRM",
             })
 
