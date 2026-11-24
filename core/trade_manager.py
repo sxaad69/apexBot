@@ -191,13 +191,32 @@ class TradeManager:
             self.logger.info(f"📊 [GROUNDED] Actual exit for {symbol}: {exit_price}")
         elif is_live:
             try:
-                history = self.exchange.exchange.fetch_my_trades(symbol, limit=3)
+                # Ground to trades strictly since entry time (never pick up historical trades from days ago)
+                entry_time_str = trade.get('entry_time')
+                since_ms = None
+                if entry_time_str:
+                    try:
+                        from datetime import datetime, timezone
+                        dt = datetime.fromisoformat(str(entry_time_str).replace('Z', '+00:00'))
+                        since_ms = int(dt.timestamp() * 1000) - 5000  # 5s buffer
+                    except Exception:
+                        pass
+                if not since_ms:
+                    since_ms = int((time.time() - 7200) * 1000)  # fallback to last 2 hours
+
+                history = self.exchange.exchange.fetch_my_trades(symbol, since=since_ms, limit=20)
                 if history:
+                    history = sorted(history, key=lambda x: x.get('timestamp', 0))
                     exit_side = 'sell' if trade.get('side', 'buy').lower() == 'buy' else 'buy'
-                    matching_trades = [h for h in history if h.get('side', '').lower() == exit_side]
+                    matching_trades = [h for h in history if h.get('side', '').lower() == exit_side and (h.get('timestamp', 0) >= (since_ms or 0))]
                     if matching_trades:
-                        exit_price = float(matching_trades[-1]['price'])
-                        self.logger.info(f"📊 [EXCHANGE FILL GROUNDED] Actual fill price from Binance history: {exit_price}")
+                        total_qty = sum(float(h.get('amount', 0)) for h in matching_trades)
+                        total_cost = sum(float(h.get('cost', 0)) or (float(h.get('price', 0)) * float(h.get('amount', 0))) for h in matching_trades)
+                        if total_qty > 0 and total_cost > 0:
+                            exit_price = total_cost / total_qty
+                        else:
+                            exit_price = float(matching_trades[-1]['price'])
+                        self.logger.info(f"📊 [EXCHANGE FILL GROUNDED] Actual fill price for {symbol}: {exit_price:.6f}")
                     else:
                         exit_price = float(history[-1]['price'])
             except Exception as e:
