@@ -80,18 +80,14 @@ class Config:
         self.FUTURES_TRADING_ENABLED = self._str_to_bool('true')
         self.FUTURES_VIRTUAL_CAPITAL = 136.78  # Real Wallet Baseline
         self.FUTURES_POSITION_SIZE_PERCENT = float('4.0')
-        self.FUTURES_MAX_LEVERAGE = int('10')
+        self.FUTURES_MAX_LEVERAGE = int(os.getenv('FUTURES_MAX_LEVERAGE', '2'))
         self.FUTURES_TAKE_PROFIT_PERCENT = float('10')
         self.FUTURES_MAX_DAILY_LOSS_PERCENT = float('5')
         self.FUTURES_MAX_DRAWDOWN_PERCENT = float('70')
         self.FUTURES_MAX_OPEN_POSITIONS = int(os.getenv('FUTURES_MAX_OPEN_POSITIONS', '3'))
-        # Core-fix leverage ceiling (Phase 1): 5x base, 6x only for high-confidence
-        # signals (conf >= TIER_HOT_CONF). Forensics: conf rescues 3-5x but dies at 10x
-        # (12.5% win); 10x raw stops get hit by wick noise (0 wins in 17 SLs).
-        # FUTURES_MAX_LEVERAGE (line 83) stays as the ABSOLUTE emergency ceiling;
-        # these two are the working caps used by the risk layers and entry sizing.
-        self.LEV_CAP_BASE = int(os.getenv('LEV_CAP_BASE', '5'))
-        self.LEV_CAP_HIGH_CONF = int(os.getenv('LEV_CAP_HIGH_CONF', '6'))
+        # 2x Leverage Ceiling Mandate:
+        self.LEV_CAP_BASE = int(os.getenv('LEV_CAP_BASE', '2'))
+        self.LEV_CAP_HIGH_CONF = int(os.getenv('LEV_CAP_HIGH_CONF', '2'))
 
         # --- Exposure & Reserve Management ---
         # FUTURES_MAX_EXPOSURE_NORMAL: Max % of capital for standard signals (Confidence < Threshold)
@@ -631,9 +627,9 @@ class Config:
         never above the ABSOLUTE emergency ceiling (FUTURES_MAX_LEVERAGE).
         """
         hot_conf = getattr(self, 'TIER_HOT_CONF', 0.90)
-        cap = getattr(self, 'LEV_CAP_HIGH_CONF', 6) if float(confidence) >= hot_conf \
-            else getattr(self, 'LEV_CAP_BASE', 5)
-        return max(1, min(int(cap), int(getattr(self, 'FUTURES_MAX_LEVERAGE', 10))))
+        cap = getattr(self, 'LEV_CAP_HIGH_CONF', 2) if float(confidence) >= hot_conf \
+            else getattr(self, 'LEV_CAP_BASE', 2)
+        return max(1, min(int(cap), int(getattr(self, 'FUTURES_MAX_LEVERAGE', 2))))
 
     def get_trailing_callback(self, leverage) -> float:
         """
